@@ -15,11 +15,12 @@
 #define MAX_PENDING_MARKS 256
 
 // Track mark dimensions (in world units)
-#define TRACK_MARK_LENGTH 0.4f // Length of each track segment
-#define TRACK_MARK_WIDTH 0.2f // Width of a single tread mark
+#define TRACK_MARK_LENGTH 0.26f // Length of each track segment
+#define TRACK_MARK_WIDTH 0.13f // Width of a single tread mark
 
-// Minimum distance before placing another track mark
-#define TRACK_MIN_DISTANCE 0.2f
+// Minimum distance before placing another track mark (must be > LENGTH for
+// gaps)
+#define TRACK_MIN_DISTANCE 0.39f
 
 // Track mark vertex: position (2) + texcoord (2) = 4 floats
 #define TRACK_VERTEX_FLOATS 4
@@ -61,9 +62,8 @@ struct pz_tracks {
     track_mark pending_marks[MAX_PENDING_MARKS];
     int pending_count;
 
-    // Last track position for each tread (to track distance)
-    float last_left_x, last_left_z;
-    float last_right_x, last_right_z;
+    // Last track position (center of tank)
+    float last_x, last_z;
     bool has_last_position;
 
     // Whether we need to clear on next update
@@ -218,46 +218,38 @@ pz_tracks_add_mark(pz_tracks *tracks, float pos_x, float pos_z, float angle,
     if (!tracks)
         return;
 
-    // Calculate left and right tread positions
-    // The tank faces along +Z when angle=0, so perpendicular is +X
-    float perp_x = cosf(angle);
-    float perp_z = -sinf(angle);
-
-    float left_x = pos_x + perp_x * tread_offset;
-    float left_z = pos_z + perp_z * tread_offset;
-    float right_x = pos_x - perp_x * tread_offset;
-    float right_z = pos_z - perp_z * tread_offset;
-
     if (!tracks->has_last_position) {
         // First position, just record it
-        tracks->last_left_x = left_x;
-        tracks->last_left_z = left_z;
-        tracks->last_right_x = right_x;
-        tracks->last_right_z = right_z;
+        tracks->last_x = pos_x;
+        tracks->last_z = pos_z;
         tracks->has_last_position = true;
         return;
     }
 
-    // Check if we've moved far enough from last mark
-    float left_dx = left_x - tracks->last_left_x;
-    float left_dz = left_z - tracks->last_left_z;
-    float left_dist = sqrtf(left_dx * left_dx + left_dz * left_dz);
+    // Check if tank center has moved far enough
+    float dx = pos_x - tracks->last_x;
+    float dz = pos_z - tracks->last_z;
+    float dist = sqrtf(dx * dx + dz * dz);
 
-    float right_dx = right_x - tracks->last_right_x;
-    float right_dz = right_z - tracks->last_right_z;
-    float right_dist = sqrtf(right_dx * right_dx + right_dz * right_dz);
+    if (dist >= TRACK_MIN_DISTANCE) {
+        // Direction of movement
+        float move_angle = atan2f(dx, dz);
 
-    // Add marks if we've moved enough
-    if (left_dist >= TRACK_MIN_DISTANCE) {
-        add_single_mark(tracks, left_x, left_z, angle);
-        tracks->last_left_x = left_x;
-        tracks->last_left_z = left_z;
-    }
+        // Perpendicular to movement direction (for tread offset)
+        float perp_x = cosf(move_angle);
+        float perp_z = -sinf(move_angle);
 
-    if (right_dist >= TRACK_MIN_DISTANCE) {
-        add_single_mark(tracks, right_x, right_z, angle);
-        tracks->last_right_x = right_x;
-        tracks->last_right_z = right_z;
+        float left_x = pos_x + perp_x * tread_offset;
+        float left_z = pos_z + perp_z * tread_offset;
+        float right_x = pos_x - perp_x * tread_offset;
+        float right_z = pos_z - perp_z * tread_offset;
+
+        // Add both tread marks oriented along direction of movement
+        add_single_mark(tracks, left_x, left_z, move_angle);
+        add_single_mark(tracks, right_x, right_z, move_angle);
+
+        tracks->last_x = pos_x;
+        tracks->last_z = pos_z;
     }
 }
 
@@ -383,22 +375,14 @@ pz_tracks_update(pz_tracks *tracks)
     pz_free(vertices);
 
     // Set up uniforms
-    // u_color: darker color to make tracks more visible
-    // RGB = how dark (0 = black, 1 = white), A = opacity
+    // u_color: subtle darkening that accumulates with multiple passes
+    // RGB = how dark (0 = black, 1 = white), A = opacity per mark
     pz_renderer_set_uniform_vec4(tracks->renderer, tracks->track_shader,
-        "u_color", (pz_vec4) { 0.2f, 0.15f, 0.1f, 0.95f });
+        "u_color", (pz_vec4) { 0.4f, 0.35f, 0.3f, 0.425f });
 
-    // Bind track texture
-    if (tracks->track_texture != PZ_INVALID_HANDLE) {
-        pz_renderer_bind_texture(tracks->renderer, 0, tracks->track_texture);
-        pz_renderer_set_uniform_int(
-            tracks->renderer, tracks->track_shader, "u_texture", 0);
-        pz_renderer_set_uniform_int(
-            tracks->renderer, tracks->track_shader, "u_use_texture", 1);
-    } else {
-        pz_renderer_set_uniform_int(
-            tracks->renderer, tracks->track_shader, "u_use_texture", 0);
-    }
+    // Use solid color rectangles, no texture
+    pz_renderer_set_uniform_int(
+        tracks->renderer, tracks->track_shader, "u_use_texture", 0);
 
     // Draw all track marks
     pz_draw_cmd cmd = {
