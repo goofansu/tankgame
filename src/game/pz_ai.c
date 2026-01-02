@@ -228,18 +228,11 @@ pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos, float dt)
         float dy = player_pos.y - tank->pos.y;
         float target_angle = atan2f(dx, dy);
 
-        // Check line-of-sight
+        // AI has full information (top-down view) - always tracks and aims at
+        // player, but only fires when there's clear line-of-sight
+        ctrl->target_aim_angle = target_angle;
         ctrl->can_see_player
             = check_line_of_sight(ai_mgr->map, tank->pos, player_pos);
-
-        if (ctrl->can_see_player) {
-            // Update target aim angle
-            ctrl->target_aim_angle = target_angle;
-            ctrl->last_seen_time = 0.0f;
-        } else {
-            // Lost sight - keep aiming at last known direction
-            ctrl->last_seen_time += dt;
-        }
 
         // Smoothly rotate turret towards target
         // This simulates the AI having to physically turn the turret like a

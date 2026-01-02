@@ -14,6 +14,10 @@
 // Projectile collision radius for tank hits
 static const float PROJECTILE_RADIUS = 0.15f;
 
+// Projectile-projectile collision radius (larger for easier bullet
+// interception)
+static const float PROJECTILE_VS_PROJECTILE_RADIUS = 0.25f;
+
 // Grace period before projectile can hit its owner (seconds)
 static const float SELF_DAMAGE_GRACE_PERIOD = 0.5f;
 
@@ -246,6 +250,32 @@ pz_projectile_update(pz_projectile_manager *mgr, const pz_map *map,
                 continue;
             }
         }
+
+        // Check for projectile-projectile collision
+        // Both projectiles are destroyed regardless of bullet strength
+        for (int j = i + 1; j < PZ_MAX_PROJECTILES; j++) {
+            pz_projectile *other = &mgr->projectiles[j];
+            if (!other->active)
+                continue;
+
+            // Use larger collision radius for bullet interception
+            float dist = pz_vec2_len(pz_vec2_sub(new_pos, other->pos));
+            if (dist < PROJECTILE_VS_PROJECTILE_RADIUS * 2.0f) {
+                // Both bullets destroy each other
+                pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
+                    "Projectiles %d and %d collided and destroyed each other",
+                    i, j);
+
+                proj->active = false;
+                other->active = false;
+                mgr->active_count -= 2;
+                break;
+            }
+        }
+
+        // Skip if this projectile was destroyed by collision with another
+        if (!proj->active)
+            continue;
 
         // Check for wall collision (only if not in bounce cooldown)
         if (map && pz_map_is_solid(map, new_pos)
