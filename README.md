@@ -1,6 +1,8 @@
 # Tank Game
 
-A multiplayer tank combat game built in C17 with SDL2 and OpenGL 3.3.
+A multiplayer tank combat game built in C17 with SDL2 and OpenGL 3.3 with the help of Pi and Claude Opus.
+
+Terrible and work in progress.
 
 ## Building
 
@@ -22,18 +24,6 @@ make clean    # Clean build directory
 make debug    # Build with debug config
 make release  # Build with release config
 ```
-
-Or manually with CMake:
-```bash
-mkdir build && cd build
-cmake ..
-make
-```
-
-### Build Types
-- **Debug**: Full debug info, no optimization (`-DCMAKE_BUILD_TYPE=Debug`)
-- **Dev**: Debug info with optimization (`-DCMAKE_BUILD_TYPE=Dev`) - default
-- **Release**: Full optimization (`-DCMAKE_BUILD_TYPE=Release`)
 
 ## Project Structure
 

@@ -36,6 +36,11 @@ typedef struct pz_map_render_params {
     pz_texture_handle light_texture;
     float light_scale_x, light_scale_z;
     float light_offset_x, light_offset_z;
+
+    // Sun lighting (from map)
+    bool has_sun;
+    pz_vec3 sun_direction;
+    pz_vec3 sun_color;
 } pz_map_render_params;
 
 // Render the map ground layer

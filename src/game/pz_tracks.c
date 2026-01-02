@@ -48,9 +48,6 @@ struct pz_tracks {
     pz_render_target_handle render_target;
     pz_texture_handle accumulation_texture; // Retrieved from RT
 
-    // Track mark texture (the stamp we use)
-    pz_texture_handle track_texture;
-
     // Shader and pipeline for rendering tracks
     pz_shader_handle track_shader;
     pz_pipeline_handle track_pipeline;
@@ -111,14 +108,6 @@ pz_tracks_create(pz_renderer *renderer, pz_texture_manager *tex_manager,
     // Get the color texture from the render target
     tracks->accumulation_texture = pz_renderer_get_render_target_texture(
         renderer, tracks->render_target);
-
-    // Load track mark texture
-    tracks->track_texture
-        = pz_texture_load(tex_manager, "assets/textures/track.png");
-    if (tracks->track_texture == PZ_INVALID_HANDLE) {
-        pz_log(PZ_LOG_WARN, PZ_LOG_CAT_GAME,
-            "Track texture not found, using solid color");
-    }
 
     // Load shader for rendering track marks
     tracks->track_shader = pz_renderer_load_shader(

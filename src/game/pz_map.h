@@ -43,6 +43,15 @@ typedef struct pz_enemy_spawn {
     int level; // Enemy level (1, 2, or 3)
 } pz_enemy_spawn;
 
+// Map lighting settings
+typedef struct pz_map_lighting {
+    bool has_sun; // Whether sun lighting is enabled
+    pz_vec3 sun_direction; // Normalized direction FROM sun (toward scene)
+    pz_vec3 sun_color; // Sun light color (RGB 0-1)
+    pz_vec3 ambient_color; // Ambient light color when sun is off
+    float ambient_darkness; // 0 = full ambient, 1 = pitch black (default 0.85)
+} pz_map_lighting;
+
 // Map structure
 typedef struct pz_map {
     char name[64];
@@ -63,6 +72,9 @@ typedef struct pz_map {
     // Enemy spawns (for AI-controlled tanks)
     pz_enemy_spawn enemies[PZ_MAP_MAX_ENEMIES];
     int enemy_count;
+
+    // Lighting settings
+    pz_map_lighting lighting;
 
     // Bounds (in world units)
     float world_width;
@@ -108,6 +120,9 @@ int pz_map_get_spawn_count(const pz_map *map);
 // Enemy spawn helpers
 const pz_enemy_spawn *pz_map_get_enemy(const pz_map *map, int index);
 int pz_map_get_enemy_count(const pz_map *map);
+
+// Lighting helpers
+const pz_map_lighting *pz_map_get_lighting(const pz_map *map);
 
 // Debug: print map to console
 void pz_map_print(const pz_map *map);

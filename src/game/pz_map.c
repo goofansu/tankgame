@@ -51,6 +51,13 @@ pz_map_create(int width, int height, float tile_size)
         map->height_map[i] = 0;
     }
 
+    // Default lighting: night mode (no sun, dark ambient)
+    map->lighting.has_sun = false;
+    map->lighting.sun_direction = (pz_vec3) { 0.4f, -0.8f, 0.3f };
+    map->lighting.sun_color = (pz_vec3) { 1.0f, 0.95f, 0.85f };
+    map->lighting.ambient_color = (pz_vec3) { 0.12f, 0.12f, 0.15f };
+    map->lighting.ambient_darkness = 0.85f;
+
     pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME, "Created map %dx%d (%.1f unit tiles)",
         width, height, tile_size);
 
@@ -348,6 +355,12 @@ int
 pz_map_get_enemy_count(const pz_map *map)
 {
     return map ? map->enemy_count : 0;
+}
+
+const pz_map_lighting *
+pz_map_get_lighting(const pz_map *map)
+{
+    return map ? &map->lighting : NULL;
 }
 
 void
@@ -678,6 +691,24 @@ pz_map_load(const char *path)
                     };
                 }
             }
+        } else if (strncmp(p, "sun_direction ", 14) == 0) {
+            float x, y, z;
+            if (sscanf(p + 14, "%f %f %f", &x, &y, &z) == 3) {
+                map->lighting.sun_direction = (pz_vec3) { x, y, z };
+                map->lighting.has_sun = true;
+            }
+        } else if (strncmp(p, "sun_color ", 10) == 0) {
+            float r, g, b;
+            if (sscanf(p + 10, "%f %f %f", &r, &g, &b) == 3) {
+                map->lighting.sun_color = (pz_vec3) { r, g, b };
+            }
+        } else if (strncmp(p, "ambient_color ", 14) == 0) {
+            float r, g, b;
+            if (sscanf(p + 14, "%f %f %f", &r, &g, &b) == 3) {
+                map->lighting.ambient_color = (pz_vec3) { r, g, b };
+            }
+        } else if (strncmp(p, "ambient_darkness ", 17) == 0) {
+            map->lighting.ambient_darkness = (float)atof(p + 17);
         }
     }
 
@@ -775,6 +806,38 @@ pz_map_save(const pz_map *map, const char *path)
             p += written;
             remaining -= written;
         }
+    }
+
+    // Lighting settings
+    if (remaining > 256) {
+        written = snprintf(p, remaining, "\n# Lighting settings\n");
+        p += written;
+        remaining -= written;
+
+        if (map->lighting.has_sun) {
+            written = snprintf(p, remaining, "sun_direction %.2f %.2f %.2f\n",
+                map->lighting.sun_direction.x, map->lighting.sun_direction.y,
+                map->lighting.sun_direction.z);
+            p += written;
+            remaining -= written;
+
+            written = snprintf(p, remaining, "sun_color %.2f %.2f %.2f\n",
+                map->lighting.sun_color.x, map->lighting.sun_color.y,
+                map->lighting.sun_color.z);
+            p += written;
+            remaining -= written;
+        }
+
+        written = snprintf(p, remaining, "ambient_color %.2f %.2f %.2f\n",
+            map->lighting.ambient_color.x, map->lighting.ambient_color.y,
+            map->lighting.ambient_color.z);
+        p += written;
+        remaining -= written;
+
+        written = snprintf(p, remaining, "ambient_darkness %.2f\n",
+            map->lighting.ambient_darkness);
+        p += written;
+        remaining -= written;
     }
 
     *p = '\0';

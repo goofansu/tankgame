@@ -650,6 +650,19 @@ pz_map_renderer_draw_ground(pz_map_renderer *mr, const pz_mat4 *view_projection,
             mr->renderer, mr->ground_shader, "u_use_lighting", 0);
     }
 
+    // Set sun lighting uniforms
+    if (params && params->has_sun) {
+        pz_renderer_set_uniform_int(
+            mr->renderer, mr->ground_shader, "u_has_sun", 1);
+        pz_renderer_set_uniform_vec3(mr->renderer, mr->ground_shader,
+            "u_sun_direction", params->sun_direction);
+        pz_renderer_set_uniform_vec3(
+            mr->renderer, mr->ground_shader, "u_sun_color", params->sun_color);
+    } else {
+        pz_renderer_set_uniform_int(
+            mr->renderer, mr->ground_shader, "u_has_sun", 0);
+    }
+
     // Draw each terrain type
     // Skip walls - they have 3D geometry and drawing floor causes z-fighting
     pz_tile_type draw_order[] = {
@@ -724,6 +737,19 @@ pz_map_renderer_draw_walls(pz_map_renderer *mr, const pz_mat4 *view_projection,
     } else {
         pz_renderer_set_uniform_int(
             mr->renderer, mr->wall_shader, "u_use_lighting", 0);
+    }
+
+    // Set sun lighting uniforms
+    if (params && params->has_sun) {
+        pz_renderer_set_uniform_int(
+            mr->renderer, mr->wall_shader, "u_has_sun", 1);
+        pz_renderer_set_uniform_vec3(mr->renderer, mr->wall_shader,
+            "u_sun_direction", params->sun_direction);
+        pz_renderer_set_uniform_vec3(
+            mr->renderer, mr->wall_shader, "u_sun_color", params->sun_color);
+    } else {
+        pz_renderer_set_uniform_int(
+            mr->renderer, mr->wall_shader, "u_has_sun", 0);
     }
 
     // Bind textures

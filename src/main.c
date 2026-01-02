@@ -58,6 +58,7 @@ main(int argc, char *argv[])
     const char *screenshot_path = NULL;
     int screenshot_frames = 1; // Number of frames to wait before screenshot
     const char *lightmap_debug_path = NULL; // Debug: save lightmap texture
+    const char *map_path_arg = NULL; // Map path from command line
 
     // Parse command line arguments
     for (int i = 1; i < argc; i++) {
@@ -69,6 +70,8 @@ main(int argc, char *argv[])
             screenshot_frames = atoi(argv[++i]);
         } else if (strcmp(argv[i], "--lightmap-debug") == 0 && i + 1 < argc) {
             lightmap_debug_path = argv[++i];
+        } else if (strcmp(argv[i], "--map") == 0 && i + 1 < argc) {
+            map_path_arg = argv[++i];
         }
     }
 
@@ -161,7 +164,8 @@ main(int argc, char *argv[])
     pz_camera_init(&camera, WINDOW_WIDTH, WINDOW_HEIGHT);
 
     // Try to load map from file, fall back to test map
-    const char *map_path = "assets/maps/test_arena.map";
+    const char *map_path
+        = map_path_arg ? map_path_arg : "assets/maps/night_arena.map";
     pz_map *game_map = pz_map_load(map_path);
     if (!game_map) {
         pz_log(PZ_LOG_WARN, PZ_LOG_CAT_GAME,
@@ -210,11 +214,12 @@ main(int argc, char *argv[])
     // Create lighting system
     pz_lighting *lighting = NULL;
     if (game_map) {
+        const pz_map_lighting *map_light = pz_map_get_lighting(game_map);
         pz_lighting_config light_config = {
             .world_width = game_map->world_width,
             .world_height = game_map->world_height,
             .texture_size = 512, // 512x512 light map
-            .ambient = { 0.12f, 0.12f, 0.15f }, // Slightly brighter ambient
+            .ambient = map_light->ambient_color,
         };
         lighting = pz_lighting_create(renderer, &light_config);
     }
@@ -835,6 +840,13 @@ main(int argc, char *argv[])
             pz_lighting_get_uv_transform(lighting, &render_params.light_scale_x,
                 &render_params.light_scale_z, &render_params.light_offset_x,
                 &render_params.light_offset_z);
+        }
+        // Sun lighting from map
+        if (game_map) {
+            const pz_map_lighting *map_light = pz_map_get_lighting(game_map);
+            render_params.has_sun = map_light->has_sun;
+            render_params.sun_direction = map_light->sun_direction;
+            render_params.sun_color = map_light->sun_color;
         }
 
         pz_map_renderer_draw(map_renderer, vp, &render_params);
