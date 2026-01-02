@@ -62,6 +62,7 @@ set(THIRD_PARTY_SOURCES
 
 set(GAME_SOURCES
     src/game/pz_map.c
+    src/game/pz_map_render.c
     # src/game/pz_game.c
     # src/game/pz_tank.c
     # src/game/pz_projectile.c

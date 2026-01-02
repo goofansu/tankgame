@@ -16,3 +16,4 @@
 - [x] M2.4: camera system, perspective projection, screen-to-world, ground grid renders
 - [x] M2.5: debug overlay (bitmap font, FPS counter, frame time graph, F2 toggle)
 - [x] M3.2: map data structure (pz_map with terrain, height, spawns, coordinate conversion)
+- [x] M3.1: ground rendering using map (wood textures, terrain types visible)
