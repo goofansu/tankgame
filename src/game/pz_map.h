@@ -96,6 +96,12 @@ int pz_map_get_spawn_count(const pz_map *map);
 // Debug: print map to console
 void pz_map_print(const pz_map *map);
 
+// Raycast from start position in direction until hitting a solid tile or
+// max_dist Returns the hit position (either wall hit or max distance) If hit is
+// not NULL, sets *hit to true if a wall was hit
+pz_vec2 pz_map_raycast(const pz_map *map, pz_vec2 start, pz_vec2 direction,
+    float max_dist, bool *hit);
+
 // ============================================================================
 // Map Loading/Saving
 // ============================================================================

@@ -262,11 +262,60 @@ main(int argc, char *argv[])
 
     // Fire cooldown tracking
     float fire_cooldown = 0.0f;
-    const float fire_cooldown_time = 0.5f; // 0.5 seconds between shots
+    const float fire_cooldown_time
+        = 0.25f; // 0.25 seconds between shots (2x faster)
 
     // Turret barrel offset (how far from turret center the projectile spawns)
     // Must match turret mesh: hd (0.45) + barrel_length (1.2) = 1.65
     const float barrel_length = 1.65f;
+
+    // ========================================================================
+    // Laser sight system
+    // ========================================================================
+    pz_shader_handle laser_shader = pz_renderer_load_shader(
+        renderer, "shaders/laser.vert", "shaders/laser.frag", "laser");
+
+    pz_pipeline_handle laser_pipeline = PZ_INVALID_HANDLE;
+    pz_buffer_handle laser_vb = PZ_INVALID_HANDLE;
+
+    // Laser sight vertex layout (position + texcoord)
+    typedef struct {
+        float x, y, z;
+        float u, v;
+    } laser_vertex;
+
+    if (laser_shader != PZ_INVALID_HANDLE) {
+        pz_vertex_attr laser_attrs[] = {
+            { .name = "a_position", .type = PZ_ATTR_FLOAT3, .offset = 0 },
+            { .name = "a_texcoord",
+                .type = PZ_ATTR_FLOAT2,
+                .offset = 3 * sizeof(float) },
+        };
+
+        pz_pipeline_desc laser_desc = {
+            .shader = laser_shader,
+            .vertex_layout = { .attrs = laser_attrs,
+                .attr_count = 2,
+                .stride = sizeof(laser_vertex) },
+            .blend = PZ_BLEND_ALPHA,
+            .depth = PZ_DEPTH_READ, // Read depth but don't write
+            .cull = PZ_CULL_NONE,
+            .primitive = PZ_PRIMITIVE_TRIANGLES,
+        };
+        laser_pipeline = pz_renderer_create_pipeline(renderer, &laser_desc);
+
+        // Create dynamic buffer for laser quad (6 vertices)
+        pz_buffer_desc laser_vb_desc = {
+            .type = PZ_BUFFER_VERTEX,
+            .usage = PZ_BUFFER_DYNAMIC,
+            .data = NULL,
+            .size = 6 * sizeof(laser_vertex),
+        };
+        laser_vb = pz_renderer_create_buffer(renderer, &laser_vb_desc);
+    }
+
+    const float laser_width = 0.08f; // Width of the laser beam
+    const float laser_max_dist = 50.0f; // Maximum laser range
 
     // ========================================================================
     // Main loop
@@ -536,11 +585,28 @@ main(int argc, char *argv[])
                 tank_pos.y + spawn_dz // tank_pos.y is world Z
             };
 
-            // Direction matches turret facing
+            // Direction matches turret facing, with tank momentum added
             pz_vec2 fire_dir = { sinf(turret_angle), cosf(turret_angle) };
 
+            // Add tank velocity to bullet (inherit momentum)
+            // Scale it down slightly so it's not too extreme
+            pz_vec2 inherited_vel = pz_vec2_scale(tank_vel, 0.5f);
+            pz_vec2 bullet_vel = pz_vec2_add(
+                pz_vec2_scale(fire_dir, PZ_PROJECTILE_DEFAULT.speed),
+                inherited_vel);
+
+            // Calculate the new direction and speed from combined velocity
+            float bullet_speed = pz_vec2_len(bullet_vel);
+            if (bullet_speed > 0.001f) {
+                fire_dir = pz_vec2_scale(bullet_vel, 1.0f / bullet_speed);
+            }
+
+            // Create a modified config with the adjusted speed
+            pz_projectile_config fire_config = PZ_PROJECTILE_DEFAULT;
+            fire_config.speed = bullet_speed;
+
             pz_projectile_spawn(
-                projectile_mgr, spawn_pos, fire_dir, &PZ_PROJECTILE_DEFAULT, 0);
+                projectile_mgr, spawn_pos, fire_dir, &fire_config, 0);
 
             fire_cooldown = fire_cooldown_time;
         }
@@ -665,6 +731,95 @@ main(int argc, char *argv[])
         }
 
         // ====================================================================
+        // Draw laser sight
+        // ====================================================================
+        if (laser_pipeline != PZ_INVALID_HANDLE && game_map) {
+            // Calculate laser start position (at barrel tip)
+            float laser_start_dx = sinf(turret_angle) * barrel_length;
+            float laser_start_dz = cosf(turret_angle) * barrel_length;
+            pz_vec2 laser_start = {
+                tank_pos.x + laser_start_dx,
+                tank_pos.y + laser_start_dz,
+            };
+
+            // Raycast to find where laser hits wall
+            pz_vec2 laser_dir = { sinf(turret_angle), cosf(turret_angle) };
+            bool hit_wall = false;
+            pz_vec2 laser_end = pz_map_raycast(
+                game_map, laser_start, laser_dir, laser_max_dist, &hit_wall);
+
+            // Calculate laser length
+            float laser_len = pz_vec2_dist(laser_start, laser_end);
+            if (laser_len > 0.01f) {
+                // Build quad perpendicular to laser direction
+                // The laser is rendered at barrel height (same as projectile)
+                float laser_height = 1.18f;
+
+                // Perpendicular direction in XZ plane
+                pz_vec2 perp = { -laser_dir.y, laser_dir.x };
+                float half_w = laser_width * 0.5f;
+
+                // Build 6 vertices for 2 triangles (quad)
+                typedef struct {
+                    float x, y, z;
+                    float u, v;
+                } laser_vertex;
+
+                laser_vertex verts[6];
+
+                // Bottom-left (start, left edge)
+                pz_vec2 bl
+                    = pz_vec2_add(laser_start, pz_vec2_scale(perp, -half_w));
+                // Bottom-right (start, right edge)
+                pz_vec2 br
+                    = pz_vec2_add(laser_start, pz_vec2_scale(perp, half_w));
+                // Top-left (end, left edge)
+                pz_vec2 tl
+                    = pz_vec2_add(laser_end, pz_vec2_scale(perp, -half_w));
+                // Top-right (end, right edge)
+                pz_vec2 tr
+                    = pz_vec2_add(laser_end, pz_vec2_scale(perp, half_w));
+
+                // Triangle 1: bl, br, tr
+                verts[0]
+                    = (laser_vertex) { bl.x, laser_height, bl.y, 0.0f, 0.0f };
+                verts[1]
+                    = (laser_vertex) { br.x, laser_height, br.y, 1.0f, 0.0f };
+                verts[2]
+                    = (laser_vertex) { tr.x, laser_height, tr.y, 1.0f, 1.0f };
+
+                // Triangle 2: bl, tr, tl
+                verts[3]
+                    = (laser_vertex) { bl.x, laser_height, bl.y, 0.0f, 0.0f };
+                verts[4]
+                    = (laser_vertex) { tr.x, laser_height, tr.y, 1.0f, 1.0f };
+                verts[5]
+                    = (laser_vertex) { tl.x, laser_height, tl.y, 0.0f, 1.0f };
+
+                // Upload vertices
+                pz_renderer_update_buffer(
+                    renderer, laser_vb, 0, verts, sizeof(verts));
+
+                // Set uniforms
+                pz_mat4 laser_mvp = *vp; // No model transform, vertices are in
+                                         // world space
+                pz_renderer_set_uniform_mat4(
+                    renderer, laser_shader, "u_mvp", &laser_mvp);
+                pz_renderer_set_uniform_vec4(renderer, laser_shader, "u_color",
+                    (pz_vec4) {
+                        1.0f, 0.2f, 0.2f, 0.6f }); // Red, semi-transparent
+
+                // Draw
+                pz_draw_cmd laser_cmd = {
+                    .pipeline = laser_pipeline,
+                    .vertex_buffer = laser_vb,
+                    .vertex_count = 6,
+                };
+                pz_renderer_draw(renderer, &laser_cmd);
+            }
+        }
+
+        // ====================================================================
         // Draw projectiles
         // ====================================================================
         pz_projectile_render(projectile_mgr, renderer, vp);
@@ -690,6 +845,17 @@ main(int argc, char *argv[])
     // Cleanup
     pz_debug_overlay_destroy(debug_overlay);
     pz_debug_cmd_shutdown();
+
+    // Cleanup laser sight
+    if (laser_vb != PZ_INVALID_HANDLE) {
+        pz_renderer_destroy_buffer(renderer, laser_vb);
+    }
+    if (laser_pipeline != PZ_INVALID_HANDLE) {
+        pz_renderer_destroy_pipeline(renderer, laser_pipeline);
+    }
+    if (laser_shader != PZ_INVALID_HANDLE) {
+        pz_renderer_destroy_shader(renderer, laser_shader);
+    }
 
     // Cleanup tank meshes (M4.1)
     if (entity_pipeline != PZ_INVALID_HANDLE) {

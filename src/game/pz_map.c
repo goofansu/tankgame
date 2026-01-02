@@ -738,3 +738,51 @@ pz_map_file_mtime(const char *path)
 {
     return pz_file_mtime(path);
 }
+
+pz_vec2
+pz_map_raycast(const pz_map *map, pz_vec2 start, pz_vec2 direction,
+    float max_dist, bool *hit)
+{
+    if (hit)
+        *hit = false;
+
+    if (!map || max_dist <= 0.0f)
+        return start;
+
+    // Normalize direction
+    float dir_len = pz_vec2_len(direction);
+    if (dir_len < 0.0001f)
+        return start;
+    direction = pz_vec2_scale(direction, 1.0f / dir_len);
+
+    // DDA-style raycast stepping through the grid
+    // Step size for raymarching (smaller = more precise but slower)
+    const float step_size = 0.05f;
+    float dist = 0.0f;
+
+    pz_vec2 pos = start;
+
+    while (dist < max_dist) {
+        // Check if current position is solid
+        if (pz_map_is_solid(map, pos)) {
+            if (hit)
+                *hit = true;
+            // Step back slightly to get the surface position
+            return pz_vec2_sub(pos, pz_vec2_scale(direction, step_size));
+        }
+
+        // Check if out of bounds
+        if (!pz_map_in_bounds_world(map, pos)) {
+            if (hit)
+                *hit = true;
+            return pos;
+        }
+
+        // Step forward
+        pos = pz_vec2_add(pos, pz_vec2_scale(direction, step_size));
+        dist += step_size;
+    }
+
+    // Reached max distance without hitting anything
+    return pz_vec2_add(start, pz_vec2_scale(direction, max_dist));
+}

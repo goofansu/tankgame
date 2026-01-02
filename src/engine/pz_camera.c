@@ -315,15 +315,15 @@ pz_camera_fit_map(
     float apparent_depth = map_height * cos_pitch;
     float height_for_depth = (apparent_depth / 2.0f) / tanf(fov_rad / 2.0f);
 
-    // Take the larger, add generous margin
+    // Take the larger, add small margin
     float height = height_for_depth > height_for_width ? height_for_depth
                                                        : height_for_width;
-    height *= 1.25f; // 25% margin to ensure everything fits
+    height *= 1.05f; // 5% margin to ensure everything fits
 
-    // Position: look at map center (0,0,0)
-    // The tilted view naturally shows more "behind" (positive Z from camera's
-    // view) than "in front", so we don't need z_offset
-    pz_vec3 look_at = { 0.0f, 0.0f, 0.0f };
+    // Position: look slightly behind map center (negative Z) to
+    // move the map up on screen and reduce empty space at top
+    float z_offset = -map_height * 0.05f;
+    pz_vec3 look_at = { 0.0f, 0.0f, z_offset };
 
     pz_camera_setup_game_view(cam, look_at, height, pitch_degrees);
 }

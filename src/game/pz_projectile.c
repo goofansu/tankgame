@@ -16,9 +16,9 @@
  */
 
 const pz_projectile_config PZ_PROJECTILE_DEFAULT = {
-    .speed = 11.25f,  // 25% slower than original 15.0
+    .speed = 11.25f, // 25% slower than original 15.0
     .max_bounces = 1,
-    .lifetime = 5.0f,
+    .lifetime = -1.0f, // Infinite lifetime (only dies on max bounces)
     .damage = 1,
 };
 
@@ -189,12 +189,14 @@ pz_projectile_update(pz_projectile_manager *mgr, const pz_map *map, float dt)
         if (!proj->active)
             continue;
 
-        // Update lifetime
-        proj->lifetime -= dt;
-        if (proj->lifetime <= 0.0f) {
-            proj->active = false;
-            mgr->active_count--;
-            continue;
+        // Update lifetime (negative lifetime = infinite)
+        if (proj->lifetime > 0.0f) {
+            proj->lifetime -= dt;
+            if (proj->lifetime <= 0.0f) {
+                proj->active = false;
+                mgr->active_count--;
+                continue;
+            }
         }
 
         // Calculate new position
@@ -281,7 +283,8 @@ pz_projectile_render(pz_projectile_manager *mgr, pz_renderer *renderer,
         float angle = atan2f(proj->velocity.x, proj->velocity.y);
 
         // Projectile flies at turret barrel height
-        // turret_y_offset (0.65) + base_height (0.35) + barrel_radius (0.18) = 1.18
+        // turret_y_offset (0.65) + base_height (0.35) + barrel_radius (0.18)
+        // = 1.18
         float height = 1.18f;
 
         // Build model matrix
