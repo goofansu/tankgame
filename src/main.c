@@ -24,6 +24,7 @@
 #include "game/pz_map.h"
 #include "game/pz_map_render.h"
 #include "game/pz_mesh.h"
+#include "game/pz_particle.h"
 #include "game/pz_powerup.h"
 #include "game/pz_projectile.h"
 #include "game/pz_tank.h"
@@ -254,6 +255,11 @@ main(int argc, char *argv[])
     // ========================================================================
     pz_projectile_manager *projectile_mgr
         = pz_projectile_manager_create(renderer);
+
+    // ========================================================================
+    // Particle system (smoke effects)
+    // ========================================================================
+    pz_particle_manager *particle_mgr = pz_particle_manager_create(renderer);
 
     // ========================================================================
     // Powerup system
@@ -541,6 +547,34 @@ main(int argc, char *argv[])
         // ====================================================================
         pz_projectile_update(projectile_mgr, game_map, tank_mgr, dt);
 
+        // Spawn smoke particles for projectile hits
+        {
+            pz_projectile_hit hits[PZ_MAX_PROJECTILE_HITS];
+            int hit_count = pz_projectile_get_hits(
+                projectile_mgr, hits, PZ_MAX_PROJECTILE_HITS);
+
+            for (int i = 0; i < hit_count; i++) {
+                // Projectile height is 1.18
+                pz_vec3 hit_pos = { hits[i].pos.x, 1.18f, hits[i].pos.y };
+
+                pz_smoke_config smoke = PZ_SMOKE_BULLET_IMPACT;
+                smoke.position = hit_pos;
+
+                // Bigger smoke for tank hits
+                if (hits[i].type == PZ_HIT_TANK) {
+                    smoke = PZ_SMOKE_TANK_HIT;
+                    smoke.position = hit_pos;
+                }
+
+                pz_particle_spawn_smoke(particle_mgr, &smoke);
+            }
+        }
+
+        // ====================================================================
+        // Update particles
+        // ====================================================================
+        pz_particle_update(particle_mgr, dt);
+
         // Check for hot-reload every 500ms
         double now = pz_time_now();
         if (now - last_hot_reload_check > 0.5) { // 500ms
@@ -678,6 +712,20 @@ main(int argc, char *argv[])
         // ====================================================================
         pz_projectile_render(projectile_mgr, renderer, vp);
 
+        // ====================================================================
+        // Draw particles (after opaque geometry, uses alpha blending)
+        // ====================================================================
+        {
+            // Get camera right and up vectors for billboarding from view matrix
+            // The view matrix columns contain the camera's basis vectors
+            const pz_mat4 *view = pz_camera_get_view(&camera);
+            // Column 0 = right, Column 1 = up (in view space, transposed)
+            // For column-major: row 0 = right, row 1 = up
+            pz_vec3 cam_right = { view->m[0], view->m[4], view->m[8] };
+            pz_vec3 cam_up = { view->m[1], view->m[5], view->m[9] };
+            pz_particle_render(particle_mgr, renderer, vp, cam_right, cam_up);
+        }
+
         // Render debug overlay (before end frame)
         pz_debug_overlay_render(debug_overlay);
 
@@ -725,6 +773,9 @@ main(int argc, char *argv[])
 
     // Cleanup projectile system
     pz_projectile_manager_destroy(projectile_mgr, renderer);
+
+    // Cleanup particle system
+    pz_particle_manager_destroy(particle_mgr, renderer);
 
     // Cleanup powerup system
     pz_powerup_manager_destroy(powerup_mgr, renderer);

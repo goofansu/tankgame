@@ -14,9 +14,9 @@
 // Projectile collision radius for tank hits
 static const float PROJECTILE_RADIUS = 0.15f;
 
-// Projectile-projectile collision radius (larger for easier bullet
-// interception)
-static const float PROJECTILE_VS_PROJECTILE_RADIUS = 0.25f;
+// Projectile-projectile collision radius (slightly larger than visual for
+// better gameplay)
+static const float PROJECTILE_VS_PROJECTILE_RADIUS = 0.18f;
 
 // Grace period before projectile can hit its owner (seconds)
 static const float SELF_DAMAGE_GRACE_PERIOD = 0.5f;
@@ -95,6 +95,22 @@ pz_projectile_manager_destroy(pz_projectile_manager *mgr, pz_renderer *renderer)
 
     pz_free(mgr);
     pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME, "Projectile manager destroyed");
+}
+
+/* ============================================================================
+ * Hit Recording (for particle spawning)
+ * ============================================================================
+ */
+
+static void
+record_hit(pz_projectile_manager *mgr, pz_projectile_hit_type type, pz_vec2 pos)
+{
+    if (mgr->hit_count >= PZ_MAX_PROJECTILE_HITS)
+        return;
+
+    mgr->hits[mgr->hit_count].type = type;
+    mgr->hits[mgr->hit_count].pos = pos;
+    mgr->hit_count++;
 }
 
 /* ============================================================================
@@ -202,6 +218,9 @@ pz_projectile_update(pz_projectile_manager *mgr, const pz_map *map,
     if (!mgr)
         return;
 
+    // Clear hits from previous frame
+    mgr->hit_count = 0;
+
     for (int i = 0; i < PZ_MAX_PROJECTILES; i++) {
         pz_projectile *proj = &mgr->projectiles[i];
         if (!proj->active)
@@ -244,6 +263,9 @@ pz_projectile_update(pz_projectile_manager *mgr, const pz_map *map,
                     "Projectile hit tank %d (damage=%d, killed=%d)",
                     hit_tank->id, proj->damage, killed);
 
+                // Record hit for particle spawning
+                record_hit(mgr, PZ_HIT_TANK, new_pos);
+
                 // Destroy projectile
                 proj->active = false;
                 mgr->active_count--;
@@ -258,13 +280,18 @@ pz_projectile_update(pz_projectile_manager *mgr, const pz_map *map,
             if (!other->active)
                 continue;
 
-            // Use larger collision radius for bullet interception
+            // Use collision radius for bullet interception
             float dist = pz_vec2_len(pz_vec2_sub(new_pos, other->pos));
             if (dist < PROJECTILE_VS_PROJECTILE_RADIUS * 2.0f) {
                 // Both bullets destroy each other
                 pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
                     "Projectiles %d and %d collided and destroyed each other",
                     i, j);
+
+                // Record hit at midpoint for particle spawning
+                pz_vec2 hit_pos
+                    = pz_vec2_scale(pz_vec2_add(new_pos, other->pos), 0.5f);
+                record_hit(mgr, PZ_HIT_PROJECTILE, hit_pos);
 
                 proj->active = false;
                 other->active = false;
@@ -317,6 +344,9 @@ pz_projectile_update(pz_projectile_manager *mgr, const pz_map *map,
                     proj->bounces_remaining, push_dist - 0.15f);
             } else {
                 // No bounces left - destroy
+                // Record hit for particle spawning
+                record_hit(mgr, PZ_HIT_WALL, proj->pos);
+
                 proj->active = false;
                 mgr->active_count--;
                 pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
@@ -434,6 +464,20 @@ pz_projectile_count_by_owner(const pz_projectile_manager *mgr, int owner_id)
             && mgr->projectiles[i].owner_id == owner_id) {
             count++;
         }
+    }
+    return count;
+}
+
+int
+pz_projectile_get_hits(
+    const pz_projectile_manager *mgr, pz_projectile_hit *hits, int max_hits)
+{
+    if (!mgr || !hits)
+        return 0;
+
+    int count = mgr->hit_count < max_hits ? mgr->hit_count : max_hits;
+    for (int i = 0; i < count; i++) {
+        hits[i] = mgr->hits[i];
     }
     return count;
 }

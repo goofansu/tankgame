@@ -21,6 +21,23 @@ typedef struct pz_tank_manager pz_tank_manager;
 // Maximum number of active projectiles
 #define PZ_MAX_PROJECTILES 64
 
+// Maximum collision events per frame
+#define PZ_MAX_PROJECTILE_HITS 32
+
+// Collision event types for particle spawning
+typedef enum pz_projectile_hit_type {
+    PZ_HIT_NONE = 0,
+    PZ_HIT_TANK, // Hit a tank
+    PZ_HIT_PROJECTILE, // Hit another projectile
+    PZ_HIT_WALL, // Destroyed on wall (no bounces left)
+} pz_projectile_hit_type;
+
+// Collision event for particle spawning
+typedef struct pz_projectile_hit {
+    pz_projectile_hit_type type;
+    pz_vec2 pos; // Position of hit
+} pz_projectile_hit;
+
 // Projectile structure
 typedef struct pz_projectile {
     bool active; // Is this slot in use?
@@ -46,6 +63,10 @@ typedef struct pz_projectile {
 typedef struct pz_projectile_manager {
     pz_projectile projectiles[PZ_MAX_PROJECTILES];
     int active_count;
+
+    // Collision events from last update (for particle spawning)
+    pz_projectile_hit hits[PZ_MAX_PROJECTILE_HITS];
+    int hit_count;
 
     // Rendering resources
     pz_mesh *mesh;
@@ -97,5 +118,10 @@ int pz_projectile_count(const pz_projectile_manager *mgr);
 // Get number of active projectiles owned by a specific tank
 int pz_projectile_count_by_owner(
     const pz_projectile_manager *mgr, int owner_id);
+
+// Get collision events from the last update (for particle spawning)
+// Returns number of hits, fills hits array
+int pz_projectile_get_hits(
+    const pz_projectile_manager *mgr, pz_projectile_hit *hits, int max_hits);
 
 #endif // PZ_PROJECTILE_H
