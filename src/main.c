@@ -2,16 +2,16 @@
  * Tank Game - Main Entry Point
  */
 
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
 
 #include <SDL.h>
 
 #ifdef __APPLE__
-#include <OpenGL/gl3.h>
+#    include <OpenGL/gl3.h>
 #else
-#include <GL/gl.h>
+#    include <GL/gl.h>
 #endif
 
 #define WINDOW_TITLE "Tank Game"
@@ -20,18 +20,22 @@
 
 // Check for OpenGL errors in debug builds
 #ifdef PZ_DEBUG
-static void check_gl_error(const char* context) {
+static void
+check_gl_error(const char *context)
+{
     GLenum err;
     while ((err = glGetError()) != GL_NO_ERROR) {
         fprintf(stderr, "OpenGL error at %s: 0x%04x\n", context, err);
     }
 }
-#define GL_CHECK(ctx) check_gl_error(ctx)
+#    define GL_CHECK(ctx) check_gl_error(ctx)
 #else
-#define GL_CHECK(ctx) ((void)0)
+#    define GL_CHECK(ctx) ((void)0)
 #endif
 
-int main(int argc, char* argv[]) {
+int
+main(int argc, char *argv[])
+{
     (void)argc;
     (void)argv;
 
@@ -55,22 +59,19 @@ int main(int argc, char* argv[]) {
     // Request OpenGL 3.3 Core Profile
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+    SDL_GL_SetAttribute(
+        SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
 #ifdef __APPLE__
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
+    SDL_GL_SetAttribute(
+        SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
 #endif
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
 
     // Create window with OpenGL context
-    SDL_Window* window = SDL_CreateWindow(
-        WINDOW_TITLE,
-        SDL_WINDOWPOS_CENTERED,
-        SDL_WINDOWPOS_CENTERED,
-        WINDOW_WIDTH,
-        WINDOW_HEIGHT,
-        SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL
-    );
+    SDL_Window *window = SDL_CreateWindow(WINDOW_TITLE, SDL_WINDOWPOS_CENTERED,
+        SDL_WINDOWPOS_CENTERED, WINDOW_WIDTH, WINDOW_HEIGHT,
+        SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL);
     if (!window) {
         fprintf(stderr, "SDL_CreateWindow failed: %s\n", SDL_GetError());
         SDL_Quit();
@@ -105,22 +106,22 @@ int main(int argc, char* argv[]) {
         // Handle events
         while (SDL_PollEvent(&event)) {
             switch (event.type) {
-                case SDL_QUIT:
+            case SDL_QUIT:
+                running = false;
+                break;
+            case SDL_KEYDOWN:
+                if (event.key.keysym.sym == SDLK_ESCAPE) {
                     running = false;
-                    break;
-                case SDL_KEYDOWN:
-                    if (event.key.keysym.sym == SDLK_ESCAPE) {
-                        running = false;
-                    }
-                    break;
-                case SDL_WINDOWEVENT:
-                    if (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
-                        int w = event.window.data1;
-                        int h = event.window.data2;
-                        glViewport(0, 0, w, h);
-                        printf("Window resized: %dx%d\n", w, h);
-                    }
-                    break;
+                }
+                break;
+            case SDL_WINDOWEVENT:
+                if (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
+                    int w = event.window.data1;
+                    int h = event.window.data2;
+                    glViewport(0, 0, w, h);
+                    printf("Window resized: %dx%d\n", w, h);
+                }
+                break;
             }
         }
 

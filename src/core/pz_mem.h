@@ -1,6 +1,6 @@
 /*
  * Tank Game - Memory Management
- * 
+ *
  * All allocations should go through these functions for:
  * - Leak detection in debug builds
  * - Allocation tracking/statistics
@@ -10,8 +10,8 @@
 #ifndef PZ_MEM_H
 #define PZ_MEM_H
 
-#include <stddef.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 // Memory categories for tracking
 typedef enum {
@@ -31,18 +31,18 @@ void pz_mem_init(void);
 void pz_mem_shutdown(void);
 
 // Allocate memory (returns NULL on failure)
-void* pz_alloc(size_t size);
-void* pz_alloc_tagged(size_t size, pz_mem_category category);
+void *pz_alloc(size_t size);
+void *pz_alloc_tagged(size_t size, pz_mem_category category);
 
 // Allocate zeroed memory
-void* pz_calloc(size_t count, size_t size);
-void* pz_calloc_tagged(size_t count, size_t size, pz_mem_category category);
+void *pz_calloc(size_t count, size_t size);
+void *pz_calloc_tagged(size_t count, size_t size, pz_mem_category category);
 
 // Reallocate memory
-void* pz_realloc(void* ptr, size_t new_size);
+void *pz_realloc(void *ptr, size_t new_size);
 
 // Free memory
-void pz_free(void* ptr);
+void pz_free(void *ptr);
 
 // Get total allocated bytes
 size_t pz_mem_get_allocated(void);

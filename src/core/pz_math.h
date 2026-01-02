@@ -1,6 +1,6 @@
 /*
  * Tank Game - Math Library
- * 
+ *
  * Vector and matrix types for 3D rendering and 2D gameplay.
  */
 
@@ -16,17 +16,33 @@
 #define PZ_RAD2DEG (180.0f / PZ_PI)
 
 // Utility
-static inline float pz_clampf(float x, float min, float max) {
+static inline float
+pz_clampf(float x, float min, float max)
+{
     return x < min ? min : (x > max ? max : x);
 }
 
-static inline float pz_lerpf(float a, float b, float t) {
+static inline float
+pz_lerpf(float a, float b, float t)
+{
     return a + (b - a) * t;
 }
 
-static inline float pz_minf(float a, float b) { return a < b ? a : b; }
-static inline float pz_maxf(float a, float b) { return a > b ? a : b; }
-static inline float pz_absf(float x) { return x < 0 ? -x : x; }
+static inline float
+pz_minf(float a, float b)
+{
+    return a < b ? a : b;
+}
+static inline float
+pz_maxf(float a, float b)
+{
+    return a > b ? a : b;
+}
+static inline float
+pz_absf(float x)
+{
+    return x < 0 ? -x : x;
+}
 
 // ============================================================================
 // vec2 - 2D vector
@@ -36,65 +52,94 @@ typedef struct pz_vec2 {
     float x, y;
 } pz_vec2;
 
-static inline pz_vec2 pz_vec2_new(float x, float y) {
-    return (pz_vec2){ x, y };
+static inline pz_vec2
+pz_vec2_new(float x, float y)
+{
+    return (pz_vec2) { x, y };
 }
 
-static inline pz_vec2 pz_vec2_zero(void) {
-    return (pz_vec2){ 0.0f, 0.0f };
+static inline pz_vec2
+pz_vec2_zero(void)
+{
+    return (pz_vec2) { 0.0f, 0.0f };
 }
 
-static inline pz_vec2 pz_vec2_add(pz_vec2 a, pz_vec2 b) {
-    return (pz_vec2){ a.x + b.x, a.y + b.y };
+static inline pz_vec2
+pz_vec2_add(pz_vec2 a, pz_vec2 b)
+{
+    return (pz_vec2) { a.x + b.x, a.y + b.y };
 }
 
-static inline pz_vec2 pz_vec2_sub(pz_vec2 a, pz_vec2 b) {
-    return (pz_vec2){ a.x - b.x, a.y - b.y };
+static inline pz_vec2
+pz_vec2_sub(pz_vec2 a, pz_vec2 b)
+{
+    return (pz_vec2) { a.x - b.x, a.y - b.y };
 }
 
-static inline pz_vec2 pz_vec2_scale(pz_vec2 v, float s) {
-    return (pz_vec2){ v.x * s, v.y * s };
+static inline pz_vec2
+pz_vec2_scale(pz_vec2 v, float s)
+{
+    return (pz_vec2) { v.x * s, v.y * s };
 }
 
-static inline pz_vec2 pz_vec2_neg(pz_vec2 v) {
-    return (pz_vec2){ -v.x, -v.y };
+static inline pz_vec2
+pz_vec2_neg(pz_vec2 v)
+{
+    return (pz_vec2) { -v.x, -v.y };
 }
 
-static inline float pz_vec2_dot(pz_vec2 a, pz_vec2 b) {
+static inline float
+pz_vec2_dot(pz_vec2 a, pz_vec2 b)
+{
     return a.x * b.x + a.y * b.y;
 }
 
-static inline float pz_vec2_len_sq(pz_vec2 v) {
+static inline float
+pz_vec2_len_sq(pz_vec2 v)
+{
     return v.x * v.x + v.y * v.y;
 }
 
-static inline float pz_vec2_len(pz_vec2 v) {
+static inline float
+pz_vec2_len(pz_vec2 v)
+{
     return sqrtf(pz_vec2_len_sq(v));
 }
 
-static inline pz_vec2 pz_vec2_normalize(pz_vec2 v) {
+static inline pz_vec2
+pz_vec2_normalize(pz_vec2 v)
+{
     float len = pz_vec2_len(v);
-    if (len < 0.0001f) return pz_vec2_zero();
+    if (len < 0.0001f)
+        return pz_vec2_zero();
     return pz_vec2_scale(v, 1.0f / len);
 }
 
-static inline pz_vec2 pz_vec2_rotate(pz_vec2 v, float angle) {
+static inline pz_vec2
+pz_vec2_rotate(pz_vec2 v, float angle)
+{
     float c = cosf(angle);
     float s = sinf(angle);
-    return (pz_vec2){ v.x * c - v.y * s, v.x * s + v.y * c };
+    return (pz_vec2) { v.x * c - v.y * s, v.x * s + v.y * c };
 }
 
-static inline pz_vec2 pz_vec2_reflect(pz_vec2 v, pz_vec2 normal) {
+static inline pz_vec2
+pz_vec2_reflect(pz_vec2 v, pz_vec2 normal)
+{
     float d = 2.0f * pz_vec2_dot(v, normal);
     return pz_vec2_sub(v, pz_vec2_scale(normal, d));
 }
 
-static inline float pz_vec2_dist(pz_vec2 a, pz_vec2 b) {
+static inline float
+pz_vec2_dist(pz_vec2 a, pz_vec2 b)
+{
     return pz_vec2_len(pz_vec2_sub(a, b));
 }
 
-static inline pz_vec2 pz_vec2_lerp(pz_vec2 a, pz_vec2 b, float t) {
-    return (pz_vec2){ pz_lerpf(a.x, b.x, t), pz_lerpf(a.y, b.y, t) };
+static inline pz_vec2
+pz_vec2_lerp(pz_vec2 a, pz_vec2 b, float t)
+{
+    return (pz_vec2) { pz_lerpf(a.x, b.x, t), pz_lerpf(a.y, b.y, t) };
 }
 
 // ============================================================================
@@ -105,62 +150,81 @@ typedef struct pz_vec3 {
     float x, y, z;
 } pz_vec3;
 
-static inline pz_vec3 pz_vec3_new(float x, float y, float z) {
-    return (pz_vec3){ x, y, z };
+static inline pz_vec3
+pz_vec3_new(float x, float y, float z)
+{
+    return (pz_vec3) { x, y, z };
 }
 
-static inline pz_vec3 pz_vec3_zero(void) {
-    return (pz_vec3){ 0.0f, 0.0f, 0.0f };
+static inline pz_vec3
+pz_vec3_zero(void)
+{
+    return (pz_vec3) { 0.0f, 0.0f, 0.0f };
 }
 
-static inline pz_vec3 pz_vec3_add(pz_vec3 a, pz_vec3 b) {
-    return (pz_vec3){ a.x + b.x, a.y + b.y, a.z + b.z };
+static inline pz_vec3
+pz_vec3_add(pz_vec3 a, pz_vec3 b)
+{
+    return (pz_vec3) { a.x + b.x, a.y + b.y, a.z + b.z };
 }
 
-static inline pz_vec3 pz_vec3_sub(pz_vec3 a, pz_vec3 b) {
-    return (pz_vec3){ a.x - b.x, a.y - b.y, a.z - b.z };
+static inline pz_vec3
+pz_vec3_sub(pz_vec3 a, pz_vec3 b)
+{
+    return (pz_vec3) { a.x - b.x, a.y - b.y, a.z - b.z };
 }
 
-static inline pz_vec3 pz_vec3_scale(pz_vec3 v, float s) {
-    return (pz_vec3){ v.x * s, v.y * s, v.z * s };
+static inline pz_vec3
+pz_vec3_scale(pz_vec3 v, float s)
+{
+    return (pz_vec3) { v.x * s, v.y * s, v.z * s };
 }
 
-static inline pz_vec3 pz_vec3_neg(pz_vec3 v) {
-    return (pz_vec3){ -v.x, -v.y, -v.z };
+static inline pz_vec3
+pz_vec3_neg(pz_vec3 v)
+{
+    return (pz_vec3) { -v.x, -v.y, -v.z };
 }
 
-static inline float pz_vec3_dot(pz_vec3 a, pz_vec3 b) {
+static inline float
+pz_vec3_dot(pz_vec3 a, pz_vec3 b)
+{
     return a.x * b.x + a.y * b.y + a.z * b.z;
 }
 
-static inline pz_vec3 pz_vec3_cross(pz_vec3 a, pz_vec3 b) {
-    return (pz_vec3){
-        a.y * b.z - a.z * b.y,
-        a.z * b.x - a.x * b.z,
-        a.x * b.y - a.y * b.x
-    };
+static inline pz_vec3
+pz_vec3_cross(pz_vec3 a, pz_vec3 b)
+{
+    return (pz_vec3) { a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z,
+        a.x * b.y - a.y * b.x };
 }
 
-static inline float pz_vec3_len_sq(pz_vec3 v) {
+static inline float
+pz_vec3_len_sq(pz_vec3 v)
+{
     return v.x * v.x + v.y * v.y + v.z * v.z;
 }
 
-static inline float pz_vec3_len(pz_vec3 v) {
+static inline float
+pz_vec3_len(pz_vec3 v)
+{
     return sqrtf(pz_vec3_len_sq(v));
 }
 
-static inline pz_vec3 pz_vec3_normalize(pz_vec3 v) {
+static inline pz_vec3
+pz_vec3_normalize(pz_vec3 v)
+{
     float len = pz_vec3_len(v);
-    if (len < 0.0001f) return pz_vec3_zero();
+    if (len < 0.0001f)
+        return pz_vec3_zero();
     return pz_vec3_scale(v, 1.0f / len);
 }
 
-static inline pz_vec3 pz_vec3_lerp(pz_vec3 a, pz_vec3 b, float t) {
-    return (pz_vec3){
-        pz_lerpf(a.x, b.x, t),
-        pz_lerpf(a.y, b.y, t),
-        pz_lerpf(a.z, b.z, t)
-    };
+static inline pz_vec3
+pz_vec3_lerp(pz_vec3 a, pz_vec3 b, float t)
+{
+    return (pz_vec3) { pz_lerpf(a.x, b.x, t), pz_lerpf(a.y, b.y, t),
+        pz_lerpf(a.z, b.z, t) };
 }
 
 // ============================================================================
@@ -171,20 +235,28 @@ typedef struct pz_vec4 {
     float x, y, z, w;
 } pz_vec4;
 
-static inline pz_vec4 pz_vec4_new(float x, float y, float z, float w) {
-    return (pz_vec4){ x, y, z, w };
+static inline pz_vec4
+pz_vec4_new(float x, float y, float z, float w)
+{
+    return (pz_vec4) { x, y, z, w };
 }
 
-static inline pz_vec4 pz_vec4_from_vec3(pz_vec3 v, float w) {
-    return (pz_vec4){ v.x, v.y, v.z, w };
+static inline pz_vec4
+pz_vec4_from_vec3(pz_vec3 v, float w)
+{
+    return (pz_vec4) { v.x, v.y, v.z, w };
 }
 
-static inline pz_vec4 pz_vec4_add(pz_vec4 a, pz_vec4 b) {
-    return (pz_vec4){ a.x + b.x, a.y + b.y, a.z + b.z, a.w + b.w };
+static inline pz_vec4
+pz_vec4_add(pz_vec4 a, pz_vec4 b)
+{
+    return (pz_vec4) { a.x + b.x, a.y + b.y, a.z + b.z, a.w + b.w };
 }
 
-static inline pz_vec4 pz_vec4_scale(pz_vec4 v, float s) {
-    return (pz_vec4){ v.x * s, v.y * s, v.z * s, v.w * s };
+static inline pz_vec4
+pz_vec4_scale(pz_vec4 v, float s)
+{
+    return (pz_vec4) { v.x * s, v.y * s, v.z * s, v.w * s };
 }
 
 // ============================================================================
@@ -220,7 +292,8 @@ pz_mat4 pz_mat4_scale(pz_vec3 s);
 pz_mat4 pz_mat4_perspective(float fov, float aspect, float near, float far);
 
 // Orthographic projection
-pz_mat4 pz_mat4_ortho(float left, float right, float bottom, float top, float near, float far);
+pz_mat4 pz_mat4_ortho(
+    float left, float right, float bottom, float top, float near, float far);
 
 // Look-at view matrix
 pz_mat4 pz_mat4_look_at(pz_vec3 eye, pz_vec3 target, pz_vec3 up);
