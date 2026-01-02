@@ -68,6 +68,7 @@ set(GAME_SOURCES
     src/game/pz_powerup.c
     src/game/pz_projectile.c
     src/game/pz_tank.c
+    src/game/pz_ai.c
     # src/game/pz_game.c
     # src/game/pz_mine.c
     # src/game/pz_pickup.c

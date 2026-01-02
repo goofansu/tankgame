@@ -16,6 +16,7 @@
 // Maximum map dimensions
 #define PZ_MAP_MAX_SIZE 64
 #define PZ_MAP_MAX_SPAWNS 32
+#define PZ_MAP_MAX_ENEMIES 16
 
 // Terrain tile types
 typedef enum pz_tile_type {
@@ -35,6 +36,13 @@ typedef struct pz_spawn_point {
     bool team_spawn; // true = team mode only, false = FFA
 } pz_spawn_point;
 
+// Enemy spawn data (for AI-controlled tanks)
+typedef struct pz_enemy_spawn {
+    pz_vec2 pos;
+    float angle; // Facing direction in radians
+    int level; // Enemy level (1, 2, or 3)
+} pz_enemy_spawn;
+
 // Map structure
 typedef struct pz_map {
     char name[64];
@@ -48,9 +56,13 @@ typedef struct pz_map {
     // Height map for walls (0 = floor, 1-9 = wall height)
     uint8_t *height_map;
 
-    // Spawn points
+    // Spawn points (for player)
     pz_spawn_point spawns[PZ_MAP_MAX_SPAWNS];
     int spawn_count;
+
+    // Enemy spawns (for AI-controlled tanks)
+    pz_enemy_spawn enemies[PZ_MAP_MAX_ENEMIES];
+    int enemy_count;
 
     // Bounds (in world units)
     float world_width;
@@ -92,6 +104,10 @@ bool pz_map_in_bounds_world(const pz_map *map, pz_vec2 world_pos);
 // Spawn point helpers
 const pz_spawn_point *pz_map_get_spawn(const pz_map *map, int index);
 int pz_map_get_spawn_count(const pz_map *map);
+
+// Enemy spawn helpers
+const pz_enemy_spawn *pz_map_get_enemy(const pz_map *map, int index);
+int pz_map_get_enemy_count(const pz_map *map);
 
 // Debug: print map to console
 void pz_map_print(const pz_map *map);

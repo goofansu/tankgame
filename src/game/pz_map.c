@@ -335,6 +335,21 @@ pz_map_get_spawn_count(const pz_map *map)
     return map ? map->spawn_count : 0;
 }
 
+const pz_enemy_spawn *
+pz_map_get_enemy(const pz_map *map, int index)
+{
+    if (!map || index < 0 || index >= map->enemy_count) {
+        return NULL;
+    }
+    return &map->enemies[index];
+}
+
+int
+pz_map_get_enemy_count(const pz_map *map)
+{
+    return map ? map->enemy_count : 0;
+}
+
 void
 pz_map_print(const pz_map *map)
 {
@@ -603,6 +618,22 @@ pz_map_load(const char *path)
             continue;
         }
 
+        // Check for enemy spawn
+        if (strncmp(p, "enemy ", 6) == 0) {
+            float ex, ey, angle;
+            int level;
+            if (sscanf(p + 6, "%f %f %f %d", &ex, &ey, &angle, &level) == 4) {
+                if (map->enemy_count < PZ_MAP_MAX_ENEMIES) {
+                    map->enemies[map->enemy_count++] = (pz_enemy_spawn) {
+                        .pos = { ex, ey },
+                        .angle = angle,
+                        .level = level,
+                    };
+                }
+            }
+            continue;
+        }
+
         // Parse height row
         int y = height - 1 - height_rows_read;
         for (int x = 0; x < width && p[x]; x++) {
@@ -613,7 +644,7 @@ pz_map_load(const char *path)
         height_rows_read++;
     }
 
-    // Continue reading for any remaining spawns
+    // Continue reading for any remaining spawns and enemies
     while (read_line(&text, line, sizeof(line))) {
         const char *p = skip_whitespace(line);
         if (!*p || *p == '#') {
@@ -632,6 +663,18 @@ pz_map_load(const char *path)
                         .angle = angle,
                         .team = team,
                         .team_spawn = team_spawn != 0,
+                    };
+                }
+            }
+        } else if (strncmp(p, "enemy ", 6) == 0) {
+            float ex, ey, angle;
+            int level;
+            if (sscanf(p + 6, "%f %f %f %d", &ex, &ey, &angle, &level) == 4) {
+                if (map->enemy_count < PZ_MAP_MAX_ENEMIES) {
+                    map->enemies[map->enemy_count++] = (pz_enemy_spawn) {
+                        .pos = { ex, ey },
+                        .angle = angle,
+                        .level = level,
                     };
                 }
             }
@@ -656,7 +699,7 @@ pz_map_save(const pz_map *map, const char *path)
     // Build map file content
     // Calculate approximate size needed
     size_t buf_size = 1024 + (size_t)(map->width + 2) * (size_t)map->height * 2
-        + (size_t)map->spawn_count * 64;
+        + (size_t)map->spawn_count * 64 + (size_t)map->enemy_count * 64;
     char *buf = pz_alloc(buf_size);
     if (!buf) {
         return false;
@@ -714,6 +757,21 @@ pz_map_save(const pz_map *map, const char *path)
             written = snprintf(p, remaining, "spawn %.2f %.2f %.3f %d %d\n",
                 sp->pos.x, sp->pos.y, sp->angle, sp->team,
                 sp->team_spawn ? 1 : 0);
+            p += written;
+            remaining -= written;
+        }
+    }
+
+    // Enemy spawns
+    if (map->enemy_count > 0 && remaining > 64) {
+        written = snprintf(p, remaining, "\n");
+        p += written;
+        remaining -= written;
+
+        for (int i = 0; i < map->enemy_count && remaining > 64; i++) {
+            const pz_enemy_spawn *es = &map->enemies[i];
+            written = snprintf(p, remaining, "enemy %.2f %.2f %.3f %d\n",
+                es->pos.x, es->pos.y, es->angle, es->level);
             p += written;
             remaining -= written;
         }

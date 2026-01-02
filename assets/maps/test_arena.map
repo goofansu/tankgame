@@ -36,7 +36,13 @@ heights
 200220000220000220000002
 222222222222222222222222
 
-spawn 4.00 4.00 0.785 0 0
-spawn 44.00 4.00 2.356 0 0
-spawn 4.00 24.00 -0.785 0 0
-spawn 44.00 24.00 -2.356 0 0
+# Player spawns (world coords centered at origin)
+# Map is 48x28 world units, so valid range is roughly -23 to +23 on X, -13 to +13 on Y
+spawn -20.00 -10.00 0.785 0 0
+spawn 20.00 -10.00 2.356 0 0
+spawn -20.00 10.00 -0.785 0 0
+spawn 20.00 10.00 -2.356 0 0
+
+# Enemy spawns: x y angle level
+# Level 1 enemy in the center-right area
+enemy 10.0 0.0 3.14 1

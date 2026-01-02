@@ -20,6 +20,7 @@
 #include "engine/pz_debug_overlay.h"
 #include "engine/render/pz_renderer.h"
 #include "engine/render/pz_texture.h"
+#include "game/pz_ai.h"
 #include "game/pz_map.h"
 #include "game/pz_map_render.h"
 #include "game/pz_mesh.h"
@@ -218,14 +219,35 @@ main(int argc, char *argv[])
     // ========================================================================
     pz_tank_manager *tank_mgr = pz_tank_manager_create(renderer, NULL);
 
-    // Spawn player tank (olive green)
-    pz_tank *player_tank = pz_tank_spawn(tank_mgr, (pz_vec2) { 12.0f, 7.0f },
-        (pz_vec4) { 0.3f, 0.5f, 0.3f, 1.0f }, true);
+    // Spawn player tank at first spawn point (olive green)
+    pz_vec2 player_spawn_pos = { 12.0f, 7.0f }; // Default
+    if (game_map && pz_map_get_spawn_count(game_map) > 0) {
+        const pz_spawn_point *sp = pz_map_get_spawn(game_map, 0);
+        if (sp) {
+            player_spawn_pos = sp->pos;
+        }
+    }
+    pz_tank *player_tank = pz_tank_spawn(
+        tank_mgr, player_spawn_pos, (pz_vec4) { 0.3f, 0.5f, 0.3f, 1.0f }, true);
 
-    // Spawn an enemy tank for testing (red-ish)
-    pz_tank *enemy_tank = pz_tank_spawn(tank_mgr, (pz_vec2) { 18.0f, 10.0f },
-        (pz_vec4) { 0.6f, 0.25f, 0.25f, 1.0f }, false);
-    (void)enemy_tank; // Silence unused warning
+    // ========================================================================
+    // AI system (M7B.1, M7B.2 - enemy AI)
+    // ========================================================================
+    pz_ai_manager *ai_mgr = pz_ai_manager_create(tank_mgr, game_map);
+
+    // Spawn enemies from map data
+    if (game_map && ai_mgr) {
+        int enemy_count = pz_map_get_enemy_count(game_map);
+        for (int i = 0; i < enemy_count; i++) {
+            const pz_enemy_spawn *es = pz_map_get_enemy(game_map, i);
+            if (es) {
+                pz_ai_spawn_enemy(
+                    ai_mgr, es->pos, es->angle, (pz_enemy_level)es->level);
+            }
+        }
+        pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME, "Spawned %d enemies from map",
+            enemy_count);
+    }
 
     // ========================================================================
     // Projectile system (M6.1, M6.2, M6.3, M6.4)
@@ -497,8 +519,17 @@ main(int argc, char *argv[])
             }
         }
 
-        // Update all tanks (respawn timers, AI, etc.)
+        // Update all tanks (respawn timers, etc.)
         pz_tank_update_all(tank_mgr, game_map, dt);
+
+        // ====================================================================
+        // Update AI-controlled enemies
+        // ====================================================================
+        if (ai_mgr && player_tank
+            && !(player_tank->flags & PZ_TANK_FLAG_DEAD)) {
+            pz_ai_update(ai_mgr, player_tank->pos, dt);
+            pz_ai_fire(ai_mgr, projectile_mgr);
+        }
 
         // ====================================================================
         // Update powerups (animation, respawn timers)
@@ -685,6 +716,9 @@ main(int argc, char *argv[])
     if (laser_shader != PZ_INVALID_HANDLE) {
         pz_renderer_destroy_shader(renderer, laser_shader);
     }
+
+    // Cleanup AI system
+    pz_ai_manager_destroy(ai_mgr);
 
     // Cleanup tank system
     pz_tank_manager_destroy(tank_mgr, renderer);

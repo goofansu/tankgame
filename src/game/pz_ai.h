@@ -1,0 +1,135 @@
+/*
+ * Tank Game - Enemy AI System
+ *
+ * AI controllers that generate pz_tank_input for CPU-controlled tanks.
+ * AI tanks have the same constraints as players - they can only "send inputs"
+ * as if they were human players (no cheating like teleporting or instant aim).
+ */
+
+#ifndef PZ_AI_H
+#define PZ_AI_H
+
+#include <stdbool.h>
+#include <stdint.h>
+
+#include "../core/pz_math.h"
+#include "pz_tank.h"
+
+// Forward declarations
+typedef struct pz_map pz_map;
+typedef struct pz_tank_manager pz_tank_manager;
+typedef struct pz_projectile_manager pz_projectile_manager;
+
+/* ============================================================================
+ * Enemy Types
+ * ============================================================================
+ *
+ * Level 1: Basic enemy
+ *   - 10 HP
+ *   - Default weapon (1 bounce)
+ *   - Normal fire rate
+ *   - Stationary (turret only)
+ *
+ * Level 2: Intermediate enemy
+ *   - 15 HP
+ *   - Default weapon (1 bounce)
+ *   - Faster fire rate
+ *   - Stationary (turret only)
+ *
+ * Level 3: Advanced enemy
+ *   - 20 HP
+ *   - Heavy weapon (2 bounces)
+ *   - Fast fire rate
+ *   - Stationary (turret only)
+ */
+
+typedef enum {
+    PZ_ENEMY_LEVEL_1 = 1,
+    PZ_ENEMY_LEVEL_2 = 2,
+    PZ_ENEMY_LEVEL_3 = 3,
+} pz_enemy_level;
+
+// Enemy stats based on level
+typedef struct pz_enemy_stats {
+    int health;
+    int max_bounces; // Weapon bounces
+    float fire_cooldown; // Seconds between shots
+    float aim_speed; // Turret rotation speed multiplier
+    pz_vec4 body_color; // Tank body color
+} pz_enemy_stats;
+
+// Get stats for an enemy level
+const pz_enemy_stats *pz_enemy_get_stats(pz_enemy_level level);
+
+/* ============================================================================
+ * AI Controller
+ * ============================================================================
+ */
+
+// AI state for a single enemy
+typedef struct pz_ai_controller {
+    int tank_id; // Which tank this AI controls
+    pz_enemy_level level; // Enemy level (determines behavior)
+
+    // Aiming state
+    float current_aim_angle; // Current turret aim (for smoothing)
+    float target_aim_angle; // Target angle towards player
+
+    // Firing state
+    float fire_timer; // Countdown to next shot
+    bool can_see_player; // Line-of-sight to player?
+
+    // Behavior timers
+    float reaction_delay; // Delay before reacting to player movement
+    float last_seen_time; // When we last saw the player
+} pz_ai_controller;
+
+/* ============================================================================
+ * AI Manager
+ * ============================================================================
+ */
+
+#define PZ_MAX_AI_CONTROLLERS 16
+
+typedef struct pz_ai_manager {
+    pz_ai_controller controllers[PZ_MAX_AI_CONTROLLERS];
+    int controller_count;
+
+    // References to game systems (not owned)
+    pz_tank_manager *tank_mgr;
+    const pz_map *map;
+} pz_ai_manager;
+
+// Create/destroy AI manager
+pz_ai_manager *pz_ai_manager_create(
+    pz_tank_manager *tank_mgr, const pz_map *map);
+void pz_ai_manager_destroy(pz_ai_manager *ai_mgr);
+
+// Update map reference (for hot-reload)
+void pz_ai_manager_set_map(pz_ai_manager *ai_mgr, const pz_map *map);
+
+// Spawn an AI-controlled enemy tank
+// Returns the tank pointer, or NULL if failed
+pz_tank *pz_ai_spawn_enemy(
+    pz_ai_manager *ai_mgr, pz_vec2 pos, float angle, pz_enemy_level level);
+
+// Update all AI controllers
+// This generates pz_tank_input for each AI-controlled tank
+// player_pos is the position of the player tank (for aiming)
+void pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos, float dt);
+
+// Fire projectiles for AI tanks that want to fire
+// This should be called after pz_ai_update
+// Returns the number of projectiles fired
+int pz_ai_fire(pz_ai_manager *ai_mgr, pz_projectile_manager *proj_mgr);
+
+// Get count of alive AI-controlled enemies
+int pz_ai_count_alive(const pz_ai_manager *ai_mgr);
+
+// Check if a tank is AI-controlled
+bool pz_ai_is_controlled(const pz_ai_manager *ai_mgr, int tank_id);
+
+// Get the AI controller for a tank (NULL if not AI-controlled)
+pz_ai_controller *pz_ai_get_controller(pz_ai_manager *ai_mgr, int tank_id);
+
+#endif // PZ_AI_H
