@@ -30,3 +30,5 @@
 
 ## Phase 4: First Entity - The Tank
 - [x] M4.1: tank body mesh, turret mesh, entity shader, renders at origin
+- [x] Tank physics: heavy friction (25.0) for quick stopping
+- [x] Wall collision detection (separate axis, sliding along walls)

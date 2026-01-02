@@ -231,11 +231,15 @@ main(int argc, char *argv[])
     float turret_angle = 0.0f; // Turret rotation (world space, radians)
 
     // Tank movement parameters
-    const float tank_accel = 15.0f; // Acceleration
-    const float tank_friction = 8.0f; // Friction/damping
+    const float tank_accel = 40.0f; // Acceleration (must be > friction)
+    const float tank_friction
+        = 25.0f; // Friction/damping (heavy tank stops fast)
     const float tank_max_speed = 5.0f; // Max speed
     const float tank_turn_speed = 5.0f; // Body turn rate (rad/s)
     const float turret_turn_speed = 8.0f; // Turret turn rate (rad/s)
+
+    // Tank collision parameters
+    const float tank_radius = 0.7f; // Collision radius (half of body width)
 
     // ========================================================================
     // Main loop
@@ -310,18 +314,27 @@ main(int argc, char *argv[])
         const Uint8 *keys = SDL_GetKeyboardState(NULL);
 
         // Get movement input (tank_pos.x = world X, tank_pos.y = world Z)
-        // Camera looks from -Z towards +Z, so:
-        // Screen up = +Z, Screen down = -Z
-        // Screen left = +X, Screen right = -X
+        //
+        // IMPORTANT - SCREEN TO WORLD MAPPING (DO NOT CHANGE):
+        // The camera looks from -Z towards +Z, positioned above.
+        // This means world +X appears as LEFT on screen, -X as RIGHT.
+        // World +Z appears as UP on screen, -Z as DOWN.
+        //
+        // So the mapping is:
+        //   W/Up    -> +Y (which is +Z in 3D) -> moves tank UP on screen
+        //   S/Down  -> -Y (which is -Z in 3D) -> moves tank DOWN on screen
+        //   A/Left  -> +X                     -> moves tank LEFT on screen
+        //   D/Right -> -X                     -> moves tank RIGHT on screen
+        //
         pz_vec2 input_dir = { 0.0f, 0.0f };
         if (keys[SDL_SCANCODE_W] || keys[SDL_SCANCODE_UP])
-            input_dir.y += 1.0f; // Up on screen = +Z
+            input_dir.y += 1.0f;
         if (keys[SDL_SCANCODE_S] || keys[SDL_SCANCODE_DOWN])
-            input_dir.y -= 1.0f; // Down on screen = -Z
+            input_dir.y -= 1.0f;
         if (keys[SDL_SCANCODE_A] || keys[SDL_SCANCODE_LEFT])
-            input_dir.x += 1.0f; // Left on screen = +X
+            input_dir.x += 1.0f;
         if (keys[SDL_SCANCODE_D] || keys[SDL_SCANCODE_RIGHT])
-            input_dir.x -= 1.0f; // Right on screen = -X
+            input_dir.x -= 1.0f;
 
         // Apply acceleration in input direction
         if (pz_vec2_len_sq(input_dir) > 0.0f) {
@@ -358,7 +371,89 @@ main(int argc, char *argv[])
         }
 
         // Update position
-        tank_pos = pz_vec2_add(tank_pos, pz_vec2_scale(tank_vel, dt));
+        pz_vec2 new_pos = pz_vec2_add(tank_pos, pz_vec2_scale(tank_vel, dt));
+
+        // ====================================================================
+        // Wall collision detection
+        // ====================================================================
+        if (game_map) {
+            // Separate axis collision: test X and Y movement independently
+            // to allow sliding along walls. Check multiple points around
+            // the tank's collision circle.
+
+            // Try X movement first (keeping Y at old position)
+            pz_vec2 test_x = { new_pos.x, tank_pos.y };
+            bool blocked_x = false;
+            pz_vec2 x_points[4] = {
+                { test_x.x + tank_radius, test_x.y },
+                { test_x.x - tank_radius, test_x.y },
+                { test_x.x + tank_radius, test_x.y + tank_radius * 0.7f },
+                { test_x.x + tank_radius, test_x.y - tank_radius * 0.7f },
+            };
+            // Also check the opposite corners
+            pz_vec2 x_points2[2] = {
+                { test_x.x - tank_radius, test_x.y + tank_radius * 0.7f },
+                { test_x.x - tank_radius, test_x.y - tank_radius * 0.7f },
+            };
+            for (int i = 0; i < 4; i++) {
+                if (pz_map_is_solid(game_map, x_points[i])) {
+                    blocked_x = true;
+                    break;
+                }
+            }
+            if (!blocked_x) {
+                for (int i = 0; i < 2; i++) {
+                    if (pz_map_is_solid(game_map, x_points2[i])) {
+                        blocked_x = true;
+                        break;
+                    }
+                }
+            }
+
+            // Try Y (Z in world) movement (keeping X at old position)
+            pz_vec2 test_y = { tank_pos.x, new_pos.y };
+            bool blocked_y = false;
+            pz_vec2 y_points[4] = {
+                { test_y.x, test_y.y + tank_radius },
+                { test_y.x, test_y.y - tank_radius },
+                { test_y.x + tank_radius * 0.7f, test_y.y + tank_radius },
+                { test_y.x - tank_radius * 0.7f, test_y.y + tank_radius },
+            };
+            pz_vec2 y_points2[2] = {
+                { test_y.x + tank_radius * 0.7f, test_y.y - tank_radius },
+                { test_y.x - tank_radius * 0.7f, test_y.y - tank_radius },
+            };
+            for (int i = 0; i < 4; i++) {
+                if (pz_map_is_solid(game_map, y_points[i])) {
+                    blocked_y = true;
+                    break;
+                }
+            }
+            if (!blocked_y) {
+                for (int i = 0; i < 2; i++) {
+                    if (pz_map_is_solid(game_map, y_points2[i])) {
+                        blocked_y = true;
+                        break;
+                    }
+                }
+            }
+
+            // Apply valid movement components
+            if (!blocked_x) {
+                tank_pos.x = new_pos.x;
+            } else {
+                tank_vel.x = 0; // Stop X velocity on collision
+            }
+
+            if (!blocked_y) {
+                tank_pos.y = new_pos.y;
+            } else {
+                tank_vel.y = 0; // Stop Y velocity on collision
+            }
+        } else {
+            // No map, just move freely
+            tank_pos = new_pos;
+        }
 
         // ====================================================================
         // Turret aiming (mouse controls)
