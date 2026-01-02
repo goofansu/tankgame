@@ -3,6 +3,7 @@
  */
 
 #include "pz_tank.h"
+#include "pz_powerup.h"
 
 #include <math.h>
 #include <string.h>
@@ -32,6 +33,21 @@ static const float INVULN_DURATION = 1.5f;
 
 // Default health
 static const int DEFAULT_HEALTH = 10;
+
+// Update turret color to match current weapon's projectile color
+static void
+update_turret_color(pz_tank *tank)
+{
+    if (!tank)
+        return;
+
+    int weapon_type = pz_tank_get_current_weapon(tank);
+    const pz_weapon_stats *stats
+        = pz_weapon_get_stats((pz_powerup_type)weapon_type);
+
+    // Use the projectile color for the turret
+    tank->turret_color = stats->projectile_color;
+}
 
 /* ============================================================================
  * Default Configuration
@@ -176,14 +192,14 @@ pz_tank_spawn(pz_tank_manager *mgr, pz_vec2 pos, pz_vec4 color, bool is_player)
     tank->max_health = DEFAULT_HEALTH;
     tank->fire_cooldown = 0.0f;
 
+    // Initialize loadout with default weapon
+    tank->loadout[0] = PZ_POWERUP_NONE; // Default cannon
+    tank->loadout_count = 1;
+    tank->loadout_index = 0;
+
     tank->body_color = color;
-    // Turret is slightly darker
-    tank->turret_color = (pz_vec4) {
-        color.x * 0.85f,
-        color.y * 0.85f,
-        color.z * 0.85f,
-        color.w,
-    };
+    // Turret color matches current weapon's projectile color
+    update_turret_color(tank);
 
     mgr->tank_count++;
 
@@ -514,6 +530,77 @@ pz_tank_respawn(pz_tank *tank)
 
     pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME, "Tank %d respawned at (%.2f, %.2f)",
         tank->id, tank->spawn_pos.x, tank->spawn_pos.y);
+}
+
+/* ============================================================================
+ * Weapon Loadout
+ * ============================================================================
+ */
+
+bool
+pz_tank_add_weapon(pz_tank *tank, int weapon_type)
+{
+    if (!tank)
+        return false;
+
+    // Check if already in loadout
+    for (int i = 0; i < tank->loadout_count; i++) {
+        if (tank->loadout[i] == weapon_type) {
+            // Already have this weapon, switch to it
+            tank->loadout_index = i;
+            update_turret_color(tank);
+            return false;
+        }
+    }
+
+    // Add to loadout if there's room
+    if (tank->loadout_count >= PZ_MAX_LOADOUT_WEAPONS) {
+        pz_log(PZ_LOG_WARN, PZ_LOG_CAT_GAME, "Loadout full, cannot add weapon");
+        return false;
+    }
+
+    tank->loadout[tank->loadout_count] = weapon_type;
+    tank->loadout_index = tank->loadout_count; // Switch to new weapon
+    tank->loadout_count++;
+
+    update_turret_color(tank);
+
+    pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
+        "Added weapon to loadout, now have %d weapons", tank->loadout_count);
+
+    return true;
+}
+
+void
+pz_tank_cycle_weapon(pz_tank *tank, int scroll_delta)
+{
+    if (!tank || tank->loadout_count <= 1)
+        return;
+
+    // Cycle through loadout
+    tank->loadout_index += scroll_delta;
+
+    // Wrap around
+    if (tank->loadout_index < 0) {
+        tank->loadout_index = tank->loadout_count - 1;
+    } else if (tank->loadout_index >= tank->loadout_count) {
+        tank->loadout_index = 0;
+    }
+
+    update_turret_color(tank);
+
+    int weapon = tank->loadout[tank->loadout_index];
+    pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME, "Switched to weapon %d (%s)",
+        tank->loadout_index, pz_powerup_type_name((pz_powerup_type)weapon));
+}
+
+int
+pz_tank_get_current_weapon(const pz_tank *tank)
+{
+    if (!tank || tank->loadout_count == 0)
+        return PZ_POWERUP_NONE;
+
+    return tank->loadout[tank->loadout_index];
 }
 
 /* ============================================================================

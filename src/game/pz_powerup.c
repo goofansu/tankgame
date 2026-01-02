@@ -315,22 +315,9 @@ pz_powerup_render(pz_powerup_manager *mgr, pz_renderer *renderer,
         float bob = sinf(powerup->bob_offset) * BOB_AMPLITUDE;
         float height = POWERUP_HEIGHT + bob;
 
-        // Color based on powerup type
-        pz_vec4 color;
-        switch (powerup->type) {
-        case PZ_POWERUP_MACHINE_GUN:
-            // Orange/red for machine gun
-            color = (pz_vec4) { 0.9f, 0.4f, 0.1f, 1.0f };
-            break;
-        case PZ_POWERUP_RICOCHET:
-            // Green for ricochet
-            color = (pz_vec4) { 0.2f, 0.9f, 0.3f, 1.0f };
-            break;
-        default:
-            // Gray for unknown
-            color = (pz_vec4) { 0.7f, 0.7f, 0.7f, 1.0f };
-            break;
-        }
+        // Color matches the weapon's projectile color
+        const pz_weapon_stats *stats = pz_weapon_get_stats(powerup->type);
+        pz_vec4 color = stats->projectile_color;
 
         // Build model matrix
         pz_mat4 model = pz_mat4_identity();

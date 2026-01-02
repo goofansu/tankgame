@@ -30,6 +30,9 @@ typedef enum {
 // Forward declaration for weapon type
 typedef enum pz_powerup_type pz_powerup_type;
 
+// Maximum weapons in loadout
+#define PZ_MAX_LOADOUT_WEAPONS 8
+
 // Tank structure
 typedef struct pz_tank {
     uint32_t flags;
@@ -46,8 +49,10 @@ typedef struct pz_tank {
     int max_health;
     float fire_cooldown;
 
-    // Current weapon (from powerups)
-    int current_weapon; // pz_powerup_type (stored as int to avoid circular dep)
+    // Weapon loadout (collected weapons)
+    int loadout[PZ_MAX_LOADOUT_WEAPONS]; // Array of pz_powerup_type values
+    int loadout_count; // Number of weapons in loadout
+    int loadout_index; // Currently selected weapon index
 
     // Respawn
     float respawn_timer; // Countdown when dead
@@ -57,7 +62,7 @@ typedef struct pz_tank {
     // Visual feedback
     float damage_flash; // Timer for damage flash effect (0 = no flash)
     pz_vec4 body_color;
-    pz_vec4 turret_color;
+    pz_vec4 turret_color; // Updated based on selected weapon
 } pz_tank;
 
 // Input for a tank (per-tick input state)
@@ -153,6 +158,21 @@ pz_tank *pz_tank_check_collision(
 
 // Respawn a dead tank at its spawn point
 void pz_tank_respawn(pz_tank *tank);
+
+/* ============================================================================
+ * Weapon Loadout
+ * ============================================================================
+ */
+
+// Add a weapon to the tank's loadout (returns true if added, false if already
+// has it)
+bool pz_tank_add_weapon(pz_tank *tank, int weapon_type);
+
+// Cycle weapon selection (scroll_delta: +1 = next, -1 = previous)
+void pz_tank_cycle_weapon(pz_tank *tank, int scroll_delta);
+
+// Get currently selected weapon type
+int pz_tank_get_current_weapon(const pz_tank *tank);
 
 /* ============================================================================
  * Rendering

@@ -309,6 +309,9 @@ main(int argc, char *argv[])
     int mouse_y = WINDOW_HEIGHT / 2;
     bool mouse_left_down = false; // Is left mouse button currently held?
     bool mouse_left_just_pressed = false; // Was it just pressed this frame?
+    float scroll_accumulator = 0.0f; // Accumulated scroll for weapon switching
+    const float SCROLL_THRESHOLD = 3.0f; // Amount of scroll needed to switch
+    bool key_f_just_pressed = false; // F key for cycling weapons
 
     while (running) {
         // Poll debug commands
@@ -333,6 +336,8 @@ main(int argc, char *argv[])
                         pz_renderer_save_screenshot(renderer, path);
                         pz_free(path);
                     }
+                } else if (event.key.keysym.sym == SDLK_f) {
+                    key_f_just_pressed = true;
                 }
                 break;
             case SDL_MOUSEMOTION: {
@@ -349,6 +354,11 @@ main(int argc, char *argv[])
                 if (event.button.button == SDL_BUTTON_LEFT) {
                     mouse_left_down = false;
                 }
+                break;
+            case SDL_MOUSEWHEEL:
+                // Scroll wheel for weapon switching (accumulate for touchpad)
+                // y > 0 = scroll up, y < 0 = scroll down
+                scroll_accumulator += (float)event.wheel.y;
                 break;
             case SDL_WINDOWEVENT:
                 if (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
@@ -423,12 +433,26 @@ main(int argc, char *argv[])
             }
 
             // ====================================================================
+            // Weapon switching (scroll wheel with threshold, or F key)
+            // ====================================================================
+            if (scroll_accumulator >= SCROLL_THRESHOLD) {
+                pz_tank_cycle_weapon(player_tank, 1);
+                scroll_accumulator = 0.0f;
+            } else if (scroll_accumulator <= -SCROLL_THRESHOLD) {
+                pz_tank_cycle_weapon(player_tank, -1);
+                scroll_accumulator = 0.0f;
+            }
+            if (key_f_just_pressed) {
+                pz_tank_cycle_weapon(player_tank, 1);
+            }
+
+            // ====================================================================
             // Powerup collection
             // ====================================================================
             pz_powerup_type collected = pz_powerup_check_collection(
                 powerup_mgr, player_tank->pos, 0.7f); // Tank collision radius
             if (collected != PZ_POWERUP_NONE) {
-                player_tank->current_weapon = (int)collected;
+                pz_tank_add_weapon(player_tank, (int)collected);
                 pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME, "Player collected: %s",
                     pz_powerup_type_name(collected));
             }
@@ -437,8 +461,9 @@ main(int argc, char *argv[])
             // Firing (left mouse button)
             // ====================================================================
             // Get weapon stats for current weapon
-            const pz_weapon_stats *weapon = pz_weapon_get_stats(
-                (pz_powerup_type)player_tank->current_weapon);
+            int current_weapon = pz_tank_get_current_weapon(player_tank);
+            const pz_weapon_stats *weapon
+                = pz_weapon_get_stats((pz_powerup_type)current_weapon);
 
             // Determine if we should fire:
             // - Auto-fire weapons fire when mouse is held down
@@ -641,6 +666,9 @@ main(int argc, char *argv[])
 
         // Reset per-frame input state
         mouse_left_just_pressed = false;
+        key_f_just_pressed = false;
+        // Note: scroll_accumulator is NOT reset - it accumulates until
+        // threshold
     }
 
     // Cleanup
