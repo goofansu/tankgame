@@ -75,6 +75,9 @@ pz_mesh *pz_mesh_create_tank_turret(void);
 // Create a simple projectile mesh (small elongated shape)
 pz_mesh *pz_mesh_create_projectile(void);
 
+// Create a powerup mesh (floating crate/box shape)
+pz_mesh *pz_mesh_create_powerup(void);
+
 /* ============================================================================
  * Vertex Layout Helper
  * ============================================================================

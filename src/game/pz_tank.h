@@ -27,6 +27,9 @@ typedef enum {
     PZ_TANK_FLAG_PLAYER = (1 << 3), // Is this a player-controlled tank?
 } pz_tank_flags;
 
+// Forward declaration for weapon type
+typedef enum pz_powerup_type pz_powerup_type;
+
 // Tank structure
 typedef struct pz_tank {
     uint32_t flags;
@@ -43,10 +46,13 @@ typedef struct pz_tank {
     int max_health;
     float fire_cooldown;
 
+    // Current weapon (from powerups)
+    int current_weapon; // pz_powerup_type (stored as int to avoid circular dep)
+
     // Respawn
     float respawn_timer; // Countdown when dead
-    float invuln_timer;  // Invulnerability time remaining
-    pz_vec2 spawn_pos;   // Where to respawn
+    float invuln_timer; // Invulnerability time remaining
+    pz_vec2 spawn_pos; // Where to respawn
 
     // Visual feedback
     float damage_flash; // Timer for damage flash effect (0 = no flash)

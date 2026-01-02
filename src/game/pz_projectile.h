@@ -35,6 +35,9 @@ typedef struct pz_projectile {
 
     int owner_id; // Who fired this (for friendly fire checks)
     int damage; // Damage on hit
+
+    float scale; // Visual scale
+    pz_vec4 color; // Projectile color
 } pz_projectile;
 
 // Projectile manager
@@ -55,6 +58,8 @@ typedef struct pz_projectile_config {
     int max_bounces; // Default: 1
     float lifetime; // Default: 5.0 seconds
     int damage; // Default: 1
+    float scale; // Visual scale (1.0 = normal)
+    pz_vec4 color; // Projectile color
 } pz_projectile_config;
 
 // Default configuration
@@ -86,5 +91,9 @@ void pz_projectile_render(pz_projectile_manager *mgr, pz_renderer *renderer,
 
 // Get number of active projectiles
 int pz_projectile_count(const pz_projectile_manager *mgr);
+
+// Get number of active projectiles owned by a specific tank
+int pz_projectile_count_by_owner(
+    const pz_projectile_manager *mgr, int owner_id);
 
 #endif // PZ_PROJECTILE_H

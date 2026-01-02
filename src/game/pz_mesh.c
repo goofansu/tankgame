@@ -749,4 +749,54 @@ pz_mesh_create_projectile(void)
     return mesh;
 }
 
-#include <math.h>
+/* ============================================================================
+ * Powerup Mesh
+ * ============================================================================
+ */
+
+pz_mesh *
+pz_mesh_create_powerup(void)
+{
+    pz_mesh *mesh = pz_mesh_create();
+
+    // Powerup is a small crate/box with a slight bevel
+    // Dimensions: 0.6 x 0.4 x 0.6 (width x height x depth)
+    float hw = 0.3f; // Half width (X)
+    float hh = 0.2f; // Half height (Y)
+    float hd = 0.3f; // Half depth (Z)
+
+    // 6 faces * 2 triangles * 3 vertices = 36 vertices
+    mesh->vertices = pz_alloc(36 * sizeof(pz_mesh_vertex));
+    pz_mesh_vertex *v = mesh->vertices;
+
+    // Top face (+Y)
+    v = emit_quad(v, -hw, hh, -hd, -hw, hh, hd, hw, hh, hd, hw, hh, -hd, 0, 1,
+        0, 0, 0, 1, 1);
+
+    // Bottom face (-Y)
+    v = emit_quad(v, -hw, -hh, hd, -hw, -hh, -hd, hw, -hh, -hd, hw, -hh, hd, 0,
+        -1, 0, 0, 0, 1, 1);
+
+    // Front face (+Z)
+    v = emit_quad(v, -hw, -hh, hd, hw, -hh, hd, hw, hh, hd, -hw, hh, hd, 0, 0,
+        1, 0, 0, 1, 1);
+
+    // Back face (-Z)
+    v = emit_quad(v, hw, -hh, -hd, -hw, -hh, -hd, -hw, hh, -hd, hw, hh, -hd, 0,
+        0, -1, 0, 0, 1, 1);
+
+    // Right face (+X)
+    v = emit_quad(v, hw, -hh, hd, hw, -hh, -hd, hw, hh, -hd, hw, hh, hd, 1, 0,
+        0, 0, 0, 1, 1);
+
+    // Left face (-X)
+    v = emit_quad(v, -hw, -hh, -hd, -hw, -hh, hd, -hw, hh, hd, -hw, hh, -hd, -1,
+        0, 0, 0, 0, 1, 1);
+
+    mesh->vertex_count = (int)(v - mesh->vertices);
+
+    pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME, "Powerup mesh: %d vertices",
+        mesh->vertex_count);
+
+    return mesh;
+}

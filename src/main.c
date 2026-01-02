@@ -23,6 +23,7 @@
 #include "game/pz_map.h"
 #include "game/pz_map_render.h"
 #include "game/pz_mesh.h"
+#include "game/pz_powerup.h"
 #include "game/pz_projectile.h"
 #include "game/pz_tank.h"
 #include "game/pz_tracks.h"
@@ -232,8 +233,16 @@ main(int argc, char *argv[])
     pz_projectile_manager *projectile_mgr
         = pz_projectile_manager_create(renderer);
 
-    // Fire cooldown time (tank now handles its own cooldown)
-    const float fire_cooldown_time = 0.25f;
+    // ========================================================================
+    // Powerup system
+    // ========================================================================
+    pz_powerup_manager *powerup_mgr = pz_powerup_manager_create(renderer);
+
+    // Add a machine gun powerup in the center of the map
+    // Map is 24x14 tiles with tile_size 2.0, so world is 48x28 centered at
+    // origin Center is (0, 0)
+    pz_powerup_add(powerup_mgr, (pz_vec2) { 0.0f, 0.0f },
+        PZ_POWERUP_MACHINE_GUN, 45.0f); // 45 second respawn
 
     // ========================================================================
     // Laser sight system
@@ -296,7 +305,8 @@ main(int argc, char *argv[])
     // Mouse state for turret aiming
     int mouse_x = WINDOW_WIDTH / 2;
     int mouse_y = WINDOW_HEIGHT / 2;
-    bool mouse_left_pressed = false; // Track left mouse button
+    bool mouse_left_down = false; // Is left mouse button currently held?
+    bool mouse_left_just_pressed = false; // Was it just pressed this frame?
 
     while (running) {
         // Poll debug commands
@@ -329,12 +339,13 @@ main(int argc, char *argv[])
             } break;
             case SDL_MOUSEBUTTONDOWN:
                 if (event.button.button == SDL_BUTTON_LEFT) {
-                    mouse_left_pressed = true;
+                    mouse_left_down = true;
+                    mouse_left_just_pressed = true;
                 }
                 break;
             case SDL_MOUSEBUTTONUP:
                 if (event.button.button == SDL_BUTTON_LEFT) {
-                    mouse_left_pressed = false;
+                    mouse_left_down = false;
                 }
                 break;
             case SDL_WINDOWEVENT:
@@ -396,7 +407,7 @@ main(int argc, char *argv[])
             float aim_dx = mouse_world.x - player_tank->pos.x;
             float aim_dz = mouse_world.z - player_tank->pos.y;
             player_input.target_turret = atan2f(aim_dx, aim_dz);
-            player_input.fire = mouse_left_pressed;
+            player_input.fire = mouse_left_down; // Still used for input struct
 
             // Update player tank
             pz_tank_update(tank_mgr, player_tank, &player_input, game_map, dt);
@@ -410,21 +421,62 @@ main(int argc, char *argv[])
             }
 
             // ====================================================================
+            // Powerup collection
+            // ====================================================================
+            pz_powerup_type collected = pz_powerup_check_collection(
+                powerup_mgr, player_tank->pos, 0.7f); // Tank collision radius
+            if (collected != PZ_POWERUP_NONE) {
+                player_tank->current_weapon = (int)collected;
+                pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME, "Player collected: %s",
+                    pz_powerup_type_name(collected));
+            }
+
+            // ====================================================================
             // Firing (left mouse button)
             // ====================================================================
-            if (player_input.fire && player_tank->fire_cooldown <= 0.0f) {
+            // Get weapon stats for current weapon
+            const pz_weapon_stats *weapon = pz_weapon_get_stats(
+                (pz_powerup_type)player_tank->current_weapon);
+
+            // Determine if we should fire:
+            // - Auto-fire weapons fire when mouse is held down
+            // - Non-auto weapons only fire on new click
+            bool should_fire
+                = weapon->auto_fire ? mouse_left_down : mouse_left_just_pressed;
+
+            // Check if we have room for more projectiles
+            int active_projectiles
+                = pz_projectile_count_by_owner(projectile_mgr, player_tank->id);
+            bool can_fire = active_projectiles < weapon->max_active_projectiles;
+
+            if (should_fire && can_fire && player_tank->fire_cooldown <= 0.0f) {
                 pz_vec2 spawn_pos = pz_tank_get_barrel_tip(player_tank);
                 pz_vec2 fire_dir = pz_tank_get_fire_direction(player_tank);
 
-                pz_projectile_spawn(projectile_mgr, spawn_pos, fire_dir,
-                    &PZ_PROJECTILE_DEFAULT, player_tank->id);
+                // Build projectile config from weapon stats
+                pz_projectile_config proj_config = {
+                    .speed = weapon->projectile_speed,
+                    .max_bounces = weapon->max_bounces,
+                    .lifetime = -1.0f, // Infinite
+                    .damage = weapon->damage,
+                    .scale = weapon->projectile_scale,
+                    .color = weapon->projectile_color,
+                };
 
-                player_tank->fire_cooldown = fire_cooldown_time;
+                pz_projectile_spawn(projectile_mgr, spawn_pos, fire_dir,
+                    &proj_config, player_tank->id);
+
+                player_tank->fire_cooldown = weapon->fire_cooldown;
             }
         }
 
         // Update all tanks (respawn timers, AI, etc.)
         pz_tank_update_all(tank_mgr, game_map, dt);
+
+        // ====================================================================
+        // Update powerups (animation, respawn timers)
+        // ====================================================================
+        pz_powerup_update(powerup_mgr, dt);
 
         // ====================================================================
         // Update projectiles (now with tank collision!)
@@ -472,6 +524,11 @@ main(int argc, char *argv[])
         // Draw all tanks (using tank manager)
         // ====================================================================
         pz_tank_render(tank_mgr, renderer, vp);
+
+        // ====================================================================
+        // Draw powerups
+        // ====================================================================
+        pz_powerup_render(powerup_mgr, renderer, vp);
 
         // ====================================================================
         // Draw laser sight (only for player tank when alive)
@@ -579,6 +636,9 @@ main(int argc, char *argv[])
 
         // Swap buffers
         SDL_GL_SwapWindow(window);
+
+        // Reset per-frame input state
+        mouse_left_just_pressed = false;
     }
 
     // Cleanup
@@ -601,6 +661,9 @@ main(int argc, char *argv[])
 
     // Cleanup projectile system
     pz_projectile_manager_destroy(projectile_mgr, renderer);
+
+    // Cleanup powerup system
+    pz_powerup_manager_destroy(powerup_mgr, renderer);
 
     pz_tracks_destroy(tracks);
     pz_map_hot_reload_destroy(map_hot_reload);

@@ -27,6 +27,8 @@ const pz_projectile_config PZ_PROJECTILE_DEFAULT = {
     .max_bounces = 1,
     .lifetime = -1.0f, // Infinite lifetime (only dies on max bounces)
     .damage = 5, // 2 hits to kill (10 HP tank)
+    .scale = 1.0f,
+    .color = { 1.0f, 0.8f, 0.2f, 1.0f }, // Yellow/orange
 };
 
 /* ============================================================================
@@ -142,6 +144,8 @@ pz_projectile_spawn(pz_projectile_manager *mgr, pz_vec2 pos, pz_vec2 direction,
     proj->age = 0.0f;
     proj->owner_id = owner_id;
     proj->damage = config->damage;
+    proj->scale = config->scale;
+    proj->color = config->color;
 
     mgr->active_count++;
 
@@ -299,16 +303,12 @@ pz_projectile_render(pz_projectile_manager *mgr, pz_renderer *renderer,
     pz_vec3 light_color = { 0.8f, 0.75f, 0.7f };
     pz_vec3 ambient = { 0.3f, 0.35f, 0.4f };
 
-    // Projectile color (bright yellow/orange)
-    pz_vec4 proj_color = { 1.0f, 0.8f, 0.2f, 1.0f };
-
     // Set shared uniforms
     pz_renderer_set_uniform_vec3(
         renderer, mgr->shader, "u_light_dir", light_dir);
     pz_renderer_set_uniform_vec3(
         renderer, mgr->shader, "u_light_color", light_color);
     pz_renderer_set_uniform_vec3(renderer, mgr->shader, "u_ambient", ambient);
-    pz_renderer_set_uniform_vec4(renderer, mgr->shader, "u_color", proj_color);
 
     for (int i = 0; i < PZ_MAX_PROJECTILES; i++) {
         pz_projectile *proj = &mgr->projectiles[i];
@@ -323,18 +323,22 @@ pz_projectile_render(pz_projectile_manager *mgr, pz_renderer *renderer,
         // = 1.18
         float height = 1.18f;
 
-        // Build model matrix
+        // Build model matrix with scale
         // Projectile mesh is built along Z axis, so rotate_y to face direction
         pz_mat4 model = pz_mat4_identity();
         model = pz_mat4_mul(model,
             pz_mat4_translate((pz_vec3) { proj->pos.x, height, proj->pos.y }));
         model = pz_mat4_mul(model, pz_mat4_rotate_y(angle));
+        model = pz_mat4_mul(model,
+            pz_mat4_scale((pz_vec3) { proj->scale, proj->scale, proj->scale }));
 
         pz_mat4 mvp = pz_mat4_mul(*view_projection, model);
 
         // Set per-projectile uniforms
         pz_renderer_set_uniform_mat4(renderer, mgr->shader, "u_mvp", &mvp);
         pz_renderer_set_uniform_mat4(renderer, mgr->shader, "u_model", &model);
+        pz_renderer_set_uniform_vec4(
+            renderer, mgr->shader, "u_color", proj->color);
 
         // Draw
         pz_draw_cmd cmd = {
@@ -359,4 +363,20 @@ int
 pz_projectile_count(const pz_projectile_manager *mgr)
 {
     return mgr ? mgr->active_count : 0;
+}
+
+int
+pz_projectile_count_by_owner(const pz_projectile_manager *mgr, int owner_id)
+{
+    if (!mgr)
+        return 0;
+
+    int count = 0;
+    for (int i = 0; i < PZ_MAX_PROJECTILES; i++) {
+        if (mgr->projectiles[i].active
+            && mgr->projectiles[i].owner_id == owner_id) {
+            count++;
+        }
+    }
+    return count;
 }
