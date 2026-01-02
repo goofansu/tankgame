@@ -58,12 +58,26 @@ static const pz_weapon_stats WEAPON_MACHINE_GUN = {
     .max_active_projectiles = 12, // Max 12 bullets in flight
 };
 
+// Ricochet - bounces twice, green bullets, slightly faster
+static const pz_weapon_stats WEAPON_RICOCHET = {
+    .fire_cooldown = 0.3f, // Slightly faster than default (0.325s)
+    .projectile_speed = 12.5f, // Slightly faster than default (11.25)
+    .damage = 5, // Same as default
+    .max_bounces = 2, // Bounces twice
+    .projectile_scale = 1.0f, // Normal size
+    .projectile_color = { 0.2f, 0.9f, 0.3f, 1.0f }, // Green
+    .auto_fire = false, // Must click for each shot
+    .max_active_projectiles = 6, // Max 6 bullets in flight
+};
+
 const pz_weapon_stats *
 pz_weapon_get_stats(pz_powerup_type weapon)
 {
     switch (weapon) {
     case PZ_POWERUP_MACHINE_GUN:
         return &WEAPON_MACHINE_GUN;
+    case PZ_POWERUP_RICOCHET:
+        return &WEAPON_RICOCHET;
     case PZ_POWERUP_NONE:
     default:
         return &WEAPON_DEFAULT;
@@ -308,6 +322,10 @@ pz_powerup_render(pz_powerup_manager *mgr, pz_renderer *renderer,
             // Orange/red for machine gun
             color = (pz_vec4) { 0.9f, 0.4f, 0.1f, 1.0f };
             break;
+        case PZ_POWERUP_RICOCHET:
+            // Green for ricochet
+            color = (pz_vec4) { 0.2f, 0.9f, 0.3f, 1.0f };
+            break;
         default:
             // Gray for unknown
             color = (pz_vec4) { 0.7f, 0.7f, 0.7f, 1.0f };
@@ -368,6 +386,8 @@ pz_powerup_type_name(pz_powerup_type type)
     switch (type) {
     case PZ_POWERUP_MACHINE_GUN:
         return "Machine Gun";
+    case PZ_POWERUP_RICOCHET:
+        return "Ricochet";
     case PZ_POWERUP_NONE:
     default:
         return "None";

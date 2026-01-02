@@ -238,11 +238,13 @@ main(int argc, char *argv[])
     // ========================================================================
     pz_powerup_manager *powerup_mgr = pz_powerup_manager_create(renderer);
 
-    // Add a machine gun powerup in the center of the map
+    // Add powerups in the center of the map
     // Map is 24x14 tiles with tile_size 2.0, so world is 48x28 centered at
     // origin Center is (0, 0)
-    pz_powerup_add(powerup_mgr, (pz_vec2) { 0.0f, 0.0f },
+    pz_powerup_add(powerup_mgr, (pz_vec2) { -2.0f, 0.0f },
         PZ_POWERUP_MACHINE_GUN, 45.0f); // 45 second respawn
+    pz_powerup_add(powerup_mgr, (pz_vec2) { 2.0f, 0.0f }, PZ_POWERUP_RICOCHET,
+        45.0f); // 45 second respawn
 
     // ========================================================================
     // Laser sight system

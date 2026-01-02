@@ -25,6 +25,7 @@ typedef struct pz_tank_manager pz_tank_manager;
 typedef enum pz_powerup_type {
     PZ_POWERUP_NONE = 0,
     PZ_POWERUP_MACHINE_GUN, // Faster firing, less damage, smaller bullets
+    PZ_POWERUP_RICOCHET, // Bullets bounce twice, green, slightly faster
     PZ_POWERUP_COUNT
 } pz_powerup_type;
 

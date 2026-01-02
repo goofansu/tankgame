@@ -142,6 +142,7 @@ pz_projectile_spawn(pz_projectile_manager *mgr, pz_vec2 pos, pz_vec2 direction,
     proj->bounces_remaining = config->max_bounces;
     proj->lifetime = config->lifetime;
     proj->age = 0.0f;
+    proj->bounce_cooldown = 0.0f;
     proj->owner_id = owner_id;
     proj->damage = config->damage;
     proj->scale = config->scale;
@@ -202,8 +203,11 @@ pz_projectile_update(pz_projectile_manager *mgr, const pz_map *map,
         if (!proj->active)
             continue;
 
-        // Update age and lifetime
+        // Update age, lifetime, and bounce cooldown
         proj->age += dt;
+        if (proj->bounce_cooldown > 0.0f) {
+            proj->bounce_cooldown -= dt;
+        }
 
         if (proj->lifetime > 0.0f) {
             proj->lifetime -= dt;
@@ -243,25 +247,44 @@ pz_projectile_update(pz_projectile_manager *mgr, const pz_map *map,
             }
         }
 
-        // Check for wall collision
-        if (map && pz_map_is_solid(map, new_pos)) {
+        // Check for wall collision (only if not in bounce cooldown)
+        if (map && pz_map_is_solid(map, new_pos)
+            && proj->bounce_cooldown <= 0.0f) {
             // Hit a wall - bounce or destroy
             if (proj->bounces_remaining > 0) {
-                // Get wall normal
+                // Get wall normal based on current (safe) position
                 pz_vec2 dir = pz_vec2_normalize(proj->velocity);
                 pz_vec2 normal = get_wall_normal(map, proj->pos, dir);
 
                 // Reflect velocity
                 proj->velocity = pz_vec2_reflect(proj->velocity, normal);
 
-                // Move slightly away from wall to avoid getting stuck
-                new_pos = pz_vec2_add(proj->pos, pz_vec2_scale(normal, 0.05f));
+                // Push back from wall until we're in a safe position
+                // Start from the old (safe) position and push along normal
+                new_pos = proj->pos;
+                float push_dist = 0.15f;
+
+                // Find a safe position outside the wall
+                while (pz_map_is_solid(map, new_pos) && push_dist < 1.0f) {
+                    new_pos = pz_vec2_add(
+                        proj->pos, pz_vec2_scale(normal, push_dist));
+                    push_dist += 0.05f;
+                }
+
+                // If we couldn't find a safe spot, just stay at old position
+                if (pz_map_is_solid(map, new_pos)) {
+                    new_pos = proj->pos;
+                }
 
                 proj->bounces_remaining--;
 
+                // Set cooldown to prevent immediate re-bounce
+                // Cooldown = time to travel ~0.3 units at current speed
+                proj->bounce_cooldown = 0.3f / proj->speed;
+
                 pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
-                    "Projectile bounced, %d bounces left",
-                    proj->bounces_remaining);
+                    "Projectile bounced, %d bounces left, pushed %.2f",
+                    proj->bounces_remaining, push_dist - 0.15f);
             } else {
                 // No bounces left - destroy
                 proj->active = false;
@@ -270,6 +293,10 @@ pz_projectile_update(pz_projectile_manager *mgr, const pz_map *map,
                     "Projectile destroyed (no bounces left)");
                 continue;
             }
+        } else if (map && pz_map_is_solid(map, new_pos)
+            && proj->bounce_cooldown > 0.0f) {
+            // Still in cooldown but hitting wall - don't move into it
+            new_pos = proj->pos;
         }
 
         // Check for out of bounds

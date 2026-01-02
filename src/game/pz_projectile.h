@@ -32,6 +32,8 @@ typedef struct pz_projectile {
     int bounces_remaining; // How many more bounces before destruction
     float lifetime; // Time remaining before auto-destruct
     float age; // Time since spawned (for self-damage grace period)
+    float bounce_cooldown; // Time until next bounce allowed (prevents
+                           // double-bounce)
 
     int owner_id; // Who fired this (for friendly fire checks)
     int damage; // Damage on hit
