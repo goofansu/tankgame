@@ -9,6 +9,9 @@ Use the top-level Makefile:
 - `make run` - build and run
 - `make clean` - clean build
 - `make debug` / `make release` - build variants
+- `make test` - run all tests
+- `make format` - format code with clang-format
+- `make check` - check formatting and run linter
 
 ## Before Starting Work
 
@@ -24,7 +27,23 @@ Use the top-level Makefile:
 
 ## After Completing Work
 
-Run `make format` and `make check` before finishing a step to ensure code is formatted and passes linting.
+Run these commands before finishing:
+```bash
+make build    # Ensure it compiles
+make test     # Run tests
+make format   # Format code
+make check    # Verify formatting and linting
+```
+
+## Pacing and Natural Stop Points
+
+**Important:** Do NOT blindly continue through the entire execution plan in one session.
+
+- **Stop after completing a phase** (e.g., all of Phase 1) to let the user review and commit
+- **Stop after large milestones** that introduce new subsystems (e.g., renderer, physics)
+- **Stop when work-in-progress** - if a milestone is partially done, note what's left in progress.md
+- The user needs opportunities to review code, test manually, and commit changes
+- When stopping, summarize what was completed and what the next steps would be
 
 ## Progress Tracking
 
