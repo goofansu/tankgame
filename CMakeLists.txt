@@ -47,6 +47,7 @@ set(ENGINE_SOURCES
     src/engine/render/pz_render_gl33.c
     src/engine/render/pz_texture.c
     src/engine/pz_camera.c
+    src/engine/pz_debug_overlay.c
     # src/engine/pz_engine.c
     # src/engine/pz_window.c
     # src/engine/pz_input.c

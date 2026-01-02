@@ -17,6 +17,7 @@
 #include "core/pz_platform.h"
 #include "core/pz_str.h"
 #include "engine/pz_camera.h"
+#include "engine/pz_debug_overlay.h"
 #include "engine/render/pz_renderer.h"
 #include "engine/render/pz_texture.h"
 
@@ -212,6 +213,13 @@ main(int argc, char *argv[])
     // Initialize debug command interface
     pz_debug_cmd_init(NULL);
 
+    // Create debug overlay
+    pz_debug_overlay *debug_overlay = pz_debug_overlay_create(renderer);
+    if (!debug_overlay) {
+        pz_log(PZ_LOG_WARN, PZ_LOG_CAT_CORE, "Failed to create debug overlay");
+    }
+    // Start with overlay hidden (F2 to toggle)
+
     // ========================================================================
     // Load shaders
     // ========================================================================
@@ -301,6 +309,8 @@ main(int argc, char *argv[])
             case SDL_KEYDOWN:
                 if (event.key.keysym.sym == SDLK_ESCAPE) {
                     running = false;
+                } else if (event.key.keysym.sym == SDLK_F2) {
+                    pz_debug_overlay_toggle(debug_overlay);
                 } else if (event.key.keysym.sym == SDLK_F12) {
                     char *path = generate_screenshot_path();
                     if (path) {
@@ -359,6 +369,7 @@ main(int argc, char *argv[])
         }
 
         // Begin frame
+        pz_debug_overlay_begin_frame(debug_overlay);
         pz_renderer_begin_frame(renderer);
 
         // Clear to dark gray (sky color for now)
@@ -383,21 +394,26 @@ main(int argc, char *argv[])
             pz_renderer_draw(renderer, &draw_cmd);
         }
 
+        // Render debug overlay (before end frame)
+        pz_debug_overlay_render(debug_overlay);
+
         // End frame
+        pz_debug_overlay_end_frame(debug_overlay);
         pz_renderer_end_frame(renderer);
 
-        // Swap buffers
-        SDL_GL_SwapWindow(window);
-
-        // Auto-screenshot mode
+        // Auto-screenshot mode (before swap to capture back buffer)
         frame_count++;
         if (auto_screenshot && frame_count >= screenshot_frames) {
             pz_renderer_save_screenshot(renderer, screenshot_path);
             running = false;
         }
+
+        // Swap buffers
+        SDL_GL_SwapWindow(window);
     }
 
     // Cleanup
+    pz_debug_overlay_destroy(debug_overlay);
     pz_debug_cmd_shutdown();
 
     pz_renderer_destroy_pipeline(renderer, grid_pipeline);

@@ -14,3 +14,4 @@
 - [x] M2.2: VAO/VBO helpers, colored triangle, textured quad
 - [x] M2.3: texture loading (stb_image), texture manager with caching, hot-reload
 - [x] M2.4: camera system, perspective projection, screen-to-world, ground grid renders
+- [x] M2.5: debug overlay (bitmap font, FPS counter, frame time graph, F2 toggle)

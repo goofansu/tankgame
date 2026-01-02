@@ -930,6 +930,10 @@ static void
 gl33_end_frame(pz_renderer *r)
 {
     (void)r;
+    // Reset state at end of frame
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glUseProgram(0);
     // Swap is done externally via SDL
 }
 
@@ -959,6 +963,8 @@ static void
 gl33_clear(pz_renderer *r, float cr, float g, float b, float a, float depth)
 {
     (void)r;
+    // Ensure depth write is enabled for clear to work
+    glDepthMask(GL_TRUE);
     glClearColor(cr, g, b, a);
     glClearDepth(depth);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -976,6 +982,8 @@ static void
 gl33_clear_depth(pz_renderer *r, float depth)
 {
     (void)r;
+    // Ensure depth write is enabled for clear to work
+    glDepthMask(GL_TRUE);
     glClearDepth(depth);
     glClear(GL_DEPTH_BUFFER_BIT);
 }
