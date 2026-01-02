@@ -11,3 +11,6 @@
 - [x] M1.5: string utilities
 - [x] M1.6: platform layer (timer, file I/O, paths)
 - [x] M2.1: renderer API, null backend, GL33 backend, shaders, test triangle renders
+- [x] M2.2: VAO/VBO helpers, colored triangle, textured quad
+- [x] M2.3: texture loading (stb_image), texture manager with caching, hot-reload
+- [x] M2.4: camera system, perspective projection, screen-to-world, ground grid renders

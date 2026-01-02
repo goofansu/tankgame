@@ -45,6 +45,8 @@ set(ENGINE_SOURCES
     src/engine/render/pz_renderer.c
     src/engine/render/pz_render_null.c
     src/engine/render/pz_render_gl33.c
+    src/engine/render/pz_texture.c
+    src/engine/pz_camera.c
     # src/engine/pz_engine.c
     # src/engine/pz_window.c
     # src/engine/pz_input.c
@@ -53,6 +55,7 @@ set(ENGINE_SOURCES
 )
 
 set(THIRD_PARTY_SOURCES
+    third_party/stb_image_impl.c
     third_party/stb_image_write_impl.c
 )
 

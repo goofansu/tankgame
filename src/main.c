@@ -16,7 +16,9 @@
 #include "core/pz_mem.h"
 #include "core/pz_platform.h"
 #include "core/pz_str.h"
+#include "engine/pz_camera.h"
 #include "engine/render/pz_renderer.h"
+#include "engine/render/pz_texture.h"
 
 #define WINDOW_TITLE "Tank Game"
 #define WINDOW_WIDTH 1280
@@ -36,6 +38,71 @@ generate_screenshot_path(void)
         t->tm_sec);
 
     return pz_str_dup(filename);
+}
+
+// Create a grid of quads on the ground plane
+// Returns the number of vertices (6 per quad)
+static int
+create_ground_grid(float **vertices, int grid_size, float tile_size)
+{
+    int num_quads = grid_size * grid_size;
+    int num_verts = num_quads * 6;
+    // Each vertex: position(3) + texcoord(2) = 5 floats
+    *vertices = pz_alloc(num_verts * 5 * sizeof(float));
+
+    float *v = *vertices;
+    float half = (grid_size * tile_size) / 2.0f;
+
+    for (int z = 0; z < grid_size; z++) {
+        for (int x = 0; x < grid_size; x++) {
+            float x0 = x * tile_size - half;
+            float x1 = (x + 1) * tile_size - half;
+            float z0 = z * tile_size - half;
+            float z1 = (z + 1) * tile_size - half;
+
+            // Triangle 1 (CCW when viewed from above Y+)
+            // Bottom-left
+            *v++ = x0;
+            *v++ = 0.0f;
+            *v++ = z0;
+            *v++ = 0.0f;
+            *v++ = 1.0f;
+            // Top-left
+            *v++ = x0;
+            *v++ = 0.0f;
+            *v++ = z1;
+            *v++ = 0.0f;
+            *v++ = 0.0f;
+            // Top-right
+            *v++ = x1;
+            *v++ = 0.0f;
+            *v++ = z1;
+            *v++ = 1.0f;
+            *v++ = 0.0f;
+
+            // Triangle 2
+            // Bottom-left
+            *v++ = x0;
+            *v++ = 0.0f;
+            *v++ = z0;
+            *v++ = 0.0f;
+            *v++ = 1.0f;
+            // Top-right
+            *v++ = x1;
+            *v++ = 0.0f;
+            *v++ = z1;
+            *v++ = 1.0f;
+            *v++ = 0.0f;
+            // Bottom-right
+            *v++ = x1;
+            *v++ = 0.0f;
+            *v++ = z0;
+            *v++ = 1.0f;
+            *v++ = 1.0f;
+        }
+    }
+
+    return num_verts;
 }
 
 int
@@ -133,63 +200,91 @@ main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
+    // Create texture manager
+    pz_texture_manager *tex_manager = pz_texture_manager_create(renderer);
+
+    // Initialize camera
+    pz_camera camera;
+    pz_camera_init(&camera, WINDOW_WIDTH, WINDOW_HEIGHT);
+    pz_camera_setup_game_view(
+        &camera, (pz_vec3) { 0, 0, 0 }, 25.0f, 20.0f); // Height 25, 20° pitch
+
     // Initialize debug command interface
     pz_debug_cmd_init(NULL);
 
-    // Load test shader
-    pz_shader_handle shader = pz_renderer_load_shader(
-        renderer, "shaders/test.vert", "shaders/test.frag", "test");
-    if (shader == PZ_INVALID_HANDLE) {
-        pz_log(PZ_LOG_ERROR, PZ_LOG_CAT_RENDER, "Failed to load test shader");
+    // ========================================================================
+    // Load shaders
+    // ========================================================================
+
+    // Textured shader (for ground)
+    pz_shader_handle textured_shader = pz_renderer_load_shader(
+        renderer, "shaders/textured.vert", "shaders/textured.frag", "textured");
+    if (textured_shader == PZ_INVALID_HANDLE) {
+        pz_log(
+            PZ_LOG_ERROR, PZ_LOG_CAT_RENDER, "Failed to load textured shader");
     }
 
-    // Create triangle vertex data
-    // clang-format off
-    float vertices[] = {
-        // Position          // Color
-        -0.5f, -0.5f, 0.0f,  1.0f, 0.0f, 0.0f,  // bottom left - red
-         0.5f, -0.5f, 0.0f,  0.0f, 1.0f, 0.0f,  // bottom right - green
-         0.0f,  0.5f, 0.0f,  0.0f, 0.0f, 1.0f,  // top - blue
-    };
-    // clang-format on
+    // ========================================================================
+    // Create ground grid
+    // ========================================================================
 
-    // Create vertex buffer
-    pz_buffer_desc vb_desc = {
+    float *grid_vertices = NULL;
+    int grid_size = 10;
+    float tile_size = 2.0f;
+    int grid_vertex_count
+        = create_ground_grid(&grid_vertices, grid_size, tile_size);
+
+    pz_buffer_desc grid_vb_desc = {
         .type = PZ_BUFFER_VERTEX,
         .usage = PZ_BUFFER_STATIC,
-        .data = vertices,
-        .size = sizeof(vertices),
+        .data = grid_vertices,
+        .size = grid_vertex_count * 5 * sizeof(float),
     };
-    pz_buffer_handle vertex_buffer
-        = pz_renderer_create_buffer(renderer, &vb_desc);
+    pz_buffer_handle grid_vb
+        = pz_renderer_create_buffer(renderer, &grid_vb_desc);
+    pz_free(grid_vertices);
 
-    // Create pipeline
-    pz_vertex_attr attrs[] = {
+    pz_vertex_attr grid_attrs[] = {
         { .name = "a_position", .type = PZ_ATTR_FLOAT3, .offset = 0 },
-        { .name = "a_color",
-            .type = PZ_ATTR_FLOAT3,
+        { .name = "a_texcoord",
+            .type = PZ_ATTR_FLOAT2,
             .offset = 3 * sizeof(float) },
     };
 
-    pz_pipeline_desc pipeline_desc = {
-        .shader = shader,
+    pz_pipeline_desc grid_pipeline_desc = {
+        .shader = textured_shader,
         .vertex_layout = {
-            .attrs = attrs,
+            .attrs = grid_attrs,
             .attr_count = 2,
-            .stride = 6 * sizeof(float),
+            .stride = 5 * sizeof(float),
         },
         .blend = PZ_BLEND_NONE,
-        .depth = PZ_DEPTH_NONE,
-        .cull = PZ_CULL_NONE,
+        .depth = PZ_DEPTH_READ_WRITE,
+        .cull = PZ_CULL_BACK,
         .primitive = PZ_PRIMITIVE_TRIANGLES,
     };
-    pz_pipeline_handle pipeline
-        = pz_renderer_create_pipeline(renderer, &pipeline_desc);
+    pz_pipeline_handle grid_pipeline
+        = pz_renderer_create_pipeline(renderer, &grid_pipeline_desc);
 
+    // Load texture
+    pz_texture_handle checker_tex
+        = pz_texture_load(tex_manager, "assets/textures/checker.png");
+    if (checker_tex == PZ_INVALID_HANDLE) {
+        pz_log(
+            PZ_LOG_ERROR, PZ_LOG_CAT_RENDER, "Failed to load checker texture");
+    }
+
+    // ========================================================================
     // Main loop
+    // ========================================================================
+
     bool running = true;
     SDL_Event event;
     int frame_count = 0;
+    uint64_t last_hot_reload_check = pz_time_now();
+
+    // Camera movement
+    float cam_speed = 0.5f;
 
     while (running) {
         // Poll debug commands
@@ -214,11 +309,25 @@ main(int argc, char *argv[])
                     }
                 }
                 break;
+            case SDL_MOUSEWHEEL: {
+                // Zoom with mouse wheel
+                float zoom_delta = -event.wheel.y * 2.0f;
+                pz_camera_zoom(&camera, zoom_delta);
+            } break;
+            case SDL_MOUSEMOTION: {
+                // Get world position under mouse
+                int mx = event.motion.x;
+                int my = event.motion.y;
+                pz_vec3 world_pos = pz_camera_screen_to_world(&camera, mx, my);
+                // Just log it for now (could display in debug overlay later)
+                (void)world_pos;
+            } break;
             case SDL_WINDOWEVENT:
                 if (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
                     int w = event.window.data1;
                     int h = event.window.data2;
                     pz_renderer_set_viewport(renderer, w, h);
+                    pz_camera_set_viewport(&camera, w, h);
                     pz_log(PZ_LOG_INFO, PZ_LOG_CAT_CORE,
                         "Window resized: %dx%d", w, h);
                 }
@@ -226,23 +335,53 @@ main(int argc, char *argv[])
             }
         }
 
+        // Keyboard camera movement
+        const Uint8 *keys = SDL_GetKeyboardState(NULL);
+        pz_vec3 cam_move = { 0, 0, 0 };
+        if (keys[SDL_SCANCODE_W] || keys[SDL_SCANCODE_UP])
+            cam_move.z += cam_speed;
+        if (keys[SDL_SCANCODE_S] || keys[SDL_SCANCODE_DOWN])
+            cam_move.z -= cam_speed;
+        if (keys[SDL_SCANCODE_A] || keys[SDL_SCANCODE_LEFT])
+            cam_move.x -= cam_speed;
+        if (keys[SDL_SCANCODE_D] || keys[SDL_SCANCODE_RIGHT])
+            cam_move.x += cam_speed;
+
+        if (cam_move.x != 0 || cam_move.z != 0) {
+            pz_camera_translate(&camera, cam_move);
+        }
+
+        // Check for hot-reload every 500ms
+        uint64_t now = pz_time_now();
+        if (now - last_hot_reload_check > 500000) { // 500ms in microseconds
+            pz_texture_check_hot_reload(tex_manager);
+            last_hot_reload_check = now;
+        }
+
         // Begin frame
         pz_renderer_begin_frame(renderer);
 
-        // Clear to cornflower blue
-        pz_renderer_clear(renderer, 0.392f, 0.584f, 0.929f, 1.0f, 1.0f);
+        // Clear to dark gray (sky color for now)
+        pz_renderer_clear(renderer, 0.2f, 0.2f, 0.25f, 1.0f, 1.0f);
 
-        // Set MVP (identity for now - triangle in clip space)
-        pz_mat4 mvp = pz_mat4_identity();
-        pz_renderer_set_uniform_mat4(renderer, shader, "u_mvp", &mvp);
+        // ====================================================================
+        // Draw ground grid
+        // ====================================================================
+        {
+            const pz_mat4 *vp = pz_camera_get_view_projection(&camera);
+            pz_renderer_set_uniform_mat4(
+                renderer, textured_shader, "u_mvp", vp);
+            pz_renderer_set_uniform_int(
+                renderer, textured_shader, "u_texture", 0);
+            pz_renderer_bind_texture(renderer, 0, checker_tex);
 
-        // Draw triangle
-        pz_draw_cmd draw_cmd = {
-            .pipeline = pipeline,
-            .vertex_buffer = vertex_buffer,
-            .vertex_count = 3,
-        };
-        pz_renderer_draw(renderer, &draw_cmd);
+            pz_draw_cmd draw_cmd = {
+                .pipeline = grid_pipeline,
+                .vertex_buffer = grid_vb,
+                .vertex_count = grid_vertex_count,
+            };
+            pz_renderer_draw(renderer, &draw_cmd);
+        }
 
         // End frame
         pz_renderer_end_frame(renderer);
@@ -260,9 +399,12 @@ main(int argc, char *argv[])
 
     // Cleanup
     pz_debug_cmd_shutdown();
-    pz_renderer_destroy_pipeline(renderer, pipeline);
-    pz_renderer_destroy_buffer(renderer, vertex_buffer);
-    pz_renderer_destroy_shader(renderer, shader);
+
+    pz_renderer_destroy_pipeline(renderer, grid_pipeline);
+    pz_renderer_destroy_buffer(renderer, grid_vb);
+    pz_renderer_destroy_shader(renderer, textured_shader);
+
+    pz_texture_manager_destroy(tex_manager);
     pz_renderer_destroy(renderer);
 
     SDL_GL_DeleteContext(gl_context);
