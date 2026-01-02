@@ -418,3 +418,47 @@ pz_renderer_save_screenshot(pz_renderer *r, const char *path)
         return false;
     }
 }
+
+// Forward declaration - implemented in pz_render_gl33.c
+extern uint8_t *pz_render_gl33_read_render_target(pz_renderer *r,
+    pz_render_target_handle handle, int *out_width, int *out_height);
+
+bool
+pz_renderer_save_render_target(
+    pz_renderer *r, pz_render_target_handle handle, const char *path)
+{
+    int width, height;
+    uint8_t *pixels = NULL;
+
+    // Only GL33 backend supports reading render targets
+    if (r->backend_type == PZ_BACKEND_GL33) {
+        pixels = pz_render_gl33_read_render_target(r, handle, &width, &height);
+    }
+
+    if (!pixels) {
+        pz_log(PZ_LOG_ERROR, PZ_LOG_CAT_RENDER,
+            "Failed to read render target pixels");
+        return false;
+    }
+
+    // Ensure directory exists
+    char *dir = pz_path_dirname(path);
+    if (dir) {
+        pz_dir_create(dir);
+        pz_free(dir);
+    }
+
+    // Save as PNG
+    int result = stbi_write_png(path, width, height, 4, pixels, width * 4);
+    pz_free(pixels);
+
+    if (result) {
+        pz_log(PZ_LOG_INFO, PZ_LOG_CAT_RENDER,
+            "Render target saved: %s (%dx%d)", path, width, height);
+        return true;
+    } else {
+        pz_log(PZ_LOG_ERROR, PZ_LOG_CAT_RENDER,
+            "Failed to write render target: %s", path);
+        return false;
+    }
+}

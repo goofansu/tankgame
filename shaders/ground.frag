@@ -38,7 +38,23 @@ void main()
     if (u_use_lighting != 0) {
         // Convert world XZ to light map UV
         vec2 light_uv = v_world_pos.xz * u_light_scale + u_light_offset;
-        vec3 light = texture(u_light_texture, light_uv).rgb;
+        
+        // Sample with box blur to soften low-resolution light map edges
+        // Blur radius in UV space (adjusted for lightmap resolution)
+        vec2 texel_size = vec2(1.0 / 256.0); // Assuming 256 texture, adjust if needed
+        vec3 light = vec3(0.0);
+        float total_weight = 0.0;
+        
+        // 5x5 box blur with gaussian-ish weights
+        for (int y = -2; y <= 2; y++) {
+            for (int x = -2; x <= 2; x++) {
+                vec2 offset = vec2(float(x), float(y)) * texel_size;
+                float weight = 1.0 / (1.0 + float(abs(x) + abs(y)));
+                light += texture(u_light_texture, light_uv + offset).rgb * weight;
+                total_weight += weight;
+            }
+        }
+        light /= total_weight;
         
         // Multiply terrain by light (light map contains full color including ambient)
         terrain.rgb *= light;

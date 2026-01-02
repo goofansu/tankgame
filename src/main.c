@@ -57,6 +57,7 @@ main(int argc, char *argv[])
     bool auto_screenshot = false;
     const char *screenshot_path = NULL;
     int screenshot_frames = 1; // Number of frames to wait before screenshot
+    const char *lightmap_debug_path = NULL; // Debug: save lightmap texture
 
     // Parse command line arguments
     for (int i = 1; i < argc; i++) {
@@ -66,6 +67,8 @@ main(int argc, char *argv[])
         } else if (strcmp(argv[i], "--screenshot-frames") == 0
             && i + 1 < argc) {
             screenshot_frames = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--lightmap-debug") == 0 && i + 1 < argc) {
+            lightmap_debug_path = argv[++i];
         }
     }
 
@@ -371,6 +374,12 @@ main(int argc, char *argv[])
                     running = false;
                 } else if (event.key.keysym.sym == SDLK_F2) {
                     pz_debug_overlay_toggle(debug_overlay);
+                } else if (event.key.keysym.sym == SDLK_F11) {
+                    // Debug: save lightmap
+                    if (lighting) {
+                        pz_lighting_save_debug(
+                            lighting, "screenshots/lightmap_debug.png");
+                    }
                 } else if (event.key.keysym.sym == SDLK_F12) {
                     char *path = generate_screenshot_path();
                     if (path) {
@@ -629,10 +638,21 @@ main(int argc, char *argv[])
                     // Light position at front of tank (past the occluder)
                     // turret direction in world XZ is (sin(angle), cos(angle))
                     float light_offset = 0.8f; // Just past the tank body
-                    pz_vec2 light_pos = {
-                        tank->pos.x + sinf(tank->turret_angle) * light_offset,
-                        tank->pos.y + cosf(tank->turret_angle) * light_offset,
-                    };
+                    pz_vec2 light_dir = { sinf(tank->turret_angle),
+                        cosf(tank->turret_angle) };
+                    pz_vec2 light_pos = pz_vec2_add(
+                        tank->pos, pz_vec2_scale(light_dir, light_offset));
+
+                    // Clamp light to just before any wall to avoid embedding
+                    // it.
+                    if (game_map) {
+                        bool hit = false;
+                        pz_vec2 hit_pos = pz_map_raycast(
+                            game_map, tank->pos, light_dir, light_offset, &hit);
+                        if (hit) {
+                            light_pos = hit_pos;
+                        }
+                    }
 
                     // Different colors for player vs enemies
                     pz_vec3 light_color;
@@ -830,6 +850,12 @@ main(int argc, char *argv[])
         if (auto_screenshot && frame_count >= screenshot_frames) {
             pz_renderer_save_screenshot(renderer, screenshot_path);
             running = false;
+        }
+
+        // Debug: save lightmap texture
+        if (lightmap_debug_path && frame_count >= screenshot_frames) {
+            pz_lighting_save_debug(lighting, lightmap_debug_path);
+            lightmap_debug_path = NULL; // Only save once
         }
 
         // Swap buffers

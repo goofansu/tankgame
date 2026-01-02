@@ -1296,6 +1296,63 @@ gl33_draw(pz_renderer *r, const pz_draw_cmd *cmd)
 }
 
 /* ============================================================================
+ * Render Target Screenshot (non-vtable helper)
+ * ============================================================================
+ */
+
+uint8_t *
+pz_render_gl33_read_render_target(pz_renderer *r,
+    pz_render_target_handle handle, int *out_width, int *out_height)
+{
+    if (r->backend_type != PZ_BACKEND_GL33) {
+        return NULL;
+    }
+
+    gl33_backend_data *data = r->backend_data;
+    if (handle == PZ_INVALID_HANDLE || handle >= MAX_RENDER_TARGETS) {
+        return NULL;
+    }
+    if (!data->render_targets[handle].used) {
+        return NULL;
+    }
+
+    gl_render_target *rt = &data->render_targets[handle];
+    int width = rt->width;
+    int height = rt->height;
+
+    // Allocate buffer
+    size_t pixel_count = (size_t)width * (size_t)height * 4;
+    uint8_t *pixels = pz_alloc(pixel_count);
+    if (!pixels) {
+        return NULL;
+    }
+
+    // Bind the FBO and read pixels
+    glBindFramebuffer(GL_FRAMEBUFFER, rt->fbo);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    // Flip vertically
+    size_t row_size = (size_t)width * 4;
+    uint8_t *temp_row = pz_alloc(row_size);
+    if (temp_row) {
+        for (int y = 0; y < height / 2; y++) {
+            uint8_t *top_row = pixels + (size_t)y * row_size;
+            uint8_t *bottom_row = pixels + (size_t)(height - 1 - y) * row_size;
+            memcpy(temp_row, top_row, row_size);
+            memcpy(top_row, bottom_row, row_size);
+            memcpy(bottom_row, temp_row, row_size);
+        }
+        pz_free(temp_row);
+    }
+
+    *out_width = width;
+    *out_height = height;
+    return pixels;
+}
+
+/* ============================================================================
  * Vtable
  * ============================================================================
  */

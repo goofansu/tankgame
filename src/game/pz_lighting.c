@@ -21,14 +21,15 @@
 #define RAY_EPSILON 0.0001f
 
 // Minimum ray distance (avoid issues with light inside/near occluders)
-#define MIN_RAY_DISTANCE 0.1f
+// Set high enough to skip internal edges of adjacent wall tiles
+#define MIN_RAY_DISTANCE 0.5f
 
 // Light geometry vertex: position (2) + color (3) + intensity (1) = 6 floats
 #define LIGHT_VERTEX_FLOATS 6
 #define LIGHT_VERTEX_SIZE (LIGHT_VERTEX_FLOATS * sizeof(float))
 
 // Maximum vertices for light geometry (fan from center)
-#define MAX_LIGHT_VERTICES (SHADOW_RAY_COUNT + 2)
+#define MAX_LIGHT_VERTICES PZ_MAX_SHADOW_VERTICES
 
 // Edge structure for shadow casting
 typedef struct edge {
@@ -60,6 +61,7 @@ struct pz_lighting {
     // Occluders (rebuilt each frame)
     pz_occluder occluders[PZ_MAX_OCCLUDERS];
     int occluder_count;
+    const pz_map *map;
 
     // Edges extracted from occluders
     edge edges[PZ_MAX_OCCLUDERS * PZ_MAX_EDGES_PER_OCCLUDER];
@@ -138,7 +140,11 @@ ray_segment_intersect(pz_vec2 ray_origin, pz_vec2 ray_dir, float max_dist,
     float t2 = (v1.x * v3.x + v1.y * v3.y) / dot;
 
     // Check intersection with minimum distance to avoid self-intersection
-    if (t1 >= MIN_RAY_DISTANCE && t1 <= max_dist && t2 >= 0.0f && t2 <= 1.0f) {
+    // Use small epsilon for t2 to handle floating point issues at segment
+    // endpoints
+    const float t2_epsilon = 0.001f;
+    if (t1 >= MIN_RAY_DISTANCE && t1 <= max_dist && t2 >= -t2_epsilon
+        && t2 <= 1.0f + t2_epsilon) {
         *out_t = t1;
         return true;
     }
@@ -152,6 +158,11 @@ cast_ray(
     pz_lighting *lighting, pz_vec2 origin, pz_vec2 direction, float max_dist)
 {
     float nearest_t = max_dist;
+
+    // NOTE: We skip pz_map_raycast and only use edge-based intersections.
+    // The edges already cover all wall tiles (added via
+    // pz_lighting_add_map_occluders). Using both caused issues with
+    // inconsistent minimum distance handling.
 
     for (int i = 0; i < lighting->edge_count; i++) {
         float t;
@@ -196,6 +207,33 @@ spotlight_intensity(float angle_to_point, float light_dir, float cone_angle,
     }
 
     return 0.0f;
+}
+
+static float
+normalize_angle_near(float angle, float center)
+{
+    float diff = angle - center;
+    while (diff > PZ_PI) {
+        angle -= 2.0f * PZ_PI;
+        diff -= 2.0f * PZ_PI;
+    }
+    while (diff < -PZ_PI) {
+        angle += 2.0f * PZ_PI;
+        diff += 2.0f * PZ_PI;
+    }
+    return angle;
+}
+
+static float
+normalize_angle_diff(float diff)
+{
+    while (diff > PZ_PI) {
+        diff -= 2.0f * PZ_PI;
+    }
+    while (diff < -PZ_PI) {
+        diff += 2.0f * PZ_PI;
+    }
+    return diff;
 }
 
 // ============================================================================
@@ -326,6 +364,7 @@ pz_lighting_clear_occluders(pz_lighting *lighting)
         return;
     lighting->occluder_count = 0;
     lighting->edge_count = 0;
+    lighting->map = NULL;
 }
 
 void
@@ -351,6 +390,8 @@ pz_lighting_add_map_occluders(pz_lighting *lighting, const pz_map *map)
     if (!lighting || !map) {
         return;
     }
+
+    lighting->map = map;
 
     float half_w = map->world_width / 2.0f;
     float half_h = map->world_height / 2.0f;
@@ -479,19 +520,51 @@ generate_light_geometry(pz_lighting *lighting, const pz_light *light,
     // (This creates crisp shadow edges)
 
     // First pass: collect all interesting angles
-    float angles[SHADOW_RAY_COUNT * 3]; // Regular + edge endpoints
+    int max_angles = ray_count + lighting->edge_count * 6 + 16;
+    float *angles = pz_alloc(sizeof(float) * (size_t)max_angles);
+    if (!angles) {
+        return 0;
+    }
     int angle_count = 0;
 
-    // Add regular interval angles
-    float angle_step = (end_angle - start_angle) / (float)ray_count;
-    for (int i = 0; i <= ray_count; i++) {
-        angles[angle_count++] = start_angle + i * angle_step;
+    if (light->type == PZ_LIGHT_SPOTLIGHT) {
+        float angle_step = (2.0f * light->cone_angle) / (float)ray_count;
+        for (int i = 0; i <= ray_count; i++) {
+            angles[angle_count++] = -light->cone_angle + i * angle_step;
+        }
+    } else {
+        // Add regular interval angles
+        float angle_step = (end_angle - start_angle) / (float)ray_count;
+        for (int i = 0; i <= ray_count; i++) {
+            float angle = start_angle + i * angle_step;
+            angles[angle_count++] = angle;
+        }
     }
 
     // Add angles to all edge endpoints (with small offsets for shadow edges)
-    for (int i = 0;
-         i < lighting->edge_count && angle_count < SHADOW_RAY_COUNT * 3 - 6;
+    // Only process edges that FACE the light (backface culling)
+    for (int i = 0; i < lighting->edge_count && angle_count + 6 < max_angles;
          i++) {
+        // Check if this edge faces the light
+        // Edge normal points perpendicular to edge direction (CCW winding)
+        pz_vec2 edge_dir = { lighting->edges[i].b.x - lighting->edges[i].a.x,
+            lighting->edges[i].b.y - lighting->edges[i].a.y };
+        // Normal is perpendicular (rotate 90 degrees CCW): (-dy, dx)
+        pz_vec2 edge_normal = { -edge_dir.y, edge_dir.x };
+
+        // Vector from edge midpoint to light
+        pz_vec2 edge_mid
+            = { (lighting->edges[i].a.x + lighting->edges[i].b.x) * 0.5f,
+                  (lighting->edges[i].a.y + lighting->edges[i].b.y) * 0.5f };
+        pz_vec2 to_light = { light->position.x - edge_mid.x,
+            light->position.y - edge_mid.y };
+
+        // If normal dot to_light is negative, this edge faces away from light
+        float facing = edge_normal.x * to_light.x + edge_normal.y * to_light.y;
+        if (facing < 0) {
+            continue; // Skip backfacing edges
+        }
+
         pz_vec2 to_a = { lighting->edges[i].a.x - light->position.x,
             lighting->edges[i].a.y - light->position.y };
         pz_vec2 to_b = { lighting->edges[i].b.x - light->position.x,
@@ -502,12 +575,27 @@ generate_light_geometry(pz_lighting *lighting, const pz_light *light,
 
         // Add with small offsets to catch both sides of corners
         float epsilon = 0.0001f;
-        angles[angle_count++] = angle_a - epsilon;
-        angles[angle_count++] = angle_a;
-        angles[angle_count++] = angle_a + epsilon;
-        angles[angle_count++] = angle_b - epsilon;
-        angles[angle_count++] = angle_b;
-        angles[angle_count++] = angle_b + epsilon;
+        if (light->type == PZ_LIGHT_SPOTLIGHT) {
+            float diff_a = normalize_angle_diff(angle_a - light->direction);
+            float diff_b = normalize_angle_diff(angle_b - light->direction);
+            if (fabsf(diff_a) <= light->cone_angle + 0.01f) {
+                angles[angle_count++] = diff_a - epsilon;
+                angles[angle_count++] = diff_a;
+                angles[angle_count++] = diff_a + epsilon;
+            }
+            if (fabsf(diff_b) <= light->cone_angle + 0.01f) {
+                angles[angle_count++] = diff_b - epsilon;
+                angles[angle_count++] = diff_b;
+                angles[angle_count++] = diff_b + epsilon;
+            }
+        } else {
+            angles[angle_count++] = angle_a - epsilon;
+            angles[angle_count++] = angle_a;
+            angles[angle_count++] = angle_a + epsilon;
+            angles[angle_count++] = angle_b - epsilon;
+            angles[angle_count++] = angle_b;
+            angles[angle_count++] = angle_b + epsilon;
+        }
     }
 
     // Sort angles
@@ -522,26 +610,16 @@ generate_light_geometry(pz_lighting *lighting, const pz_light *light,
     }
 
     // Remove duplicates and out-of-range angles (for spotlights)
-    float unique_angles[SHADOW_RAY_COUNT * 3];
+    float *unique_angles = pz_alloc(sizeof(float) * (size_t)angle_count);
+    if (!unique_angles) {
+        pz_free(angles);
+        return 0;
+    }
     int unique_count = 0;
     float last_angle = -1000.0f;
 
     for (int i = 0; i < angle_count; i++) {
         float a = angles[i];
-
-        // For spotlights, skip angles outside the cone
-        if (light->type == PZ_LIGHT_SPOTLIGHT) {
-            // Normalize angle difference
-            float diff = a - light->direction;
-            while (diff > PZ_PI)
-                diff -= 2.0f * PZ_PI;
-            while (diff < -PZ_PI)
-                diff += 2.0f * PZ_PI;
-            if (fabsf(diff) > light->cone_angle + 0.01f) {
-                continue;
-            }
-        }
-
         if (a - last_angle > 0.0001f) {
             unique_angles[unique_count++] = a;
             last_angle = a;
@@ -549,6 +627,8 @@ generate_light_geometry(pz_lighting *lighting, const pz_light *light,
     }
 
     if (unique_count < 2) {
+        pz_free(unique_angles);
+        pz_free(angles);
         return 0;
     }
 
@@ -565,13 +645,14 @@ generate_light_geometry(pz_lighting *lighting, const pz_light *light,
     float *v = vertices;
     int vertex_count = 0;
 
-    float prev_hit_x = 0, prev_hit_z = 0;
     float prev_uv_x = 0, prev_uv_z = 0;
-    float prev_intensity = 0;
     bool has_prev = false;
 
     for (int i = 0; i < unique_count && vertex_count + 3 <= max_vertices; i++) {
         float angle = unique_angles[i];
+        if (light->type == PZ_LIGHT_SPOTLIGHT) {
+            angle = light->direction + angle;
+        }
         pz_vec2 dir = { cosf(angle), sinf(angle) };
 
         // Cast ray
@@ -585,29 +666,21 @@ generate_light_geometry(pz_lighting *lighting, const pz_light *light,
         float uv_x = hit_x / lighting->world_width + 0.5f;
         float uv_z = hit_z / lighting->world_height + 0.5f;
 
-        // Calculate intensity at this point
-        float dist_factor = 1.0f - (t / light->radius);
-        if (dist_factor < 0.0f)
-            dist_factor = 0.0f;
-        dist_factor = dist_factor * dist_factor; // Quadratic falloff
-
-        float spot_factor = 1.0f;
-        if (light->type == PZ_LIGHT_SPOTLIGHT) {
-            spot_factor = spotlight_intensity(angle, light->direction,
-                light->cone_angle, light->cone_softness);
-        }
-
-        float intensity = light->intensity * dist_factor * spot_factor;
+        // Note: intensity falloff is now calculated in the fragment shader
+        // based on actual fragment distance from light center.
+        // We just pass the base intensity here.
 
         if (has_prev) {
             // Emit triangle: center, prev, current
+            // All vertices use the same base intensity - shader does falloff
+
             // Center vertex
             *v++ = uv_center_x;
             *v++ = uv_center_z;
             *v++ = light->color.x;
             *v++ = light->color.y;
             *v++ = light->color.z;
-            *v++ = light->intensity; // Full intensity at center
+            *v++ = light->intensity;
 
             // Previous vertex
             *v++ = prev_uv_x;
@@ -615,7 +688,7 @@ generate_light_geometry(pz_lighting *lighting, const pz_light *light,
             *v++ = light->color.x;
             *v++ = light->color.y;
             *v++ = light->color.z;
-            *v++ = prev_intensity;
+            *v++ = light->intensity;
 
             // Current vertex
             *v++ = uv_x;
@@ -623,19 +696,18 @@ generate_light_geometry(pz_lighting *lighting, const pz_light *light,
             *v++ = light->color.x;
             *v++ = light->color.y;
             *v++ = light->color.z;
-            *v++ = intensity;
+            *v++ = light->intensity;
 
             vertex_count += 3;
         }
 
-        prev_hit_x = hit_x;
-        prev_hit_z = hit_z;
         prev_uv_x = uv_x;
         prev_uv_z = uv_z;
-        prev_intensity = intensity;
         has_prev = true;
     }
 
+    pz_free(unique_angles);
+    pz_free(angles);
     return vertex_count;
 }
 
@@ -660,43 +732,56 @@ pz_lighting_render(pz_lighting *lighting)
     // Generate and render each light
     size_t total_buffer_size
         = PZ_MAX_LIGHTS * MAX_LIGHT_VERTICES * 3 * LIGHT_VERTEX_SIZE;
-    float *all_vertices = pz_alloc(total_buffer_size);
-    if (!all_vertices) {
+    float *light_vertices = pz_alloc(total_buffer_size);
+    if (!light_vertices) {
         pz_renderer_set_render_target(lighting->renderer, 0);
         return;
     }
 
-    float *v = all_vertices;
-    int total_vertices = 0;
-
+    // Draw each light separately so we can set per-light uniforms
     for (int i = 0; i < lighting->light_count; i++) {
         if (!lighting->lights[i].active) {
             continue;
         }
 
-        int max_verts
-            = (total_buffer_size / LIGHT_VERTEX_SIZE) - total_vertices;
+        pz_light *light = &lighting->lights[i];
+
+        // Generate geometry for this light
+        int max_verts = total_buffer_size / LIGHT_VERTEX_SIZE;
         int verts = generate_light_geometry(
-            lighting, &lighting->lights[i], v, max_verts);
-        v += verts * LIGHT_VERTEX_FLOATS;
-        total_vertices += verts;
+            lighting, light, light_vertices, max_verts);
+
+        if (verts > 0) {
+            // Upload vertices
+            pz_renderer_update_buffer(lighting->renderer,
+                lighting->vertex_buffer, 0, light_vertices,
+                verts * LIGHT_VERTEX_SIZE);
+
+            // Set per-light uniforms for distance-based falloff in shader
+            float light_center_uv_x
+                = light->position.x / lighting->world_width + 0.5f;
+            float light_center_uv_y
+                = light->position.y / lighting->world_height + 0.5f;
+            float light_radius_uv = light->radius
+                / lighting->world_width; // Assume square-ish world
+
+            pz_renderer_set_uniform_vec2(lighting->renderer,
+                lighting->light_shader, "u_light_center_uv",
+                (pz_vec2) { light_center_uv_x, light_center_uv_y });
+            pz_renderer_set_uniform_float(lighting->renderer,
+                lighting->light_shader, "u_light_radius_uv", light_radius_uv);
+
+            // Draw this light's geometry
+            pz_draw_cmd cmd = {
+                .pipeline = lighting->light_pipeline,
+                .vertex_buffer = lighting->vertex_buffer,
+                .vertex_count = verts,
+            };
+            pz_renderer_draw(lighting->renderer, &cmd);
+        }
     }
 
-    if (total_vertices > 0) {
-        // Upload vertices
-        pz_renderer_update_buffer(lighting->renderer, lighting->vertex_buffer,
-            0, all_vertices, total_vertices * LIGHT_VERTEX_SIZE);
-
-        // Draw all light geometry
-        pz_draw_cmd cmd = {
-            .pipeline = lighting->light_pipeline,
-            .vertex_buffer = lighting->vertex_buffer,
-            .vertex_count = total_vertices,
-        };
-        pz_renderer_draw(lighting->renderer, &cmd);
-    }
-
-    pz_free(all_vertices);
+    pz_free(light_vertices);
 
     // Reset to default framebuffer
     pz_renderer_set_render_target(lighting->renderer, 0);
@@ -749,4 +834,14 @@ pz_lighting_set_ambient(pz_lighting *lighting, pz_vec3 ambient)
         return;
     }
     lighting->ambient = ambient;
+}
+
+bool
+pz_lighting_save_debug(pz_lighting *lighting, const char *path)
+{
+    if (!lighting) {
+        return false;
+    }
+    return pz_renderer_save_render_target(
+        lighting->renderer, lighting->render_target, path);
 }

@@ -299,4 +299,9 @@ uint8_t *pz_renderer_screenshot(
 // Returns true on success
 bool pz_renderer_save_screenshot(pz_renderer *r, const char *path);
 
+// Save a render target to a PNG file (for debugging)
+// Returns true on success
+bool pz_renderer_save_render_target(
+    pz_renderer *r, pz_render_target_handle handle, const char *path);
+
 #endif // PZ_RENDERER_H

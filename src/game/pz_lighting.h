@@ -139,4 +139,7 @@ pz_vec3 pz_lighting_get_ambient(pz_lighting *lighting);
 // Set ambient light color
 void pz_lighting_set_ambient(pz_lighting *lighting, pz_vec3 ambient);
 
+// Save the lightmap to a PNG file (for debugging)
+bool pz_lighting_save_debug(pz_lighting *lighting, const char *path);
+
 #endif // PZ_LIGHTING_H
