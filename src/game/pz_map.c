@@ -192,6 +192,15 @@ pz_map_set_tile(pz_map *map, int x, int y, pz_tile_type type)
         return;
     }
     map->terrain[y * map->width + x] = type;
+
+    // Auto-set height for walls (1 = standard wall height)
+    // This makes pz_map_is_solid() consistent with terrain type
+    if (type == PZ_TILE_WALL) {
+        map->height_map[y * map->width + x] = 1;
+    } else if (map->height_map[y * map->width + x] > 0) {
+        // Clear height for non-wall tiles that had height
+        map->height_map[y * map->width + x] = 0;
+    }
 }
 
 uint8_t

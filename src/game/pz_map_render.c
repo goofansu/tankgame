@@ -334,8 +334,9 @@ pz_map_renderer_create(pz_renderer *renderer, pz_texture_manager *tex_manager)
     }
 
     // ==== Ground shader ====
+    // Use ground shader that supports track texture overlay
     mr->ground_shader = pz_renderer_load_shader(
-        renderer, "shaders/textured.vert", "shaders/textured.frag", "ground");
+        renderer, "shaders/ground.vert", "shaders/ground.frag", "ground");
     if (mr->ground_shader == PZ_INVALID_HANDLE) {
         pz_log(PZ_LOG_ERROR, PZ_LOG_CAT_RENDER, "Failed to load ground shader");
         pz_map_renderer_destroy(mr);
@@ -598,7 +599,9 @@ pz_map_renderer_set_map(pz_map_renderer *mr, const pz_map *map)
 }
 
 void
-pz_map_renderer_draw_ground(pz_map_renderer *mr, const pz_mat4 *view_projection)
+pz_map_renderer_draw_ground(pz_map_renderer *mr, const pz_mat4 *view_projection,
+    pz_texture_handle track_texture, float track_scale_x, float track_scale_z,
+    float track_offset_x, float track_offset_z)
 {
     if (!mr || !mr->map) {
         return;
@@ -609,6 +612,22 @@ pz_map_renderer_draw_ground(pz_map_renderer *mr, const pz_mat4 *view_projection)
         mr->renderer, mr->ground_shader, "u_mvp", view_projection);
     pz_renderer_set_uniform_int(
         mr->renderer, mr->ground_shader, "u_texture", 0);
+
+    // Set track texture uniforms
+    if (track_texture != PZ_INVALID_HANDLE && track_texture != 0) {
+        pz_renderer_bind_texture(mr->renderer, 1, track_texture);
+        pz_renderer_set_uniform_int(
+            mr->renderer, mr->ground_shader, "u_track_texture", 1);
+        pz_renderer_set_uniform_int(
+            mr->renderer, mr->ground_shader, "u_use_tracks", 1);
+        pz_renderer_set_uniform_vec2(mr->renderer, mr->ground_shader,
+            "u_track_scale", (pz_vec2) { track_scale_x, track_scale_z });
+        pz_renderer_set_uniform_vec2(mr->renderer, mr->ground_shader,
+            "u_track_offset", (pz_vec2) { track_offset_x, track_offset_z });
+    } else {
+        pz_renderer_set_uniform_int(
+            mr->renderer, mr->ground_shader, "u_use_tracks", 0);
+    }
 
     // Draw each terrain type
     // Skip walls - they have 3D geometry and drawing floor causes z-fighting
@@ -684,12 +703,15 @@ pz_map_renderer_draw_walls(pz_map_renderer *mr, const pz_mat4 *view_projection)
 }
 
 void
-pz_map_renderer_draw(pz_map_renderer *mr, const pz_mat4 *view_projection)
+pz_map_renderer_draw(pz_map_renderer *mr, const pz_mat4 *view_projection,
+    pz_texture_handle track_texture, float track_scale_x, float track_scale_z,
+    float track_offset_x, float track_offset_z)
 {
     // Draw walls first, then ground - depth test will prevent ground from
     // overwriting wall sides
     pz_map_renderer_draw_walls(mr, view_projection);
-    pz_map_renderer_draw_ground(mr, view_projection);
+    pz_map_renderer_draw_ground(mr, view_projection, track_texture,
+        track_scale_x, track_scale_z, track_offset_x, track_offset_z);
 }
 
 void

@@ -32,3 +32,11 @@
 - [x] M4.1: tank body mesh, turret mesh, entity shader, renders at origin
 - [x] Tank physics: heavy friction (25.0) for quick stopping
 - [x] Wall collision detection (separate axis, sliding along walls)
+
+## Phase 7: Track Accumulation (front-loaded)
+- [x] M7.1: FBO accumulation texture, track rendering pipeline
+- [x] M7.2: ground shader samples track texture using world coordinates
+- [x] M7.3: track marks placed at distance intervals for each tread
+
+## Bug Fixes
+- [x] Fixed pz_map_set_tile to auto-set height for WALL tiles (test_map fix)

@@ -23,6 +23,7 @@
 #include "game/pz_map.h"
 #include "game/pz_map_render.h"
 #include "game/pz_mesh.h"
+#include "game/pz_tracks.h"
 
 #define WINDOW_TITLE "Tank Game"
 #define WINDOW_WIDTH 1280
@@ -184,6 +185,17 @@ main(int argc, char *argv[])
     if (map_renderer) {
         map_hot_reload
             = pz_map_hot_reload_create(map_path, &game_map, map_renderer);
+    }
+
+    // Create track accumulation system
+    pz_tracks *tracks = NULL;
+    if (game_map) {
+        pz_tracks_config track_config = {
+            .world_width = game_map->world_width,
+            .world_height = game_map->world_height,
+            .texture_size = 1024, // 1024x1024 track texture
+        };
+        tracks = pz_tracks_create(renderer, tex_manager, &track_config);
     }
 
     // Initialize debug command interface
@@ -452,6 +464,15 @@ main(int argc, char *argv[])
         }
 
         // ====================================================================
+        // Track marks (when tank is moving)
+        // ====================================================================
+        if (tracks && pz_vec2_len(tank_vel) > 0.1f) {
+            // Add track marks - tread offset is half the tank body width
+            pz_tracks_add_mark(
+                tracks, tank_pos.x, tank_pos.y, tank_angle, 0.45f);
+        }
+
+        // ====================================================================
         // Turret aiming (mouse controls)
         // ====================================================================
         pz_vec3 mouse_world
@@ -486,11 +507,25 @@ main(int argc, char *argv[])
         pz_renderer_clear(renderer, 0.2f, 0.2f, 0.25f, 1.0f, 1.0f);
 
         // ====================================================================
+        // Update and render tracks (before drawing ground)
+        // ====================================================================
+        pz_tracks_update(tracks);
+
+        // ====================================================================
         // Draw map
         // ====================================================================
         const pz_mat4 *vp = pz_camera_get_view_projection(&camera);
         {
-            pz_map_renderer_draw(map_renderer, vp);
+            // Get track texture and UV transform
+            pz_texture_handle track_tex = pz_tracks_get_texture(tracks);
+            float track_scale_x = 0.0f, track_scale_z = 0.0f;
+            float track_offset_x = 0.0f, track_offset_z = 0.0f;
+            if (tracks) {
+                pz_tracks_get_uv_transform(tracks, &track_scale_x,
+                    &track_scale_z, &track_offset_x, &track_offset_z);
+            }
+            pz_map_renderer_draw(map_renderer, vp, track_tex, track_scale_x,
+                track_scale_z, track_offset_x, track_offset_z);
         }
 
         // ====================================================================
@@ -602,6 +637,7 @@ main(int argc, char *argv[])
     pz_mesh_destroy(tank_turret, renderer);
     pz_mesh_destroy(tank_body, renderer);
 
+    pz_tracks_destroy(tracks);
     pz_map_hot_reload_destroy(map_hot_reload);
     pz_map_renderer_destroy(map_renderer);
     pz_map_destroy(game_map);

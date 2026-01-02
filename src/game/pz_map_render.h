@@ -26,15 +26,23 @@ void pz_map_renderer_destroy(pz_map_renderer *mr);
 void pz_map_renderer_set_map(pz_map_renderer *mr, const pz_map *map);
 
 // Render the map ground layer
-void pz_map_renderer_draw_ground(
-    pz_map_renderer *mr, const pz_mat4 *view_projection);
+// track_texture: optional track accumulation texture (0 = no tracks)
+// track_scale/offset: transform from world XZ to track texture UV
+void pz_map_renderer_draw_ground(pz_map_renderer *mr,
+    const pz_mat4 *view_projection, pz_texture_handle track_texture,
+    float track_scale_x, float track_scale_z, float track_offset_x,
+    float track_offset_z);
 
 // Render the 3D wall geometry
 void pz_map_renderer_draw_walls(
     pz_map_renderer *mr, const pz_mat4 *view_projection);
 
 // Render everything (ground + walls)
-void pz_map_renderer_draw(pz_map_renderer *mr, const pz_mat4 *view_projection);
+// track_texture: optional track accumulation texture (0 = no tracks)
+// track_scale/offset: transform from world XZ to track texture UV
+void pz_map_renderer_draw(pz_map_renderer *mr, const pz_mat4 *view_projection,
+    pz_texture_handle track_texture, float track_scale_x, float track_scale_z,
+    float track_offset_x, float track_offset_z);
 
 // Check for texture hot-reload
 void pz_map_renderer_check_hot_reload(pz_map_renderer *mr);
