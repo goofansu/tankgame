@@ -147,10 +147,20 @@ main(int argc, char *argv[])
     pz_camera_setup_game_view(
         &camera, (pz_vec3) { 0, 0, 0 }, 35.0f, 20.0f); // Height 35, 20° pitch
 
-    // Create the test map
-    pz_map *game_map = pz_map_create_test();
+    // Try to load map from file, fall back to test map
+    const char *map_path = "assets/maps/test_arena.map";
+    pz_map *game_map = pz_map_load(map_path);
     if (!game_map) {
-        pz_log(PZ_LOG_ERROR, PZ_LOG_CAT_GAME, "Failed to create test map");
+        pz_log(PZ_LOG_WARN, PZ_LOG_CAT_GAME,
+            "Failed to load map from %s, creating test map", map_path);
+        game_map = pz_map_create_test();
+        // Save the test map so we have a file to edit
+        if (game_map) {
+            pz_map_save(game_map, map_path);
+        }
+    }
+    if (!game_map) {
+        pz_log(PZ_LOG_ERROR, PZ_LOG_CAT_GAME, "Failed to create map");
     }
 
     // Create map renderer
@@ -158,6 +168,13 @@ main(int argc, char *argv[])
         = pz_map_renderer_create(renderer, tex_manager);
     if (map_renderer && game_map) {
         pz_map_renderer_set_map(map_renderer, game_map);
+    }
+
+    // Set up map hot-reload
+    pz_map_hot_reload *map_hot_reload = NULL;
+    if (map_renderer) {
+        map_hot_reload
+            = pz_map_hot_reload_create(map_path, &game_map, map_renderer);
     }
 
     // Initialize debug command interface
@@ -255,6 +272,7 @@ main(int argc, char *argv[])
         uint64_t now = pz_time_now();
         if (now - last_hot_reload_check > 500000) { // 500ms in microseconds
             pz_texture_check_hot_reload(tex_manager);
+            pz_map_hot_reload_check(map_hot_reload);
             last_hot_reload_check = now;
         }
 
@@ -295,6 +313,7 @@ main(int argc, char *argv[])
     pz_debug_overlay_destroy(debug_overlay);
     pz_debug_cmd_shutdown();
 
+    pz_map_hot_reload_destroy(map_hot_reload);
     pz_map_renderer_destroy(map_renderer);
     pz_map_destroy(game_map);
 

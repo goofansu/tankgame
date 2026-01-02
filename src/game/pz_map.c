@@ -4,11 +4,15 @@
 
 #include "pz_map.h"
 
+#include <ctype.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "../core/pz_log.h"
 #include "../core/pz_mem.h"
+#include "../core/pz_platform.h"
+#include "../core/pz_str.h"
 
 pz_map *
 pz_map_create(int width, int height, float tile_size)
@@ -346,4 +350,367 @@ pz_map_print(const pz_map *map)
         }
         printf("\n");
     }
+}
+
+// ============================================================================
+// Map Loading/Saving
+// ============================================================================
+
+/*
+ * Map file format (text-based):
+ *
+ * # Comment lines start with #
+ * version 1
+ * name My Map Name
+ * size 16 16
+ * tile_size 2.0
+ *
+ * terrain
+ * ################
+ * #..............#
+ * #..##....##....#
+ * ...
+ * ################
+ *
+ * heights
+ * 2222222222222222
+ * 2000000000000002
+ * ...
+ *
+ * spawn 4.0 4.0 0.785 0 0
+ * spawn 28.0 4.0 2.356 0 0
+ * ...
+ *
+ * Terrain chars: . = ground, # = wall, ~ = water, : = mud, * = ice
+ * Heights: 0-9 (height level per tile)
+ * Spawn: x y angle team team_spawn
+ */
+
+// Helper to convert tile char to type
+static pz_tile_type
+char_to_tile(char c)
+{
+    switch (c) {
+    case '#':
+        return PZ_TILE_WALL;
+    case '~':
+        return PZ_TILE_WATER;
+    case ':':
+        return PZ_TILE_MUD;
+    case '*':
+        return PZ_TILE_ICE;
+    case '.':
+    default:
+        return PZ_TILE_GROUND;
+    }
+}
+
+// Helper to convert tile type to char
+static char
+tile_to_char(pz_tile_type type)
+{
+    switch (type) {
+    case PZ_TILE_WALL:
+        return '#';
+    case PZ_TILE_WATER:
+        return '~';
+    case PZ_TILE_MUD:
+        return ':';
+    case PZ_TILE_ICE:
+        return '*';
+    case PZ_TILE_GROUND:
+    default:
+        return '.';
+    }
+}
+
+// Skip whitespace
+static const char *
+skip_whitespace(const char *s)
+{
+    while (*s && isspace((unsigned char)*s)) {
+        s++;
+    }
+    return s;
+}
+
+// Read a line from text buffer, advance pointer
+// Returns NULL if no more lines
+static const char *
+read_line(const char **text, char *buf, size_t buf_size)
+{
+    const char *p = *text;
+    if (!p || !*p) {
+        return NULL;
+    }
+
+    size_t i = 0;
+    while (*p && *p != '\n' && *p != '\r' && i < buf_size - 1) {
+        buf[i++] = *p++;
+    }
+    buf[i] = '\0';
+
+    // Skip newline(s)
+    while (*p && (*p == '\n' || *p == '\r')) {
+        p++;
+    }
+
+    *text = p;
+    return buf;
+}
+
+pz_map *
+pz_map_load(const char *path)
+{
+    char *file_data = pz_file_read_text(path);
+    if (!file_data) {
+        pz_log(PZ_LOG_ERROR, PZ_LOG_CAT_GAME, "Failed to read map file: %s",
+            path);
+        return NULL;
+    }
+
+    pz_map *map = NULL;
+    const char *text = file_data;
+    char line[512];
+
+    int version = 0;
+    char name[64] = "Unnamed";
+    int width = 0, height = 0;
+    float tile_size = 2.0f;
+
+    // Parse header
+    while (read_line(&text, line, sizeof(line))) {
+        const char *p = skip_whitespace(line);
+
+        // Skip empty lines and comments
+        if (!*p || *p == '#') {
+            continue;
+        }
+
+        if (strncmp(p, "version ", 8) == 0) {
+            version = atoi(p + 8);
+        } else if (strncmp(p, "name ", 5) == 0) {
+            strncpy(name, p + 5, sizeof(name) - 1);
+            name[sizeof(name) - 1] = '\0';
+        } else if (strncmp(p, "size ", 5) == 0) {
+            sscanf(p + 5, "%d %d", &width, &height);
+        } else if (strncmp(p, "tile_size ", 10) == 0) {
+            tile_size = (float)atof(p + 10);
+        } else if (strcmp(p, "terrain") == 0) {
+            // Start of terrain data
+            break;
+        }
+    }
+
+    if (version != 1) {
+        pz_log(PZ_LOG_ERROR, PZ_LOG_CAT_GAME,
+            "Unknown map version: %d (expected 1)", version);
+        pz_free(file_data);
+        return NULL;
+    }
+
+    if (width <= 0 || height <= 0 || width > PZ_MAP_MAX_SIZE
+        || height > PZ_MAP_MAX_SIZE) {
+        pz_log(PZ_LOG_ERROR, PZ_LOG_CAT_GAME, "Invalid map size: %dx%d", width,
+            height);
+        pz_free(file_data);
+        return NULL;
+    }
+
+    // Create the map
+    map = pz_map_create(width, height, tile_size);
+    if (!map) {
+        pz_free(file_data);
+        return NULL;
+    }
+    strncpy(map->name, name, sizeof(map->name) - 1);
+
+    // Read terrain data (height rows, from top to bottom in file)
+    int terrain_rows_read = 0;
+    while (read_line(&text, line, sizeof(line)) && terrain_rows_read < height) {
+        const char *p = skip_whitespace(line);
+
+        // Skip empty lines and comments
+        if (!*p || *p == '#') {
+            continue;
+        }
+
+        // Check for end of terrain section
+        if (strcmp(p, "heights") == 0) {
+            break;
+        }
+
+        // File row 0 is the top of the map (y = height-1)
+        int y = height - 1 - terrain_rows_read;
+        for (int x = 0; x < width && p[x]; x++) {
+            pz_map_set_tile(map, x, y, char_to_tile(p[x]));
+        }
+        terrain_rows_read++;
+    }
+
+    // Read height data
+    int height_rows_read = 0;
+    while (read_line(&text, line, sizeof(line)) && height_rows_read < height) {
+        const char *p = skip_whitespace(line);
+
+        // Skip empty lines and comments
+        if (!*p || *p == '#') {
+            continue;
+        }
+
+        // Check for spawn section
+        if (strncmp(p, "spawn ", 6) == 0) {
+            // Parse spawn and continue
+            float sx, sy, angle;
+            int team, team_spawn;
+            if (sscanf(p + 6, "%f %f %f %d %d", &sx, &sy, &angle, &team,
+                    &team_spawn)
+                == 5) {
+                if (map->spawn_count < PZ_MAP_MAX_SPAWNS) {
+                    map->spawns[map->spawn_count++] = (pz_spawn_point) {
+                        .pos = { sx, sy },
+                        .angle = angle,
+                        .team = team,
+                        .team_spawn = team_spawn != 0,
+                    };
+                }
+            }
+            continue;
+        }
+
+        // Parse height row
+        int y = height - 1 - height_rows_read;
+        for (int x = 0; x < width && p[x]; x++) {
+            if (p[x] >= '0' && p[x] <= '9') {
+                pz_map_set_height(map, x, y, (uint8_t)(p[x] - '0'));
+            }
+        }
+        height_rows_read++;
+    }
+
+    // Continue reading for any remaining spawns
+    while (read_line(&text, line, sizeof(line))) {
+        const char *p = skip_whitespace(line);
+        if (!*p || *p == '#') {
+            continue;
+        }
+
+        if (strncmp(p, "spawn ", 6) == 0) {
+            float sx, sy, angle;
+            int team, team_spawn;
+            if (sscanf(p + 6, "%f %f %f %d %d", &sx, &sy, &angle, &team,
+                    &team_spawn)
+                == 5) {
+                if (map->spawn_count < PZ_MAP_MAX_SPAWNS) {
+                    map->spawns[map->spawn_count++] = (pz_spawn_point) {
+                        .pos = { sx, sy },
+                        .angle = angle,
+                        .team = team,
+                        .team_spawn = team_spawn != 0,
+                    };
+                }
+            }
+        }
+    }
+
+    pz_free(file_data);
+
+    pz_log(
+        PZ_LOG_INFO, PZ_LOG_CAT_GAME, "Loaded map: %s (%s)", map->name, path);
+
+    return map;
+}
+
+bool
+pz_map_save(const pz_map *map, const char *path)
+{
+    if (!map || !path) {
+        return false;
+    }
+
+    // Build map file content
+    // Calculate approximate size needed
+    size_t buf_size
+        = 1024 + (size_t)(map->width + 2) * (size_t)map->height * 2
+        + (size_t)map->spawn_count * 64;
+    char *buf = pz_alloc(buf_size);
+    if (!buf) {
+        return false;
+    }
+
+    char *p = buf;
+    int remaining = (int)buf_size;
+
+    // Header
+    int written = snprintf(p, remaining,
+        "# Tank Game Map\n"
+        "version 1\n"
+        "name %s\n"
+        "size %d %d\n"
+        "tile_size %.1f\n"
+        "\n"
+        "terrain\n",
+        map->name, map->width, map->height, map->tile_size);
+    p += written;
+    remaining -= written;
+
+    // Terrain data (top to bottom in file = high Y to low Y)
+    for (int y = map->height - 1; y >= 0 && remaining > map->width + 2; y--) {
+        for (int x = 0; x < map->width; x++) {
+            *p++ = tile_to_char(pz_map_get_tile(map, x, y));
+            remaining--;
+        }
+        *p++ = '\n';
+        remaining--;
+    }
+
+    // Height data
+    written = snprintf(p, remaining, "\nheights\n");
+    p += written;
+    remaining -= written;
+
+    for (int y = map->height - 1; y >= 0 && remaining > map->width + 2; y--) {
+        for (int x = 0; x < map->width; x++) {
+            uint8_t h = pz_map_get_height(map, x, y);
+            *p++ = (char)('0' + (h > 9 ? 9 : h));
+            remaining--;
+        }
+        *p++ = '\n';
+        remaining--;
+    }
+
+    // Spawn points
+    if (map->spawn_count > 0 && remaining > 64) {
+        written = snprintf(p, remaining, "\n");
+        p += written;
+        remaining -= written;
+
+        for (int i = 0; i < map->spawn_count && remaining > 64; i++) {
+            const pz_spawn_point *sp = &map->spawns[i];
+            written = snprintf(p, remaining, "spawn %.2f %.2f %.3f %d %d\n",
+                sp->pos.x, sp->pos.y, sp->angle, sp->team,
+                sp->team_spawn ? 1 : 0);
+            p += written;
+            remaining -= written;
+        }
+    }
+
+    *p = '\0';
+
+    bool success = pz_file_write_text(path, buf);
+    pz_free(buf);
+
+    if (success) {
+        pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME, "Saved map: %s", path);
+    } else {
+        pz_log(PZ_LOG_ERROR, PZ_LOG_CAT_GAME, "Failed to save map: %s", path);
+    }
+
+    return success;
+}
+
+int64_t
+pz_map_file_mtime(const char *path)
+{
+    return pz_file_mtime(path);
 }

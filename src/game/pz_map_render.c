@@ -10,6 +10,8 @@
 
 #include "../core/pz_log.h"
 #include "../core/pz_mem.h"
+#include "../core/pz_platform.h"
+#include "../core/pz_str.h"
 
 // Texture paths for each terrain type
 static const char *terrain_textures[PZ_TILE_COUNT] = {
@@ -692,4 +694,103 @@ pz_map_renderer_check_hot_reload(pz_map_renderer *mr)
 {
     // Texture hot-reload is handled by the texture manager
     (void)mr;
+}
+
+// ============================================================================
+// Map Hot-Reload Implementation
+// ============================================================================
+
+struct pz_map_hot_reload {
+    char *path;              // Path to map file
+    pz_map **map_ptr;        // Pointer to the map pointer (for swapping)
+    pz_map_renderer *renderer; // Renderer to update on reload
+    int64_t last_mtime;      // Last modification time
+};
+
+pz_map_hot_reload *
+pz_map_hot_reload_create(
+    const char *path, pz_map **map_ptr, pz_map_renderer *renderer)
+{
+    if (!path || !map_ptr || !renderer) {
+        return NULL;
+    }
+
+    pz_map_hot_reload *hr = pz_calloc(1, sizeof(pz_map_hot_reload));
+    if (!hr) {
+        return NULL;
+    }
+
+    hr->path = pz_str_dup(path);
+    hr->map_ptr = map_ptr;
+    hr->renderer = renderer;
+    hr->last_mtime = pz_map_file_mtime(path);
+
+    pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME, "Map hot-reload watching: %s", path);
+
+    return hr;
+}
+
+void
+pz_map_hot_reload_destroy(pz_map_hot_reload *hr)
+{
+    if (!hr) {
+        return;
+    }
+
+    pz_free(hr->path);
+    pz_free(hr);
+}
+
+bool
+pz_map_hot_reload_check(pz_map_hot_reload *hr)
+{
+    if (!hr || !hr->path) {
+        return false;
+    }
+
+    int64_t mtime = pz_map_file_mtime(hr->path);
+    if (mtime == 0) {
+        // File doesn't exist or can't be read
+        return false;
+    }
+
+    if (mtime == hr->last_mtime) {
+        // No change
+        return false;
+    }
+
+    // File changed - reload
+    pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME, "Reloading map: %s", hr->path);
+
+    pz_map *new_map = pz_map_load(hr->path);
+    if (!new_map) {
+        pz_log(PZ_LOG_ERROR, PZ_LOG_CAT_GAME, "Failed to reload map: %s",
+            hr->path);
+        // Update mtime anyway to avoid spamming reload attempts
+        hr->last_mtime = mtime;
+        return false;
+    }
+
+    // Destroy old map
+    if (*hr->map_ptr) {
+        pz_map_destroy(*hr->map_ptr);
+    }
+
+    // Set new map
+    *hr->map_ptr = new_map;
+
+    // Update renderer
+    pz_map_renderer_set_map(hr->renderer, new_map);
+
+    hr->last_mtime = mtime;
+
+    pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME, "Map reloaded successfully");
+
+    return true;
+}
+
+const char *
+pz_map_hot_reload_get_path(const pz_map_hot_reload *hr)
+{
+    return hr ? hr->path : NULL;
 }

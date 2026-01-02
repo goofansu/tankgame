@@ -39,4 +39,26 @@ void pz_map_renderer_draw(pz_map_renderer *mr, const pz_mat4 *view_projection);
 // Check for texture hot-reload
 void pz_map_renderer_check_hot_reload(pz_map_renderer *mr);
 
+// ============================================================================
+// Map Hot-Reload Support
+// ============================================================================
+
+// Opaque map hot-reload context
+typedef struct pz_map_hot_reload pz_map_hot_reload;
+
+// Create a hot-reload watcher for a map file
+// The renderer's mesh will be updated when the file changes
+pz_map_hot_reload *pz_map_hot_reload_create(
+    const char *path, pz_map **map_ptr, pz_map_renderer *renderer);
+
+// Destroy the hot-reload watcher
+void pz_map_hot_reload_destroy(pz_map_hot_reload *hr);
+
+// Check for changes and reload if needed
+// Returns true if the map was reloaded
+bool pz_map_hot_reload_check(pz_map_hot_reload *hr);
+
+// Get the map file path being watched
+const char *pz_map_hot_reload_get_path(const pz_map_hot_reload *hr);
+
 #endif // PZ_MAP_RENDER_H

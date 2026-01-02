@@ -96,4 +96,18 @@ int pz_map_get_spawn_count(const pz_map *map);
 // Debug: print map to console
 void pz_map_print(const pz_map *map);
 
+// ============================================================================
+// Map Loading/Saving
+// ============================================================================
+
+// Load map from file (returns NULL on failure)
+pz_map *pz_map_load(const char *path);
+
+// Save map to file (returns true on success)
+bool pz_map_save(const pz_map *map, const char *path);
+
+// Get the file modification time of a map file
+// Returns 0 if the file doesn't exist
+int64_t pz_map_file_mtime(const char *path);
+
 #endif // PZ_MAP_H
