@@ -328,20 +328,20 @@ This document breaks the project into small, verifiable milestones. Each milesto
 
 **Validation:** Fire at wall, projectile bounces off
 
-### M6.4: Projectile-Tank Collision
-- [ ] Detect tank hit (ignore self)
-- [ ] Apply damage
-- [ ] Destroy projectile
-- [ ] Visual feedback (flash, sound placeholder)
+### M6.4: Projectile-Tank Collision ✓ (FRONTLOADED)
+- [x] Detect tank hit (ignore self)
+- [x] Apply damage
+- [x] Destroy projectile
+- [x] Visual feedback (flash, sound placeholder)
 
 **Validation:** Fire at other tank, damage applied, projectile disappears
 
 ### M6.5: Tank Death and Respawn
 - [ ] Tank destroyed at 0 HP
 - [ ] Death visual (placeholder explosion)
-- [ ] Respawn after delay at spawn point
+- [ ] Respawn after delay at spawn point (player only)
 
-**Validation:** Kill tank, see death effect, tank respawns
+**Validation:** Kill tank, see death effect, player tank respawns
 
 ---
 
@@ -367,6 +367,56 @@ This document breaks the project into small, verifiable milestones. Each milesto
 - [x] Both treads leave separate marks
 
 **Validation:** Tracks look like tank treads, not just blobs
+
+---
+
+## Phase 7B: Enemy AI and Campaign
+*Single-player content*
+
+### M7B.1: Enemy Types and Spawn Data
+- [ ] Define 3 enemy types: Level 1, Level 2, Level 3
+- [ ] Enemy type properties: HP, damage, fire rate, starting weapon
+- [ ] Level 2+ enemies seek powerups
+- [ ] Map format extended with enemy spawns (type, position)
+
+**Enemy Types:**
+
+| Level | HP | Weapon | Bounces | Fire Rate | Seeks Powerups |
+|-------|-----|--------|---------|-----------|----------------|
+| 1 | 10 | Default | 1 | Normal | No |
+| 2 | 15 | Default | 1 | Faster | Yes |
+| 3 | 20 | Heavy | 2 | Fast | Yes |
+
+**Validation:** Parse enemy spawn from map, spawn correct enemy type
+
+### M7B.2: Stationary Enemy AI
+- [ ] Enemy tanks aim at player
+- [ ] Fire when player in line-of-sight
+- [ ] Basic firing cooldown per enemy type
+- [ ] Enemies do not move (stationary turrets for now)
+
+**Validation:** Enemy tracks player, fires when visible, projectiles can hit player
+
+### M7B.3: Enemy Death
+- [ ] Enemy destroyed at 0 HP (no respawn)
+- [ ] Death visual (placeholder explosion)
+- [ ] Track enemies remaining
+
+**Validation:** Kill enemy, stays dead, counter decrements
+
+### M7B.4: Campaign Map 1
+- [ ] First campaign map with 1 Level 1 enemy
+- [ ] Player spawn point
+- [ ] Simple layout to test combat
+
+**Validation:** Load map, fight and defeat enemy
+
+### M7B.5: Win Condition
+- [ ] Detect all enemies defeated
+- [ ] Display victory message
+- [ ] Restart option
+
+**Validation:** Kill all enemies, see victory, can restart
 
 ---
 
@@ -564,130 +614,11 @@ This document breaks the project into small, verifiable milestones. Each milesto
 
 ---
 
-## Phase 13: Networking - Foundation
-*Prepare for multiplayer (no lockstep requirement)*
+## Phase 13-15: Networking (DEFERRED)
+*Multiplayer deferred until single-player campaign is complete*
 
-### M13.1: Game State Serialization
-- [ ] Serialize full game state to bytes (versioned)
-- [ ] Deserialize back to game state
-- [ ] Verify round-trip
-
-**Validation:** Serialize, deserialize, compare states
-
-### M13.2: Snapshot History + State Hash
-- [ ] Store last N snapshots with tick numbers
-- [ ] Compute lightweight state hash for regression and debugging
-- [ ] Diff helper to report the first divergence in tests
-
-**Validation:** 
-- Replay with the same inputs yields identical hashes
-- Divergence reports the tick where it started
-
-### M13.3: Input Buffering for Network
-- [ ] Queue `pz_tank_input` by tick (local + remote)
-- [ ] Simulation consumes queued inputs, with neutral fallback
-- [ ] Basic input delay simulation for testing
-
-**Validation:** Run with artificial input delay, sim remains stable
-
----
-
-## Phase 14: Networking - picoquic Integration
-*Real network code*
-
-### M14.1: picoquic Vendor
-- [ ] Add picoquic as submodule/vendor
-- [ ] Add picotls dependency
-- [ ] Build picoquic with our project
-- [ ] Link successfully
-
-**Validation:** Project builds with picoquic
-
-### M14.2: QUIC Server
-- [ ] Create QUIC server context
-- [ ] Generate self-signed cert
-- [ ] Accept connections
-- [ ] Callback on connect/disconnect
-
-**Validation:** Server runs, client can connect (using picoquic test client)
-
-### M14.3: QUIC Client
-- [ ] Create QUIC client context
-- [ ] Connect to server
-- [ ] Handle connection callbacks
-
-**Validation:** Our client connects to our server
-
-### M14.4: Datagram Send/Receive
-- [ ] Send datagram from client
-- [ ] Receive datagram on server
-- [ ] Send datagram from server
-- [ ] Receive on client
-
-**Validation:** Echo test - client sends, server echoes, client receives
-
-### M14.5: Stream Send/Receive
-- [ ] Open reliable stream
-- [ ] Send data on stream
-- [ ] Receive on other end
-- [ ] Handle stream close
-
-**Validation:** Send message on stream, receive correctly
-
-### M14.6: Network Wrapper API
-- [ ] Implement `pz_net_*` wrapper over picoquic
-- [ ] Clean callback interface
-- [ ] Connection management
-
-**Validation:** Game code uses wrapper, not raw picoquic
-
----
-
-## Phase 15: Networking - Game Protocol
-*Multiplayer gameplay*
-
-### M15.1: Connection Handshake
-- [ ] Client sends connect request (name, team)
-- [ ] Server validates, assigns client ID
-- [ ] Server sends accept with game state
-- [ ] Client enters game
-
-**Validation:** Connect to server, see other player
-
-### M15.2: Input Transmission
-- [ ] Client sends input each tick
-- [ ] Server buffers inputs
-- [ ] Server applies inputs to simulation
-
-**Validation:** Input reaches server (log on server)
-
-### M15.3: State Broadcast
-- [ ] Server serializes game delta
-- [ ] Server sends to all clients
-- [ ] Client receives and applies
-
-**Validation:** Move on one client, see it on other
-
-### M15.4: Client-Side Prediction
-- [ ] Client predicts local tank
-- [ ] Store input history
-- [ ] Reconcile on server update
-
-**Validation:** Responsive movement even with latency
-
-### M15.5: Entity Interpolation
-- [ ] Buffer server snapshots
-- [ ] Interpolate other entities
-- [ ] Render at interpolated positions
-
-**Validation:** Other players move smoothly
-
-### M15.6: Network Debug Tools
-- [ ] Latency simulator
-- [ ] Packet loss simulator
-- [ ] Network debug overlay
-
-**Validation:** Enable 200ms latency, game still playable
+Networking phases (Foundation, picoquic Integration, Game Protocol) are deferred.
+Focus is on single-player campaign mode with enemy AI first.
 
 ---
 
@@ -738,17 +669,15 @@ M6.1 → M6.2 → M6.3 → M6.4 → M6.5
         ↓     ↓     ↓
       M7.x  M8.x  M9.x → M10.x
               ↓
+           M7B.x (Enemy AI & Campaign)
+              ↓
             M11.x
               ↓
             M12.x
               ↓
-M13.1 → M13.2 → M13.3
-              ↓
-M14.1 → M14.2 → M14.3 → M14.4 → M14.5 → M14.6
-              ↓
-M15.1 → M15.2 → M15.3 → M15.4 → M15.5 → M15.6
-              ↓
             M16.x
+              ↓
+        (Networking deferred)
 ```
 
 ---
@@ -792,17 +721,17 @@ M15.1 → M15.2 → M15.3 → M15.4 → M15.5 → M15.6
 | 5 | 4 | 3-4 hours |
 | 6 | 5 | 4-6 hours |
 | 7 | 3 | 2-3 hours |
+| 7B | 5 | 4-6 hours |
 | 8 | 3 | 2-3 hours |
 | 9 | 6 | 4-6 hours |
 | 10 | 4 | 3-4 hours |
 | 11 | 6 | 6-8 hours |
 | 12 | 4 | 4-6 hours |
-| 13 | 3 | 2-3 hours |
-| 14 | 6 | 8-12 hours |
-| 15 | 6 | 8-12 hours |
 | 16 | 4 | 4-6 hours |
 
-**Total: ~66-96 hours** of focused development
+**Campaign Total: ~52-76 hours** of focused development
+
+Networking phases (13-15) deferred, would add ~18-27 hours
 
 ---
 

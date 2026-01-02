@@ -63,5 +63,14 @@
 
 ## Next Up
 - [ ] M6.5: Tank death and respawn
-- [ ] M5.x: Collision shapes and physics system (formalize what's already working)
-- [ ] M4.2/M4.3: Entity system foundation (formal entity manager - tank system is a good start)
+- [ ] M7B.1: Enemy types and spawn data (Level 1/2/3 enemies)
+- [ ] M7B.2: Stationary enemy AI (aim + fire at player)
+- [ ] M7B.3: Enemy death (no respawn)
+- [ ] M7B.4: Campaign map 1 (1x Level 1 enemy)
+- [ ] M7B.5: Win condition (all enemies defeated)
+
+## Plan Changes
+- Networking phases (13-15) deferred
+- Focus on single-player campaign with enemy AI
+- Enemies defined in map files (type, position)
+- 3 enemy types with different stats/behaviors
