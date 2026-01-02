@@ -342,6 +342,19 @@ main(int argc, char *argv[])
     // Main loop
     // ========================================================================
 
+    // ========================================================================
+    // Explosion light tracking (for visual feedback)
+    // ========================================================================
+    typedef struct {
+        pz_vec2 pos;
+        float timer; // Remaining time
+        float duration; // Total duration
+        bool is_tank; // Tank explosion vs bullet impact
+    } explosion_light;
+
+#define MAX_EXPLOSION_LIGHTS 16
+    explosion_light explosion_lights[MAX_EXPLOSION_LIGHTS] = { 0 };
+
     bool running = true;
     SDL_Event event;
     int frame_count = 0;
@@ -569,7 +582,7 @@ main(int argc, char *argv[])
         // ====================================================================
         pz_projectile_update(projectile_mgr, game_map, tank_mgr, dt);
 
-        // Spawn smoke particles for projectile hits
+        // Spawn smoke particles and explosion lights for projectile hits
         {
             pz_projectile_hit hits[PZ_MAX_PROJECTILE_HITS];
             int hit_count = pz_projectile_get_hits(
@@ -589,6 +602,46 @@ main(int argc, char *argv[])
                 }
 
                 pz_particle_spawn_smoke(particle_mgr, &smoke);
+
+                // Add explosion light for all hits (bright flash)
+                for (int j = 0; j < MAX_EXPLOSION_LIGHTS; j++) {
+                    if (explosion_lights[j].timer <= 0.0f) {
+                        explosion_lights[j].pos = hits[i].pos;
+                        explosion_lights[j].is_tank = false; // Bullet impact
+                        explosion_lights[j].duration = 0.15f; // Short flash
+                        explosion_lights[j].timer
+                            = explosion_lights[j].duration;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Check for newly dead tanks and create explosion lights
+        for (int i = 0; i < PZ_MAX_TANKS; i++) {
+            pz_tank *tank = &tank_mgr->tanks[i];
+            // A tank just died if it's dead with a fresh respawn timer
+            if ((tank->flags & PZ_TANK_FLAG_ACTIVE)
+                && (tank->flags & PZ_TANK_FLAG_DEAD)
+                && tank->respawn_timer > 2.9f) { // Just died (3.0 - dt)
+                // Add big explosion light
+                for (int j = 0; j < MAX_EXPLOSION_LIGHTS; j++) {
+                    if (explosion_lights[j].timer <= 0.0f) {
+                        explosion_lights[j].pos = tank->pos;
+                        explosion_lights[j].is_tank = true; // Tank explosion
+                        explosion_lights[j].duration = 0.4f; // Longer flash
+                        explosion_lights[j].timer
+                            = explosion_lights[j].duration;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Update explosion light timers
+        for (int i = 0; i < MAX_EXPLOSION_LIGHTS; i++) {
+            if (explosion_lights[i].timer > 0.0f) {
+                explosion_lights[i].timer -= dt;
             }
         }
 
@@ -678,9 +731,63 @@ main(int argc, char *argv[])
                         light_dir_2d, // Direction
                         light_color,
                         1.2f, // Intensity
-                        15.0f, // Range
+                        22.5f, // Range (50% farther than before)
                         PZ_PI * 0.35f, // Cone half-angle (~63 degrees)
                         0.3f); // Softness
+                }
+            }
+
+            // Add trailing spotlight for each active projectile
+            for (int i = 0; i < PZ_MAX_PROJECTILES; i++) {
+                pz_projectile *proj = &projectile_mgr->projectiles[i];
+                if (proj->active) {
+                    // Use projectile's color for the light
+                    pz_vec3 proj_light_color
+                        = { proj->color.x, proj->color.y, proj->color.z };
+
+                    // Calculate backward direction (opposite of velocity)
+                    // Velocity is in world XZ, lighting uses atan2(y, x)
+                    // where y maps to Z and x maps to X
+                    float backward_angle
+                        = atan2f(-proj->velocity.y, -proj->velocity.x);
+
+                    // Spotlight trailing behind the bullet
+                    pz_lighting_add_spotlight(lighting,
+                        proj->pos, // Position at bullet
+                        backward_angle, // Point backward
+                        proj_light_color,
+                        0.4f, // Low intensity
+                        2.8f, // Trail length (30% shorter than 4.0)
+                        PZ_PI * 0.125f, // Very narrow cone (~22.5 deg, 25% of
+                                        // original)
+                        0.5f); // Soft edges
+                }
+            }
+
+            // Add explosion lights (bright flashes)
+            for (int i = 0; i < MAX_EXPLOSION_LIGHTS; i++) {
+                if (explosion_lights[i].timer > 0.0f) {
+                    float t = explosion_lights[i].timer
+                        / explosion_lights[i].duration;
+                    // Fade from bright to nothing
+                    float intensity = t * t; // Quadratic falloff
+
+                    if (explosion_lights[i].is_tank) {
+                        // Big tank explosion: bright red/orange/yellow
+                        // Animate color from yellow to red as it fades
+                        pz_vec3 exp_color = { 1.0f, 0.3f + 0.5f * t, 0.1f * t };
+                        pz_lighting_add_point_light(lighting,
+                            explosion_lights[i].pos, exp_color,
+                            3.0f * intensity, // Very bright
+                            8.0f); // Rounder explosion (was 12.0)
+                    } else {
+                        // Small bullet impact: brief orange flash
+                        pz_vec3 exp_color = { 1.0f, 0.6f, 0.2f };
+                        pz_lighting_add_point_light(lighting,
+                            explosion_lights[i].pos, exp_color,
+                            1.5f * intensity, // Medium bright
+                            5.0f); // Medium radius
+                    }
                 }
             }
 

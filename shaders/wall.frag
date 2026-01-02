@@ -54,10 +54,9 @@ void main()
         float side_factor = 0.7 + 0.3 * max(0.0, dot(n.xz, normalize(vec2(0.4, 0.3))));
         lighting = dynamic_light * side_factor;
     } else {
-        // Top faces: use simple directional lighting (no dynamic shadows)
-        float ndotl = max(dot(n, normalize(u_light_dir)), 0.0);
-        vec3 diffuse = u_light_color * ndotl;
-        lighting = u_ambient + diffuse;
+        // Top faces: keep them dark (no directional lighting)
+        // Just use ambient to maintain consistency with the dark environment
+        lighting = u_ambient;
     }
     
     frag_color = vec4(tex_color.rgb * lighting, tex_color.a);
