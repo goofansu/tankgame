@@ -48,7 +48,7 @@
 - [x] M6.1: projectile entity, mesh, movement, lifetime
 - [x] M6.2: tank firing (left mouse button, cooldown, spawn at turret tip)
 - [x] M6.3: projectile-wall collision with bouncing (1 bounce)
-- [ ] M6.4: projectile-tank collision
+- [x] M6.4: projectile-tank collision (damage, flash, tank system refactor)
 - [ ] M6.5: tank death and respawn
 
 ## Phase 7: Track Accumulation (frontloaded)
@@ -62,6 +62,6 @@
 ---
 
 ## Next Up
+- [ ] M6.5: Tank death and respawn
 - [ ] M5.x: Collision shapes and physics system (formalize what's already working)
-- [ ] M4.2/M4.3: Entity system foundation (refactor current tank into formal entity)
-- [ ] M6.4: Projectile-tank collision (need second tank or AI)
+- [ ] M4.2/M4.3: Entity system foundation (formal entity manager - tank system is a good start)

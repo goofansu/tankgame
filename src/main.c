@@ -24,6 +24,7 @@
 #include "game/pz_map_render.h"
 #include "game/pz_mesh.h"
 #include "game/pz_projectile.h"
+#include "game/pz_tank.h"
 #include "game/pz_tracks.h"
 
 #define WINDOW_TITLE "Tank Game"
@@ -212,62 +213,27 @@ main(int argc, char *argv[])
     // Note: Map renderer handles its own shaders and pipelines
 
     // ========================================================================
-    // Tank mesh test (M4.1)
+    // Tank system (M4.3 - tank entity structure)
     // ========================================================================
-    pz_mesh *tank_body = pz_mesh_create_tank_body();
-    pz_mesh *tank_turret = pz_mesh_create_tank_turret();
+    pz_tank_manager *tank_mgr = pz_tank_manager_create(renderer, NULL);
 
-    pz_mesh_upload(tank_body, renderer);
-    pz_mesh_upload(tank_turret, renderer);
+    // Spawn player tank (olive green)
+    pz_tank *player_tank = pz_tank_spawn(tank_mgr, (pz_vec2) { 12.0f, 7.0f },
+        (pz_vec4) { 0.3f, 0.5f, 0.3f, 1.0f }, true);
 
-    // Create shader and pipeline for entity rendering
-    pz_shader_handle entity_shader = pz_renderer_load_shader(
-        renderer, "shaders/entity.vert", "shaders/entity.frag", "entity");
-
-    pz_pipeline_handle entity_pipeline = PZ_INVALID_HANDLE;
-    if (entity_shader != PZ_INVALID_HANDLE) {
-        pz_pipeline_desc pipeline_desc = {
-            .shader = entity_shader,
-            .vertex_layout = pz_mesh_get_vertex_layout(),
-            .blend = PZ_BLEND_NONE,
-            .depth = PZ_DEPTH_READ_WRITE,
-            .cull = PZ_CULL_BACK,
-            .primitive = PZ_PRIMITIVE_TRIANGLES,
-        };
-        entity_pipeline = pz_renderer_create_pipeline(renderer, &pipeline_desc);
-    }
-
-    // Tank state
-    pz_vec2 tank_pos = { 12.0f, 7.0f };
-    pz_vec2 tank_vel = { 0.0f, 0.0f };
-    float tank_angle = 0.0f; // Body rotation (radians)
-    float turret_angle = 0.0f; // Turret rotation (world space, radians)
-
-    // Tank movement parameters
-    const float tank_accel = 40.0f; // Acceleration (must be > friction)
-    const float tank_friction
-        = 25.0f; // Friction/damping (heavy tank stops fast)
-    const float tank_max_speed = 5.0f; // Max speed
-    const float tank_turn_speed = 5.0f; // Body turn rate (rad/s)
-    const float turret_turn_speed = 8.0f; // Turret turn rate (rad/s)
-
-    // Tank collision parameters
-    const float tank_radius = 0.7f; // Collision radius (half of body width)
+    // Spawn an enemy tank for testing (red-ish)
+    pz_tank *enemy_tank = pz_tank_spawn(tank_mgr, (pz_vec2) { 18.0f, 10.0f },
+        (pz_vec4) { 0.6f, 0.25f, 0.25f, 1.0f }, false);
+    (void)enemy_tank; // Silence unused warning
 
     // ========================================================================
-    // Projectile system (M6.1, M6.2, M6.3)
+    // Projectile system (M6.1, M6.2, M6.3, M6.4)
     // ========================================================================
     pz_projectile_manager *projectile_mgr
         = pz_projectile_manager_create(renderer);
 
-    // Fire cooldown tracking
-    float fire_cooldown = 0.0f;
-    const float fire_cooldown_time
-        = 0.25f; // 0.25 seconds between shots (2x faster)
-
-    // Turret barrel offset (how far from turret center the projectile spawns)
-    // Must match turret mesh: hd (0.45) + barrel_length (1.2) = 1.65
-    const float barrel_length = 1.65f;
+    // Fire cooldown time (tank now handles its own cooldown)
+    const float fire_cooldown_time = 0.25f;
 
     // ========================================================================
     // Laser sight system
@@ -396,11 +362,11 @@ main(int argc, char *argv[])
             dt = 0.0001f; // Avoid zero dt on first frame
 
         // ====================================================================
-        // Tank input and physics
+        // Tank input and physics (using tank manager)
         // ====================================================================
         const Uint8 *keys = SDL_GetKeyboardState(NULL);
 
-        // Get movement input (tank_pos.x = world X, tank_pos.y = world Z)
+        // Build player input
         //
         // IMPORTANT - SCREEN TO WORLD MAPPING (DO NOT CHANGE):
         // The camera looks from -Z towards +Z, positioned above.
@@ -413,208 +379,57 @@ main(int argc, char *argv[])
         //   A/Left  -> +X                     -> moves tank LEFT on screen
         //   D/Right -> -X                     -> moves tank RIGHT on screen
         //
-        pz_vec2 input_dir = { 0.0f, 0.0f };
+        pz_tank_input player_input = { 0 };
         if (keys[SDL_SCANCODE_W] || keys[SDL_SCANCODE_UP])
-            input_dir.y += 1.0f;
+            player_input.move_dir.y += 1.0f;
         if (keys[SDL_SCANCODE_S] || keys[SDL_SCANCODE_DOWN])
-            input_dir.y -= 1.0f;
+            player_input.move_dir.y -= 1.0f;
         if (keys[SDL_SCANCODE_A] || keys[SDL_SCANCODE_LEFT])
-            input_dir.x += 1.0f;
+            player_input.move_dir.x += 1.0f;
         if (keys[SDL_SCANCODE_D] || keys[SDL_SCANCODE_RIGHT])
-            input_dir.x -= 1.0f;
+            player_input.move_dir.x -= 1.0f;
 
-        // Apply acceleration in input direction
-        if (pz_vec2_len_sq(input_dir) > 0.0f) {
-            input_dir = pz_vec2_normalize(input_dir);
-            tank_vel = pz_vec2_add(
-                tank_vel, pz_vec2_scale(input_dir, tank_accel * dt));
+        // Calculate turret aim from mouse position
+        if (player_tank && !(player_tank->flags & PZ_TANK_FLAG_DEAD)) {
+            pz_vec3 mouse_world
+                = pz_camera_screen_to_world(&camera, mouse_x, mouse_y);
+            float aim_dx = mouse_world.x - player_tank->pos.x;
+            float aim_dz = mouse_world.z - player_tank->pos.y;
+            player_input.target_turret = atan2f(aim_dx, aim_dz);
+            player_input.fire = mouse_left_pressed;
 
-            // Rotate body towards movement direction (with damping)
-            float target_angle = atan2f(input_dir.x, input_dir.y);
-            float angle_diff = target_angle - tank_angle;
-            // Normalize angle difference to [-PI, PI]
-            while (angle_diff > PZ_PI)
-                angle_diff -= 2.0f * PZ_PI;
-            while (angle_diff < -PZ_PI)
-                angle_diff += 2.0f * PZ_PI;
-            tank_angle += angle_diff * pz_minf(1.0f, tank_turn_speed * dt);
+            // Update player tank
+            pz_tank_update(tank_mgr, player_tank, &player_input, game_map, dt);
+
+            // ====================================================================
+            // Track marks (when tank is moving)
+            // ====================================================================
+            if (tracks && pz_vec2_len(player_tank->vel) > 0.1f) {
+                pz_tracks_add_mark(tracks, player_tank->pos.x,
+                    player_tank->pos.y, player_tank->body_angle, 0.45f);
+            }
+
+            // ====================================================================
+            // Firing (left mouse button)
+            // ====================================================================
+            if (player_input.fire && player_tank->fire_cooldown <= 0.0f) {
+                pz_vec2 spawn_pos = pz_tank_get_barrel_tip(player_tank);
+                pz_vec2 fire_dir = pz_tank_get_fire_direction(player_tank);
+
+                pz_projectile_spawn(projectile_mgr, spawn_pos, fire_dir,
+                    &PZ_PROJECTILE_DEFAULT, player_tank->id);
+
+                player_tank->fire_cooldown = fire_cooldown_time;
+            }
         }
 
-        // Apply friction
-        float speed = pz_vec2_len(tank_vel);
-        if (speed > 0.0f) {
-            float friction_amount = tank_friction * dt;
-            if (friction_amount > speed)
-                friction_amount = speed;
-            tank_vel = pz_vec2_sub(tank_vel,
-                pz_vec2_scale(pz_vec2_normalize(tank_vel), friction_amount));
-        }
-
-        // Clamp to max speed
-        speed = pz_vec2_len(tank_vel);
-        if (speed > tank_max_speed) {
-            tank_vel
-                = pz_vec2_scale(pz_vec2_normalize(tank_vel), tank_max_speed);
-        }
-
-        // Update position
-        pz_vec2 new_pos = pz_vec2_add(tank_pos, pz_vec2_scale(tank_vel, dt));
+        // Update all tanks (respawn timers, AI, etc.)
+        pz_tank_update_all(tank_mgr, game_map, dt);
 
         // ====================================================================
-        // Wall collision detection
+        // Update projectiles (now with tank collision!)
         // ====================================================================
-        if (game_map) {
-            // Check collision for X-axis movement (test points along X edges)
-            // We check at current Y and at Y +/- radius to catch corner cases
-            bool blocked_x = false;
-            float test_x = new_pos.x;
-            float test_y = tank_pos.y;
-            // Check right edge
-            if (pz_map_is_solid(
-                    game_map, (pz_vec2) { test_x + tank_radius, test_y })
-                || pz_map_is_solid(game_map,
-                    (pz_vec2) {
-                        test_x + tank_radius, test_y + tank_radius * 0.7f })
-                || pz_map_is_solid(game_map,
-                    (pz_vec2) {
-                        test_x + tank_radius, test_y - tank_radius * 0.7f })) {
-                blocked_x = true;
-            }
-            // Check left edge
-            if (!blocked_x
-                && (pz_map_is_solid(
-                        game_map, (pz_vec2) { test_x - tank_radius, test_y })
-                    || pz_map_is_solid(game_map,
-                        (pz_vec2) {
-                            test_x - tank_radius, test_y + tank_radius * 0.7f })
-                    || pz_map_is_solid(game_map,
-                        (pz_vec2) { test_x - tank_radius,
-                            test_y - tank_radius * 0.7f }))) {
-                blocked_x = true;
-            }
-
-            // Check collision for Y-axis movement (test points along Y edges)
-            bool blocked_y = false;
-            test_x = tank_pos.x;
-            test_y = new_pos.y;
-            // Check top edge (+Y)
-            if (pz_map_is_solid(
-                    game_map, (pz_vec2) { test_x, test_y + tank_radius })
-                || pz_map_is_solid(game_map,
-                    (pz_vec2) {
-                        test_x + tank_radius * 0.7f, test_y + tank_radius })
-                || pz_map_is_solid(game_map,
-                    (pz_vec2) {
-                        test_x - tank_radius * 0.7f, test_y + tank_radius })) {
-                blocked_y = true;
-            }
-            // Check bottom edge (-Y)
-            if (!blocked_y
-                && (pz_map_is_solid(
-                        game_map, (pz_vec2) { test_x, test_y - tank_radius })
-                    || pz_map_is_solid(game_map,
-                        (pz_vec2) {
-                            test_x + tank_radius * 0.7f, test_y - tank_radius })
-                    || pz_map_is_solid(game_map,
-                        (pz_vec2) { test_x - tank_radius * 0.7f,
-                            test_y - tank_radius }))) {
-                blocked_y = true;
-            }
-
-            // Apply movement on unblocked axes
-            if (!blocked_x) {
-                tank_pos.x = new_pos.x;
-            } else {
-                tank_vel.x = 0;
-            }
-
-            if (!blocked_y) {
-                tank_pos.y = new_pos.y;
-            } else {
-                tank_vel.y = 0;
-            }
-        } else {
-            // No map, just move freely
-            tank_pos = new_pos;
-        }
-
-        // ====================================================================
-        // Track marks (when tank is moving)
-        // ====================================================================
-        if (tracks && pz_vec2_len(tank_vel) > 0.1f) {
-            // Add track marks - tread offset is half the tank body width
-            pz_tracks_add_mark(
-                tracks, tank_pos.x, tank_pos.y, tank_angle, 0.45f);
-        }
-
-        // ====================================================================
-        // Turret aiming (mouse controls)
-        // ====================================================================
-        pz_vec3 mouse_world
-            = pz_camera_screen_to_world(&camera, mouse_x, mouse_y);
-        // Calculate direction from tank to mouse in XZ plane
-        float aim_dx = mouse_world.x - tank_pos.x;
-        float aim_dz = mouse_world.z - tank_pos.y; // tank_pos.y is world Z
-        float target_turret_angle = atan2f(aim_dx, aim_dz);
-
-        // Smoothly rotate turret towards target (with damping)
-        float turret_diff = target_turret_angle - turret_angle;
-        // Normalize angle difference to [-PI, PI]
-        while (turret_diff > PZ_PI)
-            turret_diff -= 2.0f * PZ_PI;
-        while (turret_diff < -PZ_PI)
-            turret_diff += 2.0f * PZ_PI;
-        turret_angle += turret_diff * pz_minf(1.0f, turret_turn_speed * dt);
-
-        // ====================================================================
-        // Firing (left mouse button)
-        // ====================================================================
-        fire_cooldown -= dt;
-        if (fire_cooldown < 0.0f)
-            fire_cooldown = 0.0f;
-
-        if (mouse_left_pressed && fire_cooldown <= 0.0f) {
-            // Calculate spawn position at end of barrel
-            // turret_angle is world space rotation around Y axis
-            // Forward direction in XZ plane: sin(angle), cos(angle)
-            float spawn_dx = sinf(turret_angle) * barrel_length;
-            float spawn_dz = cosf(turret_angle) * barrel_length;
-
-            pz_vec2 spawn_pos = {
-                tank_pos.x + spawn_dx,
-                tank_pos.y + spawn_dz // tank_pos.y is world Z
-            };
-
-            // Direction matches turret facing, with tank momentum added
-            pz_vec2 fire_dir = { sinf(turret_angle), cosf(turret_angle) };
-
-            // Add tank velocity to bullet (inherit momentum)
-            // Scale it down slightly so it's not too extreme
-            pz_vec2 inherited_vel = pz_vec2_scale(tank_vel, 0.5f);
-            pz_vec2 bullet_vel = pz_vec2_add(
-                pz_vec2_scale(fire_dir, PZ_PROJECTILE_DEFAULT.speed),
-                inherited_vel);
-
-            // Calculate the new direction and speed from combined velocity
-            float bullet_speed = pz_vec2_len(bullet_vel);
-            if (bullet_speed > 0.001f) {
-                fire_dir = pz_vec2_scale(bullet_vel, 1.0f / bullet_speed);
-            }
-
-            // Create a modified config with the adjusted speed
-            pz_projectile_config fire_config = PZ_PROJECTILE_DEFAULT;
-            fire_config.speed = bullet_speed;
-
-            pz_projectile_spawn(
-                projectile_mgr, spawn_pos, fire_dir, &fire_config, 0);
-
-            fire_cooldown = fire_cooldown_time;
-        }
-
-        // ====================================================================
-        // Update projectiles
-        // ====================================================================
-        pz_projectile_update(projectile_mgr, game_map, dt);
+        pz_projectile_update(projectile_mgr, game_map, tank_mgr, dt);
 
         // Check for hot-reload every 500ms
         double now = pz_time_now();
@@ -654,96 +469,20 @@ main(int argc, char *argv[])
         }
 
         // ====================================================================
-        // Draw tank (M4.1 test)
+        // Draw all tanks (using tank manager)
         // ====================================================================
-        if (entity_pipeline != PZ_INVALID_HANDLE) {
-            // Light direction and color (same as walls)
-            pz_vec3 light_dir = { 0.5f, 1.0f, 0.3f };
-            pz_vec3 light_color = { 0.8f, 0.75f, 0.7f };
-            pz_vec3 ambient = { 0.3f, 0.35f, 0.4f };
-
-            // Tank body model matrix
-            pz_mat4 body_model = pz_mat4_identity();
-            body_model = pz_mat4_mul(body_model,
-                pz_mat4_translate((pz_vec3) { tank_pos.x, 0.0f, tank_pos.y }));
-            body_model = pz_mat4_mul(body_model, pz_mat4_rotate_y(tank_angle));
-
-            pz_mat4 body_mvp = pz_mat4_mul(*vp, body_model);
-
-            // Set uniforms for body
-            pz_renderer_set_uniform_mat4(
-                renderer, entity_shader, "u_mvp", &body_mvp);
-            pz_renderer_set_uniform_mat4(
-                renderer, entity_shader, "u_model", &body_model);
-            pz_renderer_set_uniform_vec4(renderer, entity_shader, "u_color",
-                (pz_vec4) { 0.3f, 0.5f, 0.3f, 1.0f }); // Olive green
-            pz_renderer_set_uniform_vec3(
-                renderer, entity_shader, "u_light_dir", light_dir);
-            pz_renderer_set_uniform_vec3(
-                renderer, entity_shader, "u_light_color", light_color);
-            pz_renderer_set_uniform_vec3(
-                renderer, entity_shader, "u_ambient", ambient);
-
-            // Draw body
-            pz_draw_cmd body_cmd = {
-                .pipeline = entity_pipeline,
-                .vertex_buffer = tank_body->buffer,
-                .index_buffer = PZ_INVALID_HANDLE,
-                .vertex_count = tank_body->vertex_count,
-                .index_count = 0,
-                .vertex_offset = 0,
-                .index_offset = 0,
-            };
-            pz_renderer_draw(renderer, &body_cmd);
-
-            // Turret model matrix (positioned on top of body, rotates
-            // independently in world space)
-            float turret_y_offset = 0.65f; // Height where turret sits on body
-            pz_mat4 turret_model = pz_mat4_identity();
-            turret_model = pz_mat4_mul(turret_model,
-                pz_mat4_translate(
-                    (pz_vec3) { tank_pos.x, turret_y_offset, tank_pos.y }));
-            turret_model
-                = pz_mat4_mul(turret_model, pz_mat4_rotate_y(turret_angle));
-
-            pz_mat4 turret_mvp = pz_mat4_mul(*vp, turret_model);
-
-            // Set uniforms for turret
-            pz_renderer_set_uniform_mat4(
-                renderer, entity_shader, "u_mvp", &turret_mvp);
-            pz_renderer_set_uniform_mat4(
-                renderer, entity_shader, "u_model", &turret_model);
-            pz_renderer_set_uniform_vec4(renderer, entity_shader, "u_color",
-                (pz_vec4) {
-                    0.25f, 0.45f, 0.25f, 1.0f }); // Slightly darker green
-
-            // Draw turret
-            pz_draw_cmd turret_cmd = {
-                .pipeline = entity_pipeline,
-                .vertex_buffer = tank_turret->buffer,
-                .index_buffer = PZ_INVALID_HANDLE,
-                .vertex_count = tank_turret->vertex_count,
-                .index_count = 0,
-                .vertex_offset = 0,
-                .index_offset = 0,
-            };
-            pz_renderer_draw(renderer, &turret_cmd);
-        }
+        pz_tank_render(tank_mgr, renderer, vp);
 
         // ====================================================================
-        // Draw laser sight
+        // Draw laser sight (only for player tank when alive)
         // ====================================================================
-        if (laser_pipeline != PZ_INVALID_HANDLE && game_map) {
+        if (laser_pipeline != PZ_INVALID_HANDLE && game_map && player_tank
+            && !(player_tank->flags & PZ_TANK_FLAG_DEAD)) {
             // Calculate laser start position (at barrel tip)
-            float laser_start_dx = sinf(turret_angle) * barrel_length;
-            float laser_start_dz = cosf(turret_angle) * barrel_length;
-            pz_vec2 laser_start = {
-                tank_pos.x + laser_start_dx,
-                tank_pos.y + laser_start_dz,
-            };
+            pz_vec2 laser_start = pz_tank_get_barrel_tip(player_tank);
+            pz_vec2 laser_dir = pz_tank_get_fire_direction(player_tank);
 
             // Raycast to find where laser hits wall
-            pz_vec2 laser_dir = { sinf(turret_angle), cosf(turret_angle) };
             bool hit_wall = false;
             pz_vec2 laser_end = pz_map_raycast(
                 game_map, laser_start, laser_dir, laser_max_dist, &hit_wall);
@@ -857,15 +596,8 @@ main(int argc, char *argv[])
         pz_renderer_destroy_shader(renderer, laser_shader);
     }
 
-    // Cleanup tank meshes (M4.1)
-    if (entity_pipeline != PZ_INVALID_HANDLE) {
-        pz_renderer_destroy_pipeline(renderer, entity_pipeline);
-    }
-    if (entity_shader != PZ_INVALID_HANDLE) {
-        pz_renderer_destroy_shader(renderer, entity_shader);
-    }
-    pz_mesh_destroy(tank_turret, renderer);
-    pz_mesh_destroy(tank_body, renderer);
+    // Cleanup tank system
+    pz_tank_manager_destroy(tank_mgr, renderer);
 
     // Cleanup projectile system
     pz_projectile_manager_destroy(projectile_mgr, renderer);

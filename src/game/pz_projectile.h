@@ -15,6 +15,9 @@
 #include "pz_map.h"
 #include "pz_mesh.h"
 
+// Forward declaration
+typedef struct pz_tank_manager pz_tank_manager;
+
 // Maximum number of active projectiles
 #define PZ_MAX_PROJECTILES 64
 
@@ -28,6 +31,7 @@ typedef struct pz_projectile {
 
     int bounces_remaining; // How many more bounces before destruction
     float lifetime; // Time remaining before auto-destruct
+    float age; // Time since spawned (for self-damage grace period)
 
     int owner_id; // Who fired this (for friendly fire checks)
     int damage; // Damage on hit
@@ -72,8 +76,9 @@ int pz_projectile_spawn(pz_projectile_manager *mgr, pz_vec2 pos,
     pz_vec2 direction, const pz_projectile_config *config, int owner_id);
 
 // Update all projectiles (movement, collision, bouncing)
-void pz_projectile_update(
-    pz_projectile_manager *mgr, const pz_map *map, float dt);
+// tank_mgr can be NULL if no tank collision is desired
+void pz_projectile_update(pz_projectile_manager *mgr, const pz_map *map,
+    pz_tank_manager *tank_mgr, float dt);
 
 // Render all active projectiles
 void pz_projectile_render(pz_projectile_manager *mgr, pz_renderer *renderer,

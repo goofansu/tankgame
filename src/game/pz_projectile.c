@@ -3,12 +3,19 @@
  */
 
 #include "pz_projectile.h"
+#include "pz_tank.h"
 
 #include <math.h>
 #include <string.h>
 
 #include "../core/pz_log.h"
 #include "../core/pz_mem.h"
+
+// Projectile collision radius for tank hits
+static const float PROJECTILE_RADIUS = 0.15f;
+
+// Grace period before projectile can hit its owner (seconds)
+static const float SELF_DAMAGE_GRACE_PERIOD = 0.5f;
 
 /* ============================================================================
  * Default Configuration
@@ -19,7 +26,7 @@ const pz_projectile_config PZ_PROJECTILE_DEFAULT = {
     .speed = 11.25f, // 25% slower than original 15.0
     .max_bounces = 1,
     .lifetime = -1.0f, // Infinite lifetime (only dies on max bounces)
-    .damage = 1,
+    .damage = 5, // 2 hits to kill (10 HP tank)
 };
 
 /* ============================================================================
@@ -132,6 +139,7 @@ pz_projectile_spawn(pz_projectile_manager *mgr, pz_vec2 pos, pz_vec2 direction,
     proj->speed = config->speed;
     proj->bounces_remaining = config->max_bounces;
     proj->lifetime = config->lifetime;
+    proj->age = 0.0f;
     proj->owner_id = owner_id;
     proj->damage = config->damage;
 
@@ -179,7 +187,8 @@ get_wall_normal(const pz_map *map, pz_vec2 pos, pz_vec2 dir)
 }
 
 void
-pz_projectile_update(pz_projectile_manager *mgr, const pz_map *map, float dt)
+pz_projectile_update(pz_projectile_manager *mgr, const pz_map *map,
+    pz_tank_manager *tank_mgr, float dt)
 {
     if (!mgr)
         return;
@@ -189,7 +198,9 @@ pz_projectile_update(pz_projectile_manager *mgr, const pz_map *map, float dt)
         if (!proj->active)
             continue;
 
-        // Update lifetime (negative lifetime = infinite)
+        // Update age and lifetime
+        proj->age += dt;
+
         if (proj->lifetime > 0.0f) {
             proj->lifetime -= dt;
             if (proj->lifetime <= 0.0f) {
@@ -202,6 +213,31 @@ pz_projectile_update(pz_projectile_manager *mgr, const pz_map *map, float dt)
         // Calculate new position
         pz_vec2 new_pos
             = pz_vec2_add(proj->pos, pz_vec2_scale(proj->velocity, dt));
+
+        // Check for tank collision first (before wall collision)
+        // Exclude owner only during grace period - after that, can hit self
+        if (tank_mgr) {
+            int exclude_id = (proj->age < SELF_DAMAGE_GRACE_PERIOD)
+                ? proj->owner_id
+                : -1; // -1 means exclude nobody
+
+            pz_tank *hit_tank = pz_tank_check_collision(
+                tank_mgr, new_pos, PROJECTILE_RADIUS, exclude_id);
+
+            if (hit_tank) {
+                // Apply damage
+                bool killed = pz_tank_damage(hit_tank, proj->damage);
+
+                pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
+                    "Projectile hit tank %d (damage=%d, killed=%d)",
+                    hit_tank->id, proj->damage, killed);
+
+                // Destroy projectile
+                proj->active = false;
+                mgr->active_count--;
+                continue;
+            }
+        }
 
         // Check for wall collision
         if (map && pz_map_is_solid(map, new_pos)) {
