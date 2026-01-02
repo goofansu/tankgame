@@ -56,6 +56,14 @@
 - [x] M7.2: ground shader samples track texture using world coordinates
 - [x] M7.3: track marks placed at distance intervals for each tread
 
+## Dynamic Lighting System
+- [x] 2D light map with shadow casting from walls and tanks
+- [x] Spotlight lights attached to tanks (follow turret direction)
+- [x] Multiple colored lights with additive blending
+- [x] Shadows cast by rectangular occluders (walls, tanks)
+- [x] Light map applied to ground, wall sides, tanks, and projectiles
+- [x] Wall tops remain unlit by dynamic lights (ambient only)
+
 ## Bug Fixes
 - [x] Fixed pz_map_set_tile to auto-set height for WALL tiles (test_map fix)
 

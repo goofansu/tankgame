@@ -179,9 +179,16 @@ int pz_tank_get_current_weapon(const pz_tank *tank);
  * ============================================================================
  */
 
+// Lighting parameters for tank rendering
+typedef struct pz_tank_render_params {
+    pz_texture_handle light_texture;
+    float light_scale_x, light_scale_z;
+    float light_offset_x, light_offset_z;
+} pz_tank_render_params;
+
 // Render all active tanks
 void pz_tank_render(pz_tank_manager *mgr, pz_renderer *renderer,
-    const pz_mat4 *view_projection);
+    const pz_mat4 *view_projection, const pz_tank_render_params *params);
 
 /* ============================================================================
  * Utility

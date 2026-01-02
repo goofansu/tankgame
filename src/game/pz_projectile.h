@@ -108,9 +108,16 @@ int pz_projectile_spawn(pz_projectile_manager *mgr, pz_vec2 pos,
 void pz_projectile_update(pz_projectile_manager *mgr, const pz_map *map,
     pz_tank_manager *tank_mgr, float dt);
 
+// Lighting parameters for projectile rendering
+typedef struct pz_projectile_render_params {
+    pz_texture_handle light_texture;
+    float light_scale_x, light_scale_z;
+    float light_offset_x, light_offset_z;
+} pz_projectile_render_params;
+
 // Render all active projectiles
 void pz_projectile_render(pz_projectile_manager *mgr, pz_renderer *renderer,
-    const pz_mat4 *view_projection);
+    const pz_mat4 *view_projection, const pz_projectile_render_params *params);
 
 // Get number of active projectiles
 int pz_projectile_count(const pz_projectile_manager *mgr);

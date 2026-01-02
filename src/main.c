@@ -21,6 +21,7 @@
 #include "engine/render/pz_renderer.h"
 #include "engine/render/pz_texture.h"
 #include "game/pz_ai.h"
+#include "game/pz_lighting.h"
 #include "game/pz_map.h"
 #include "game/pz_map_render.h"
 #include "game/pz_mesh.h"
@@ -201,6 +202,18 @@ main(int argc, char *argv[])
             .texture_size = 1024, // 1024x1024 track texture
         };
         tracks = pz_tracks_create(renderer, tex_manager, &track_config);
+    }
+
+    // Create lighting system
+    pz_lighting *lighting = NULL;
+    if (game_map) {
+        pz_lighting_config light_config = {
+            .world_width = game_map->world_width,
+            .world_height = game_map->world_height,
+            .texture_size = 512, // 512x512 light map
+            .ambient = { 0.08f, 0.08f, 0.1f }, // Very dark ambient
+        };
+        lighting = pz_lighting_create(renderer, &light_config);
     }
 
     // Initialize debug command interface
@@ -596,26 +609,98 @@ main(int argc, char *argv[])
         pz_tracks_update(tracks);
 
         // ====================================================================
+        // Update lighting system
+        // ====================================================================
+        if (lighting && game_map) {
+            // Clear and rebuild occluders each frame
+            // Only add walls as occluders - tanks would block their own lights
+            pz_lighting_clear_occluders(lighting);
+            pz_lighting_add_map_occluders(lighting, game_map);
+
+            // Clear and add lights
+            pz_lighting_clear_lights(lighting);
+
+            // Add spotlight for each active tank (headlight effect)
+            for (int i = 0; i < PZ_MAX_TANKS; i++) {
+                pz_tank *tank = &tank_mgr->tanks[i];
+                if ((tank->flags & PZ_TANK_FLAG_ACTIVE)
+                    && !(tank->flags & PZ_TANK_FLAG_DEAD)) {
+
+                    // Light position at front of tank (past the occluder)
+                    // turret direction in world XZ is (sin(angle), cos(angle))
+                    float light_offset = 0.8f; // Just past the tank body
+                    pz_vec2 light_pos = {
+                        tank->pos.x + sinf(tank->turret_angle) * light_offset,
+                        tank->pos.y + cosf(tank->turret_angle) * light_offset,
+                    };
+
+                    // Different colors for player vs enemies
+                    pz_vec3 light_color;
+                    if (tank->flags & PZ_TANK_FLAG_PLAYER) {
+                        light_color
+                            = (pz_vec3) { 0.9f, 0.95f, 1.0f }; // Bluish white
+                    } else {
+                        light_color
+                            = (pz_vec3) { 1.0f, 0.6f, 0.4f }; // Orange-red
+                    }
+
+                    // Spotlight pointing in turret direction
+                    // turret_angle uses atan2(x, z), so direction is (sin(a),
+                    // cos(a)) In 2D lighting, we use atan2(y, x), so we need
+                    // angle where cos(angle) = sin(turret_angle) = x component
+                    // sin(angle) = cos(turret_angle) = z component (which is y
+                    // in 2D) This means: angle = atan2(cos(turret),
+                    // sin(turret))
+                    float light_dir_2d = atan2f(
+                        cosf(tank->turret_angle), sinf(tank->turret_angle));
+
+                    pz_lighting_add_spotlight(lighting, light_pos,
+                        light_dir_2d, // Direction
+                        light_color,
+                        1.2f, // Intensity
+                        15.0f, // Range
+                        PZ_PI * 0.35f, // Cone half-angle (~63 degrees)
+                        0.3f); // Softness
+                }
+            }
+
+            // Render the light map
+            pz_lighting_render(lighting);
+        }
+
+        // ====================================================================
         // Draw map
         // ====================================================================
         const pz_mat4 *vp = pz_camera_get_view_projection(&camera);
-        {
-            // Get track texture and UV transform
-            pz_texture_handle track_tex = pz_tracks_get_texture(tracks);
-            float track_scale_x = 0.0f, track_scale_z = 0.0f;
-            float track_offset_x = 0.0f, track_offset_z = 0.0f;
-            if (tracks) {
-                pz_tracks_get_uv_transform(tracks, &track_scale_x,
-                    &track_scale_z, &track_offset_x, &track_offset_z);
-            }
-            pz_map_renderer_draw(map_renderer, vp, track_tex, track_scale_x,
-                track_scale_z, track_offset_x, track_offset_z);
+
+        // Build render params with track and light textures
+        pz_map_render_params render_params = { 0 };
+        if (tracks) {
+            render_params.track_texture = pz_tracks_get_texture(tracks);
+            pz_tracks_get_uv_transform(tracks, &render_params.track_scale_x,
+                &render_params.track_scale_z, &render_params.track_offset_x,
+                &render_params.track_offset_z);
         }
+        if (lighting) {
+            render_params.light_texture = pz_lighting_get_texture(lighting);
+            pz_lighting_get_uv_transform(lighting, &render_params.light_scale_x,
+                &render_params.light_scale_z, &render_params.light_offset_x,
+                &render_params.light_offset_z);
+        }
+
+        pz_map_renderer_draw(map_renderer, vp, &render_params);
 
         // ====================================================================
         // Draw all tanks (using tank manager)
         // ====================================================================
-        pz_tank_render(tank_mgr, renderer, vp);
+        pz_tank_render_params tank_params = { 0 };
+        if (lighting) {
+            tank_params.light_texture = pz_lighting_get_texture(lighting);
+            pz_lighting_get_uv_transform(lighting, &tank_params.light_scale_x,
+                &tank_params.light_scale_z, &tank_params.light_offset_x,
+                &tank_params.light_offset_z);
+        }
+        pz_tank_render(tank_mgr, renderer, vp, &tank_params);
 
         // ====================================================================
         // Draw powerups
@@ -710,7 +795,14 @@ main(int argc, char *argv[])
         // ====================================================================
         // Draw projectiles
         // ====================================================================
-        pz_projectile_render(projectile_mgr, renderer, vp);
+        pz_projectile_render_params proj_params = { 0 };
+        if (lighting) {
+            proj_params.light_texture = pz_lighting_get_texture(lighting);
+            pz_lighting_get_uv_transform(lighting, &proj_params.light_scale_x,
+                &proj_params.light_scale_z, &proj_params.light_offset_x,
+                &proj_params.light_offset_z);
+        }
+        pz_projectile_render(projectile_mgr, renderer, vp, &proj_params);
 
         // ====================================================================
         // Draw particles (after opaque geometry, uses alpha blending)
@@ -781,6 +873,7 @@ main(int argc, char *argv[])
     pz_powerup_manager_destroy(powerup_mgr, renderer);
 
     pz_tracks_destroy(tracks);
+    pz_lighting_destroy(lighting);
     pz_map_hot_reload_destroy(map_hot_reload);
     pz_map_renderer_destroy(map_renderer);
     pz_map_destroy(game_map);

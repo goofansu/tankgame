@@ -600,8 +600,7 @@ pz_map_renderer_set_map(pz_map_renderer *mr, const pz_map *map)
 
 void
 pz_map_renderer_draw_ground(pz_map_renderer *mr, const pz_mat4 *view_projection,
-    pz_texture_handle track_texture, float track_scale_x, float track_scale_z,
-    float track_offset_x, float track_offset_z)
+    const pz_map_render_params *params)
 {
     if (!mr || !mr->map) {
         return;
@@ -614,19 +613,41 @@ pz_map_renderer_draw_ground(pz_map_renderer *mr, const pz_mat4 *view_projection,
         mr->renderer, mr->ground_shader, "u_texture", 0);
 
     // Set track texture uniforms
-    if (track_texture != PZ_INVALID_HANDLE && track_texture != 0) {
-        pz_renderer_bind_texture(mr->renderer, 1, track_texture);
+    if (params && params->track_texture != PZ_INVALID_HANDLE
+        && params->track_texture != 0) {
+        pz_renderer_bind_texture(mr->renderer, 1, params->track_texture);
         pz_renderer_set_uniform_int(
             mr->renderer, mr->ground_shader, "u_track_texture", 1);
         pz_renderer_set_uniform_int(
             mr->renderer, mr->ground_shader, "u_use_tracks", 1);
         pz_renderer_set_uniform_vec2(mr->renderer, mr->ground_shader,
-            "u_track_scale", (pz_vec2) { track_scale_x, track_scale_z });
+            "u_track_scale",
+            (pz_vec2) { params->track_scale_x, params->track_scale_z });
         pz_renderer_set_uniform_vec2(mr->renderer, mr->ground_shader,
-            "u_track_offset", (pz_vec2) { track_offset_x, track_offset_z });
+            "u_track_offset",
+            (pz_vec2) { params->track_offset_x, params->track_offset_z });
     } else {
         pz_renderer_set_uniform_int(
             mr->renderer, mr->ground_shader, "u_use_tracks", 0);
+    }
+
+    // Set light map uniforms
+    if (params && params->light_texture != PZ_INVALID_HANDLE
+        && params->light_texture != 0) {
+        pz_renderer_bind_texture(mr->renderer, 2, params->light_texture);
+        pz_renderer_set_uniform_int(
+            mr->renderer, mr->ground_shader, "u_light_texture", 2);
+        pz_renderer_set_uniform_int(
+            mr->renderer, mr->ground_shader, "u_use_lighting", 1);
+        pz_renderer_set_uniform_vec2(mr->renderer, mr->ground_shader,
+            "u_light_scale",
+            (pz_vec2) { params->light_scale_x, params->light_scale_z });
+        pz_renderer_set_uniform_vec2(mr->renderer, mr->ground_shader,
+            "u_light_offset",
+            (pz_vec2) { params->light_offset_x, params->light_offset_z });
+    } else {
+        pz_renderer_set_uniform_int(
+            mr->renderer, mr->ground_shader, "u_use_lighting", 0);
     }
 
     // Draw each terrain type
@@ -658,7 +679,8 @@ pz_map_renderer_draw_ground(pz_map_renderer *mr, const pz_mat4 *view_projection,
 }
 
 void
-pz_map_renderer_draw_walls(pz_map_renderer *mr, const pz_mat4 *view_projection)
+pz_map_renderer_draw_walls(pz_map_renderer *mr, const pz_mat4 *view_projection,
+    const pz_map_render_params *params)
 {
     if (!mr || !mr->map || mr->wall_vertex_count == 0) {
         return;
@@ -673,10 +695,10 @@ pz_map_renderer_draw_walls(pz_map_renderer *mr, const pz_mat4 *view_projection)
     pz_renderer_set_uniform_mat4(
         mr->renderer, mr->wall_shader, "u_model", &model);
 
-    // Simple directional light (from above-right-front)
+    // Simple directional light (from above-right-front) for top faces
     pz_vec3 light_dir = { 0.4f, 0.8f, 0.3f };
-    pz_vec3 light_color = { 0.8f, 0.8f, 0.75f };
-    pz_vec3 ambient = { 0.3f, 0.3f, 0.35f };
+    pz_vec3 light_color = { 0.6f, 0.6f, 0.55f };
+    pz_vec3 ambient = { 0.15f, 0.15f, 0.18f };
 
     pz_renderer_set_uniform_vec3(
         mr->renderer, mr->wall_shader, "u_light_dir", light_dir);
@@ -684,6 +706,25 @@ pz_map_renderer_draw_walls(pz_map_renderer *mr, const pz_mat4 *view_projection)
         mr->renderer, mr->wall_shader, "u_light_color", light_color);
     pz_renderer_set_uniform_vec3(
         mr->renderer, mr->wall_shader, "u_ambient", ambient);
+
+    // Set light map uniforms for side faces
+    if (params && params->light_texture != PZ_INVALID_HANDLE
+        && params->light_texture != 0) {
+        pz_renderer_bind_texture(mr->renderer, 2, params->light_texture);
+        pz_renderer_set_uniform_int(
+            mr->renderer, mr->wall_shader, "u_light_texture", 2);
+        pz_renderer_set_uniform_int(
+            mr->renderer, mr->wall_shader, "u_use_lighting", 1);
+        pz_renderer_set_uniform_vec2(mr->renderer, mr->wall_shader,
+            "u_light_scale",
+            (pz_vec2) { params->light_scale_x, params->light_scale_z });
+        pz_renderer_set_uniform_vec2(mr->renderer, mr->wall_shader,
+            "u_light_offset",
+            (pz_vec2) { params->light_offset_x, params->light_offset_z });
+    } else {
+        pz_renderer_set_uniform_int(
+            mr->renderer, mr->wall_shader, "u_use_lighting", 0);
+    }
 
     // Bind textures
     pz_renderer_set_uniform_int(
@@ -704,14 +745,12 @@ pz_map_renderer_draw_walls(pz_map_renderer *mr, const pz_mat4 *view_projection)
 
 void
 pz_map_renderer_draw(pz_map_renderer *mr, const pz_mat4 *view_projection,
-    pz_texture_handle track_texture, float track_scale_x, float track_scale_z,
-    float track_offset_x, float track_offset_z)
+    const pz_map_render_params *params)
 {
     // Draw walls first, then ground - depth test will prevent ground from
     // overwriting wall sides
-    pz_map_renderer_draw_walls(mr, view_projection);
-    pz_map_renderer_draw_ground(mr, view_projection, track_texture,
-        track_scale_x, track_scale_z, track_offset_x, track_offset_z);
+    pz_map_renderer_draw_walls(mr, view_projection, params);
+    pz_map_renderer_draw_ground(mr, view_projection, params);
 }
 
 void

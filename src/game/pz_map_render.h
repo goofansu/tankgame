@@ -25,24 +25,32 @@ void pz_map_renderer_destroy(pz_map_renderer *mr);
 // Set the map to render (generates mesh from map data)
 void pz_map_renderer_set_map(pz_map_renderer *mr, const pz_map *map);
 
+// Lighting parameters for rendering
+typedef struct pz_map_render_params {
+    // Track texture (optional)
+    pz_texture_handle track_texture;
+    float track_scale_x, track_scale_z;
+    float track_offset_x, track_offset_z;
+
+    // Light map texture (optional)
+    pz_texture_handle light_texture;
+    float light_scale_x, light_scale_z;
+    float light_offset_x, light_offset_z;
+} pz_map_render_params;
+
 // Render the map ground layer
 // track_texture: optional track accumulation texture (0 = no tracks)
 // track_scale/offset: transform from world XZ to track texture UV
 void pz_map_renderer_draw_ground(pz_map_renderer *mr,
-    const pz_mat4 *view_projection, pz_texture_handle track_texture,
-    float track_scale_x, float track_scale_z, float track_offset_x,
-    float track_offset_z);
+    const pz_mat4 *view_projection, const pz_map_render_params *params);
 
 // Render the 3D wall geometry
-void pz_map_renderer_draw_walls(
-    pz_map_renderer *mr, const pz_mat4 *view_projection);
+void pz_map_renderer_draw_walls(pz_map_renderer *mr,
+    const pz_mat4 *view_projection, const pz_map_render_params *params);
 
 // Render everything (ground + walls)
-// track_texture: optional track accumulation texture (0 = no tracks)
-// track_scale/offset: transform from world XZ to track texture UV
 void pz_map_renderer_draw(pz_map_renderer *mr, const pz_mat4 *view_projection,
-    pz_texture_handle track_texture, float track_scale_x, float track_scale_z,
-    float track_offset_x, float track_offset_z);
+    const pz_map_render_params *params);
 
 // Check for texture hot-reload
 void pz_map_renderer_check_hot_reload(pz_map_renderer *mr);

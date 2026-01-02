@@ -377,7 +377,7 @@ pz_projectile_update(pz_projectile_manager *mgr, const pz_map *map,
 
 void
 pz_projectile_render(pz_projectile_manager *mgr, pz_renderer *renderer,
-    const pz_mat4 *view_projection)
+    const pz_mat4 *view_projection, const pz_projectile_render_params *params)
 {
     if (!mgr || !renderer || !view_projection)
         return;
@@ -387,8 +387,8 @@ pz_projectile_render(pz_projectile_manager *mgr, pz_renderer *renderer,
 
     // Light parameters (same as entity rendering)
     pz_vec3 light_dir = { 0.5f, 1.0f, 0.3f };
-    pz_vec3 light_color = { 0.8f, 0.75f, 0.7f };
-    pz_vec3 ambient = { 0.3f, 0.35f, 0.4f };
+    pz_vec3 light_color = { 0.6f, 0.55f, 0.5f };
+    pz_vec3 ambient = { 0.15f, 0.18f, 0.2f };
 
     // Set shared uniforms
     pz_renderer_set_uniform_vec3(
@@ -396,6 +396,21 @@ pz_projectile_render(pz_projectile_manager *mgr, pz_renderer *renderer,
     pz_renderer_set_uniform_vec3(
         renderer, mgr->shader, "u_light_color", light_color);
     pz_renderer_set_uniform_vec3(renderer, mgr->shader, "u_ambient", ambient);
+
+    // Set light map uniforms
+    if (params && params->light_texture != PZ_INVALID_HANDLE
+        && params->light_texture != 0) {
+        pz_renderer_bind_texture(renderer, 0, params->light_texture);
+        pz_renderer_set_uniform_int(
+            renderer, mgr->shader, "u_light_texture", 0);
+        pz_renderer_set_uniform_int(renderer, mgr->shader, "u_use_lighting", 1);
+        pz_renderer_set_uniform_vec2(renderer, mgr->shader, "u_light_scale",
+            (pz_vec2) { params->light_scale_x, params->light_scale_z });
+        pz_renderer_set_uniform_vec2(renderer, mgr->shader, "u_light_offset",
+            (pz_vec2) { params->light_offset_x, params->light_offset_z });
+    } else {
+        pz_renderer_set_uniform_int(renderer, mgr->shader, "u_use_lighting", 0);
+    }
 
     for (int i = 0; i < PZ_MAX_PROJECTILES; i++) {
         pz_projectile *proj = &mgr->projectiles[i];
