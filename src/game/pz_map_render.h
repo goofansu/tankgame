@@ -2,7 +2,7 @@
  * Map Rendering System
  *
  * Handles rendering the map terrain with appropriate textures
- * for each tile type.
+ * for each tile type, including 3D wall geometry.
  */
 
 #ifndef PZ_MAP_RENDER_H
@@ -26,6 +26,14 @@ void pz_map_renderer_destroy(pz_map_renderer *mr);
 void pz_map_renderer_set_map(pz_map_renderer *mr, const pz_map *map);
 
 // Render the map ground layer
+void pz_map_renderer_draw_ground(
+    pz_map_renderer *mr, const pz_mat4 *view_projection);
+
+// Render the 3D wall geometry
+void pz_map_renderer_draw_walls(
+    pz_map_renderer *mr, const pz_mat4 *view_projection);
+
+// Render everything (ground + walls)
 void pz_map_renderer_draw(pz_map_renderer *mr, const pz_mat4 *view_projection);
 
 // Check for texture hot-reload

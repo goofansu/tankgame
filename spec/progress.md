@@ -17,3 +17,5 @@
 - [x] M2.5: debug overlay (bitmap font, FPS counter, frame time graph, F2 toggle)
 - [x] M3.2: map data structure (pz_map with terrain, height, spawns, coordinate conversion)
 - [x] M3.1: ground rendering using map (wood textures, terrain types visible)
+- [x] M3.3: terrain mesh batched by type, different textures per terrain
+- [x] M3.4: 3D wall geometry from height map with lighting
