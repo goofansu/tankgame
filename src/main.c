@@ -224,10 +224,18 @@ main(int argc, char *argv[])
         entity_pipeline = pz_renderer_create_pipeline(renderer, &pipeline_desc);
     }
 
-    // Tank position (center of map for testing)
+    // Tank state
     pz_vec2 tank_pos = { 12.0f, 7.0f };
+    pz_vec2 tank_vel = { 0.0f, 0.0f };
     float tank_angle = 0.0f; // Body rotation (radians)
-    float turret_angle = 0.0f; // Turret rotation relative to body
+    float turret_angle = 0.0f; // Turret rotation (world space, radians)
+
+    // Tank movement parameters
+    const float tank_accel = 15.0f; // Acceleration
+    const float tank_friction = 8.0f; // Friction/damping
+    const float tank_max_speed = 5.0f; // Max speed
+    const float tank_turn_speed = 5.0f; // Body turn rate (rad/s)
+    const float turret_turn_speed = 8.0f; // Turret turn rate (rad/s)
 
     // ========================================================================
     // Main loop
@@ -236,10 +244,12 @@ main(int argc, char *argv[])
     bool running = true;
     SDL_Event event;
     int frame_count = 0;
-    uint64_t last_hot_reload_check = pz_time_now();
+    double last_hot_reload_check = pz_time_now();
+    double last_frame_time = pz_time_now();
 
-    // Camera movement
-    float cam_speed = 0.5f;
+    // Mouse state for turret aiming
+    int mouse_x = WINDOW_WIDTH / 2;
+    int mouse_y = WINDOW_HEIGHT / 2;
 
     while (running) {
         // Poll debug commands
@@ -266,18 +276,9 @@ main(int argc, char *argv[])
                     }
                 }
                 break;
-            case SDL_MOUSEWHEEL: {
-                // Zoom with mouse wheel
-                float zoom_delta = -event.wheel.y * 2.0f;
-                pz_camera_zoom(&camera, zoom_delta);
-            } break;
             case SDL_MOUSEMOTION: {
-                // Get world position under mouse
-                int mx = event.motion.x;
-                int my = event.motion.y;
-                pz_vec3 world_pos = pz_camera_screen_to_world(&camera, mx, my);
-                // Just log it for now (could display in debug overlay later)
-                (void)world_pos;
+                mouse_x = event.motion.x;
+                mouse_y = event.motion.y;
             } break;
             case SDL_WINDOWEVENT:
                 if (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
@@ -292,25 +293,95 @@ main(int argc, char *argv[])
             }
         }
 
-        // Keyboard camera movement
-        const Uint8 *keys = SDL_GetKeyboardState(NULL);
-        pz_vec3 cam_move = { 0, 0, 0 };
-        if (keys[SDL_SCANCODE_W] || keys[SDL_SCANCODE_UP])
-            cam_move.z += cam_speed;
-        if (keys[SDL_SCANCODE_S] || keys[SDL_SCANCODE_DOWN])
-            cam_move.z -= cam_speed;
-        if (keys[SDL_SCANCODE_A] || keys[SDL_SCANCODE_LEFT])
-            cam_move.x -= cam_speed;
-        if (keys[SDL_SCANCODE_D] || keys[SDL_SCANCODE_RIGHT])
-            cam_move.x += cam_speed;
+        // Calculate delta time
+        double current_time = pz_time_now();
+        float dt
+            = (float)(current_time - last_frame_time); // already in seconds
+        last_frame_time = current_time;
+        // Clamp dt to avoid physics issues on lag spikes
+        if (dt > 0.1f)
+            dt = 0.1f;
+        if (dt < 0.0001f)
+            dt = 0.0001f; // Avoid zero dt on first frame
 
-        if (cam_move.x != 0 || cam_move.z != 0) {
-            pz_camera_translate(&camera, cam_move);
+        // ====================================================================
+        // Tank input and physics
+        // ====================================================================
+        const Uint8 *keys = SDL_GetKeyboardState(NULL);
+
+        // Get movement input (tank_pos.x = world X, tank_pos.y = world Z)
+        // Camera looks from -Z towards +Z, so:
+        // Screen up = +Z, Screen down = -Z
+        // Screen left = +X, Screen right = -X
+        pz_vec2 input_dir = { 0.0f, 0.0f };
+        if (keys[SDL_SCANCODE_W] || keys[SDL_SCANCODE_UP])
+            input_dir.y += 1.0f; // Up on screen = +Z
+        if (keys[SDL_SCANCODE_S] || keys[SDL_SCANCODE_DOWN])
+            input_dir.y -= 1.0f; // Down on screen = -Z
+        if (keys[SDL_SCANCODE_A] || keys[SDL_SCANCODE_LEFT])
+            input_dir.x += 1.0f; // Left on screen = +X
+        if (keys[SDL_SCANCODE_D] || keys[SDL_SCANCODE_RIGHT])
+            input_dir.x -= 1.0f; // Right on screen = -X
+
+        // Apply acceleration in input direction
+        if (pz_vec2_len_sq(input_dir) > 0.0f) {
+            input_dir = pz_vec2_normalize(input_dir);
+            tank_vel = pz_vec2_add(
+                tank_vel, pz_vec2_scale(input_dir, tank_accel * dt));
+
+            // Rotate body towards movement direction (with damping)
+            float target_angle = atan2f(input_dir.x, input_dir.y);
+            float angle_diff = target_angle - tank_angle;
+            // Normalize angle difference to [-PI, PI]
+            while (angle_diff > PZ_PI)
+                angle_diff -= 2.0f * PZ_PI;
+            while (angle_diff < -PZ_PI)
+                angle_diff += 2.0f * PZ_PI;
+            tank_angle += angle_diff * pz_minf(1.0f, tank_turn_speed * dt);
         }
 
+        // Apply friction
+        float speed = pz_vec2_len(tank_vel);
+        if (speed > 0.0f) {
+            float friction_amount = tank_friction * dt;
+            if (friction_amount > speed)
+                friction_amount = speed;
+            tank_vel = pz_vec2_sub(tank_vel,
+                pz_vec2_scale(pz_vec2_normalize(tank_vel), friction_amount));
+        }
+
+        // Clamp to max speed
+        speed = pz_vec2_len(tank_vel);
+        if (speed > tank_max_speed) {
+            tank_vel
+                = pz_vec2_scale(pz_vec2_normalize(tank_vel), tank_max_speed);
+        }
+
+        // Update position
+        tank_pos = pz_vec2_add(tank_pos, pz_vec2_scale(tank_vel, dt));
+
+        // ====================================================================
+        // Turret aiming (mouse controls)
+        // ====================================================================
+        pz_vec3 mouse_world
+            = pz_camera_screen_to_world(&camera, mouse_x, mouse_y);
+        // Calculate direction from tank to mouse in XZ plane
+        float aim_dx = mouse_world.x - tank_pos.x;
+        float aim_dz = mouse_world.z - tank_pos.y; // tank_pos.y is world Z
+        float target_turret_angle = atan2f(aim_dx, aim_dz);
+
+        // Smoothly rotate turret towards target (with damping)
+        float turret_diff = target_turret_angle - turret_angle;
+        // Normalize angle difference to [-PI, PI]
+        while (turret_diff > PZ_PI)
+            turret_diff -= 2.0f * PZ_PI;
+        while (turret_diff < -PZ_PI)
+            turret_diff += 2.0f * PZ_PI;
+        turret_angle += turret_diff * pz_minf(1.0f, turret_turn_speed * dt);
+
         // Check for hot-reload every 500ms
-        uint64_t now = pz_time_now();
-        if (now - last_hot_reload_check > 500000) { // 500ms in microseconds
+        double now = pz_time_now();
+        if (now - last_hot_reload_check > 0.5) { // 500ms
             pz_texture_check_hot_reload(tex_manager);
             pz_map_hot_reload_check(map_hot_reload);
             last_hot_reload_check = now;
@@ -335,10 +406,6 @@ main(int argc, char *argv[])
         // Draw tank (M4.1 test)
         // ====================================================================
         if (entity_pipeline != PZ_INVALID_HANDLE) {
-            // Slowly rotate tank for visual testing
-            tank_angle += 0.005f;
-            turret_angle += 0.01f;
-
             // Light direction and color (same as walls)
             pz_vec3 light_dir = { 0.5f, 1.0f, 0.3f };
             pz_vec3 light_color = { 0.8f, 0.75f, 0.7f };
@@ -379,14 +446,14 @@ main(int argc, char *argv[])
             pz_renderer_draw(renderer, &body_cmd);
 
             // Turret model matrix (positioned on top of body, rotates
-            // independently)
+            // independently in world space)
             float turret_y_offset = 0.6f; // Height where turret sits on body
             pz_mat4 turret_model = pz_mat4_identity();
             turret_model = pz_mat4_mul(turret_model,
                 pz_mat4_translate(
                     (pz_vec3) { tank_pos.x, turret_y_offset, tank_pos.y }));
-            turret_model = pz_mat4_mul(
-                turret_model, pz_mat4_rotate_y(tank_angle + turret_angle));
+            turret_model
+                = pz_mat4_mul(turret_model, pz_mat4_rotate_y(turret_angle));
 
             pz_mat4 turret_mvp = pz_mat4_mul(*vp, turret_model);
 
