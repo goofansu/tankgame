@@ -302,7 +302,18 @@ bool  pz_platform_write_file(const char* path, const void* data, size_t size);
 
 ## Build System
 
-CMake for cross-platform, with Emscripten toolchain file for web:
+Top-level Makefile wraps CMake for convenience:
+
+```bash
+make build    # Build (default: Dev config)
+make run      # Build and run
+make clean    # Clean build
+make debug    # Debug build
+make release  # Release build
+make test     # Run tests
+```
+
+CMake handles cross-platform and Emscripten web builds:
 
 ```cmake
 cmake_minimum_required(VERSION 3.16)

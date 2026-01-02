@@ -2,6 +2,14 @@
 
 You are building a tank game following the specification in `spec/`.
 
+## Build System
+
+Use the top-level Makefile:
+- `make build` - build the project
+- `make run` - build and run
+- `make clean` - clean build
+- `make debug` / `make release` - build variants
+
 ## Before Starting Work
 
 1. **Always read `spec/progress.md` first** to understand current status

@@ -21,7 +21,7 @@ This document breaks the project into small, verifiable milestones. Each milesto
 - [ ] Add .gitignore, README.md
 - [ ] Verify builds on target platforms (macOS initially)
 
-**Validation:** `cmake .. && make` succeeds, produces empty executable
+**Validation:** `make build` succeeds, `make run` produces output
 
 ### M0.2: Dependencies
 - [ ] Integrate SDL2 (via find_package or FetchContent)
