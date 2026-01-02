@@ -1,0 +1,99 @@
+/*
+ * Map System
+ *
+ * Defines the map structure with terrain grid, height map for walls,
+ * spawn points, and other game objects.
+ */
+
+#ifndef PZ_MAP_H
+#define PZ_MAP_H
+
+#include <stdbool.h>
+#include <stdint.h>
+
+#include "../core/pz_math.h"
+
+// Maximum map dimensions
+#define PZ_MAP_MAX_SIZE 64
+#define PZ_MAP_MAX_SPAWNS 32
+
+// Terrain tile types
+typedef enum pz_tile_type {
+    PZ_TILE_GROUND = 0, // Normal movement
+    PZ_TILE_WALL, // Impassable, rendered as 3D
+    PZ_TILE_WATER, // Impassable
+    PZ_TILE_MUD, // Slow movement (50%)
+    PZ_TILE_ICE, // Reduced friction (drift)
+    PZ_TILE_COUNT
+} pz_tile_type;
+
+// Spawn point data
+typedef struct pz_spawn_point {
+    pz_vec2 pos;
+    float angle; // Facing direction in radians
+    int team; // 0 = FFA, 1+ = team number
+    bool team_spawn; // true = team mode only, false = FFA
+} pz_spawn_point;
+
+// Map structure
+typedef struct pz_map {
+    char name[64];
+    int width;
+    int height;
+    float tile_size;
+
+    // Terrain data (width * height)
+    pz_tile_type *terrain;
+
+    // Height map for walls (0 = floor, 1-9 = wall height)
+    uint8_t *height_map;
+
+    // Spawn points
+    pz_spawn_point spawns[PZ_MAP_MAX_SPAWNS];
+    int spawn_count;
+
+    // Bounds (in world units)
+    float world_width;
+    float world_height;
+} pz_map;
+
+// Creation/destruction
+pz_map *pz_map_create(int width, int height, float tile_size);
+void pz_map_destroy(pz_map *map);
+
+// Build a hardcoded test map
+pz_map *pz_map_create_test(void);
+
+// Tile access
+pz_tile_type pz_map_get_tile(const pz_map *map, int x, int y);
+void pz_map_set_tile(pz_map *map, int x, int y, pz_tile_type type);
+
+// Height access
+uint8_t pz_map_get_height(const pz_map *map, int x, int y);
+void pz_map_set_height(pz_map *map, int x, int y, uint8_t height);
+
+// World coordinate queries
+pz_tile_type pz_map_get_tile_at(const pz_map *map, pz_vec2 world_pos);
+bool pz_map_is_solid(const pz_map *map, pz_vec2 world_pos);
+bool pz_map_is_passable(const pz_map *map, pz_vec2 world_pos);
+
+// Get movement speed multiplier for terrain at position
+float pz_map_get_speed_multiplier(const pz_map *map, pz_vec2 world_pos);
+
+// Convert between tile and world coordinates
+pz_vec2 pz_map_tile_to_world(const pz_map *map, int tile_x, int tile_y);
+void pz_map_world_to_tile(
+    const pz_map *map, pz_vec2 world_pos, int *tile_x, int *tile_y);
+
+// Check if coordinates are within map bounds
+bool pz_map_in_bounds(const pz_map *map, int tile_x, int tile_y);
+bool pz_map_in_bounds_world(const pz_map *map, pz_vec2 world_pos);
+
+// Spawn point helpers
+const pz_spawn_point *pz_map_get_spawn(const pz_map *map, int index);
+int pz_map_get_spawn_count(const pz_map *map);
+
+// Debug: print map to console
+void pz_map_print(const pz_map *map);
+
+#endif // PZ_MAP_H

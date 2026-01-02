@@ -52,3 +52,18 @@ target_include_directories(test_renderer PRIVATE
 )
 target_compile_definitions(test_renderer PRIVATE PZ_DEBUG)
 add_test(NAME renderer COMMAND test_renderer)
+
+# Map system tests
+add_executable(test_map test_map.c
+    ../src/game/pz_map.c
+    ../src/core/pz_mem.c
+    ../src/core/pz_log.c
+    ../src/core/pz_str.c
+    ../src/core/pz_platform.c
+)
+target_include_directories(test_map PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR} 
+    ${CMAKE_SOURCE_DIR}/src
+)
+target_compile_definitions(test_map PRIVATE PZ_DEBUG)
+add_test(NAME map COMMAND test_map)
