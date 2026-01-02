@@ -223,8 +223,23 @@ pz_map_get_tile_at(const pz_map *map, pz_vec2 world_pos)
 bool
 pz_map_is_solid(const pz_map *map, pz_vec2 world_pos)
 {
-    pz_tile_type tile = pz_map_get_tile_at(map, world_pos);
-    return tile == PZ_TILE_WALL || tile == PZ_TILE_WATER;
+    // Use height map for collision - this matches the rendered wall geometry
+    int tx, ty;
+    pz_map_world_to_tile(map, world_pos, &tx, &ty);
+
+    // Out of bounds is solid
+    if (!pz_map_in_bounds(map, tx, ty)) {
+        return true;
+    }
+
+    // Check height (walls have height > 0)
+    if (pz_map_get_height(map, tx, ty) > 0) {
+        return true;
+    }
+
+    // Also check terrain for water (which has no height but is impassable)
+    pz_tile_type tile = pz_map_get_tile(map, tx, ty);
+    return tile == PZ_TILE_WATER;
 }
 
 bool

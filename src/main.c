@@ -377,78 +377,74 @@ main(int argc, char *argv[])
         // Wall collision detection
         // ====================================================================
         if (game_map) {
-            // Separate axis collision: test X and Y movement independently
-            // to allow sliding along walls. Check multiple points around
-            // the tank's collision circle.
-
-            // Try X movement first (keeping Y at old position)
-            pz_vec2 test_x = { new_pos.x, tank_pos.y };
+            // Check collision for X-axis movement (test points along X edges)
+            // We check at current Y and at Y +/- radius to catch corner cases
             bool blocked_x = false;
-            pz_vec2 x_points[4] = {
-                { test_x.x + tank_radius, test_x.y },
-                { test_x.x - tank_radius, test_x.y },
-                { test_x.x + tank_radius, test_x.y + tank_radius * 0.7f },
-                { test_x.x + tank_radius, test_x.y - tank_radius * 0.7f },
-            };
-            // Also check the opposite corners
-            pz_vec2 x_points2[2] = {
-                { test_x.x - tank_radius, test_x.y + tank_radius * 0.7f },
-                { test_x.x - tank_radius, test_x.y - tank_radius * 0.7f },
-            };
-            for (int i = 0; i < 4; i++) {
-                if (pz_map_is_solid(game_map, x_points[i])) {
-                    blocked_x = true;
-                    break;
-                }
+            float test_x = new_pos.x;
+            float test_y = tank_pos.y;
+            // Check right edge
+            if (pz_map_is_solid(
+                    game_map, (pz_vec2) { test_x + tank_radius, test_y })
+                || pz_map_is_solid(game_map,
+                    (pz_vec2) {
+                        test_x + tank_radius, test_y + tank_radius * 0.7f })
+                || pz_map_is_solid(game_map,
+                    (pz_vec2) {
+                        test_x + tank_radius, test_y - tank_radius * 0.7f })) {
+                blocked_x = true;
             }
-            if (!blocked_x) {
-                for (int i = 0; i < 2; i++) {
-                    if (pz_map_is_solid(game_map, x_points2[i])) {
-                        blocked_x = true;
-                        break;
-                    }
-                }
+            // Check left edge
+            if (!blocked_x
+                && (pz_map_is_solid(
+                        game_map, (pz_vec2) { test_x - tank_radius, test_y })
+                    || pz_map_is_solid(game_map,
+                        (pz_vec2) {
+                            test_x - tank_radius, test_y + tank_radius * 0.7f })
+                    || pz_map_is_solid(game_map,
+                        (pz_vec2) { test_x - tank_radius,
+                            test_y - tank_radius * 0.7f }))) {
+                blocked_x = true;
             }
 
-            // Try Y (Z in world) movement (keeping X at old position)
-            pz_vec2 test_y = { tank_pos.x, new_pos.y };
+            // Check collision for Y-axis movement (test points along Y edges)
             bool blocked_y = false;
-            pz_vec2 y_points[4] = {
-                { test_y.x, test_y.y + tank_radius },
-                { test_y.x, test_y.y - tank_radius },
-                { test_y.x + tank_radius * 0.7f, test_y.y + tank_radius },
-                { test_y.x - tank_radius * 0.7f, test_y.y + tank_radius },
-            };
-            pz_vec2 y_points2[2] = {
-                { test_y.x + tank_radius * 0.7f, test_y.y - tank_radius },
-                { test_y.x - tank_radius * 0.7f, test_y.y - tank_radius },
-            };
-            for (int i = 0; i < 4; i++) {
-                if (pz_map_is_solid(game_map, y_points[i])) {
-                    blocked_y = true;
-                    break;
-                }
+            test_x = tank_pos.x;
+            test_y = new_pos.y;
+            // Check top edge (+Y)
+            if (pz_map_is_solid(
+                    game_map, (pz_vec2) { test_x, test_y + tank_radius })
+                || pz_map_is_solid(game_map,
+                    (pz_vec2) {
+                        test_x + tank_radius * 0.7f, test_y + tank_radius })
+                || pz_map_is_solid(game_map,
+                    (pz_vec2) {
+                        test_x - tank_radius * 0.7f, test_y + tank_radius })) {
+                blocked_y = true;
             }
-            if (!blocked_y) {
-                for (int i = 0; i < 2; i++) {
-                    if (pz_map_is_solid(game_map, y_points2[i])) {
-                        blocked_y = true;
-                        break;
-                    }
-                }
+            // Check bottom edge (-Y)
+            if (!blocked_y
+                && (pz_map_is_solid(
+                        game_map, (pz_vec2) { test_x, test_y - tank_radius })
+                    || pz_map_is_solid(game_map,
+                        (pz_vec2) {
+                            test_x + tank_radius * 0.7f, test_y - tank_radius })
+                    || pz_map_is_solid(game_map,
+                        (pz_vec2) { test_x - tank_radius * 0.7f,
+                            test_y - tank_radius }))) {
+                blocked_y = true;
             }
 
-            // Apply valid movement components
+            // Apply movement on unblocked axes
             if (!blocked_x) {
                 tank_pos.x = new_pos.x;
             } else {
-                tank_vel.x = 0; // Stop X velocity on collision
+                tank_vel.x = 0;
             }
 
             if (!blocked_y) {
                 tank_pos.y = new_pos.y;
             } else {
-                tank_vel.y = 0; // Stop Y velocity on collision
+                tank_vel.y = 0;
             }
         } else {
             // No map, just move freely
