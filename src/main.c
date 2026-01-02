@@ -23,6 +23,7 @@
 #include "game/pz_map.h"
 #include "game/pz_map_render.h"
 #include "game/pz_mesh.h"
+#include "game/pz_projectile.h"
 #include "game/pz_tracks.h"
 
 #define WINDOW_TITLE "Tank Game"
@@ -254,6 +255,20 @@ main(int argc, char *argv[])
     const float tank_radius = 0.7f; // Collision radius (half of body width)
 
     // ========================================================================
+    // Projectile system (M6.1, M6.2, M6.3)
+    // ========================================================================
+    pz_projectile_manager *projectile_mgr
+        = pz_projectile_manager_create(renderer);
+
+    // Fire cooldown tracking
+    float fire_cooldown = 0.0f;
+    const float fire_cooldown_time = 0.5f; // 0.5 seconds between shots
+
+    // Turret barrel offset (how far from turret center the projectile spawns)
+    // Must match turret mesh: hd (0.45) + barrel_length (1.2) = 1.65
+    const float barrel_length = 1.65f;
+
+    // ========================================================================
     // Main loop
     // ========================================================================
 
@@ -266,6 +281,7 @@ main(int argc, char *argv[])
     // Mouse state for turret aiming
     int mouse_x = WINDOW_WIDTH / 2;
     int mouse_y = WINDOW_HEIGHT / 2;
+    bool mouse_left_pressed = false; // Track left mouse button
 
     while (running) {
         // Poll debug commands
@@ -296,6 +312,16 @@ main(int argc, char *argv[])
                 mouse_x = event.motion.x;
                 mouse_y = event.motion.y;
             } break;
+            case SDL_MOUSEBUTTONDOWN:
+                if (event.button.button == SDL_BUTTON_LEFT) {
+                    mouse_left_pressed = true;
+                }
+                break;
+            case SDL_MOUSEBUTTONUP:
+                if (event.button.button == SDL_BUTTON_LEFT) {
+                    mouse_left_pressed = false;
+                }
+                break;
             case SDL_WINDOWEVENT:
                 if (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
                     int w = event.window.data1;
@@ -491,6 +517,39 @@ main(int argc, char *argv[])
             turret_diff += 2.0f * PZ_PI;
         turret_angle += turret_diff * pz_minf(1.0f, turret_turn_speed * dt);
 
+        // ====================================================================
+        // Firing (left mouse button)
+        // ====================================================================
+        fire_cooldown -= dt;
+        if (fire_cooldown < 0.0f)
+            fire_cooldown = 0.0f;
+
+        if (mouse_left_pressed && fire_cooldown <= 0.0f) {
+            // Calculate spawn position at end of barrel
+            // turret_angle is world space rotation around Y axis
+            // Forward direction in XZ plane: sin(angle), cos(angle)
+            float spawn_dx = sinf(turret_angle) * barrel_length;
+            float spawn_dz = cosf(turret_angle) * barrel_length;
+
+            pz_vec2 spawn_pos = {
+                tank_pos.x + spawn_dx,
+                tank_pos.y + spawn_dz // tank_pos.y is world Z
+            };
+
+            // Direction matches turret facing
+            pz_vec2 fire_dir = { sinf(turret_angle), cosf(turret_angle) };
+
+            pz_projectile_spawn(
+                projectile_mgr, spawn_pos, fire_dir, &PZ_PROJECTILE_DEFAULT, 0);
+
+            fire_cooldown = fire_cooldown_time;
+        }
+
+        // ====================================================================
+        // Update projectiles
+        // ====================================================================
+        pz_projectile_update(projectile_mgr, game_map, dt);
+
         // Check for hot-reload every 500ms
         double now = pz_time_now();
         if (now - last_hot_reload_check > 0.5) { // 500ms
@@ -573,7 +632,7 @@ main(int argc, char *argv[])
 
             // Turret model matrix (positioned on top of body, rotates
             // independently in world space)
-            float turret_y_offset = 0.6f; // Height where turret sits on body
+            float turret_y_offset = 0.65f; // Height where turret sits on body
             pz_mat4 turret_model = pz_mat4_identity();
             turret_model = pz_mat4_mul(turret_model,
                 pz_mat4_translate(
@@ -604,6 +663,11 @@ main(int argc, char *argv[])
             };
             pz_renderer_draw(renderer, &turret_cmd);
         }
+
+        // ====================================================================
+        // Draw projectiles
+        // ====================================================================
+        pz_projectile_render(projectile_mgr, renderer, vp);
 
         // Render debug overlay (before end frame)
         pz_debug_overlay_render(debug_overlay);
@@ -636,6 +700,9 @@ main(int argc, char *argv[])
     }
     pz_mesh_destroy(tank_turret, renderer);
     pz_mesh_destroy(tank_body, renderer);
+
+    // Cleanup projectile system
+    pz_projectile_manager_destroy(projectile_mgr, renderer);
 
     pz_tracks_destroy(tracks);
     pz_map_hot_reload_destroy(map_hot_reload);

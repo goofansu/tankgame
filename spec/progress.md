@@ -38,5 +38,10 @@
 - [x] M7.2: ground shader samples track texture using world coordinates
 - [x] M7.3: track marks placed at distance intervals for each tread
 
+## Phase 6: Weapons and Projectiles (front-loaded)
+- [x] M6.1: projectile entity, mesh, movement, lifetime
+- [x] M6.2: tank firing (left mouse button, cooldown, spawn at turret tip)
+- [x] M6.3: projectile-wall collision with bouncing (1 bounce)
+
 ## Bug Fixes
 - [x] Fixed pz_map_set_tile to auto-set height for WALL tiles (test_map fix)

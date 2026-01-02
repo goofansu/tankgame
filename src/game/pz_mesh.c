@@ -422,10 +422,10 @@ pz_mesh_create_tank_turret(void)
     float base_depth = 0.9f;
     float base_height = 0.35f;
 
-    // Barrel dimensions
+    // Barrel dimensions (thicker to hold large projectiles)
     float barrel_length = 1.2f;
-    float barrel_radius = 0.06f;
-    float barrel_y = base_height * 0.7f; // Barrel height on turret
+    float barrel_radius = 0.18f;  // Much thicker barrel
+    float barrel_y = base_height + barrel_radius; // Barrel sits on top of turret
 
     // Half dimensions
     float hw = base_width * 0.5f;
@@ -551,7 +551,7 @@ pz_mesh_create_tank_turret(void)
 /* ============================================================================
  * Projectile Mesh
  *
- * Small elongated capsule/bullet shape
+ * Bullet shape: cylinder body with spherical nose and flat back
  * ============================================================================
  */
 
@@ -559,21 +559,24 @@ pz_mesh *
 pz_mesh_create_projectile(void)
 {
     pz_mesh *mesh = pz_mesh_create();
-    mesh->vertices = pz_alloc(128 * sizeof(pz_mesh_vertex));
+    mesh->vertices = pz_alloc(512 * sizeof(pz_mesh_vertex));
 
     // Projectile dimensions
-    float length = 0.3f;
-    float radius = 0.05f;
-
-    float hl = length * 0.5f;
-
+    float radius = 0.2f;
+    float body_length = 0.4f;   // Cylinder part
+    float nose_length = 0.3f;   // Spherical nose part
+    
+    // Body goes from z=0 to z=-body_length (back)
+    // Nose goes from z=0 to z=+nose_length (front, tapered)
+    
     pz_mesh_vertex *v = mesh->vertices;
 
-    // Create 6-sided cylinder
-    int sides = 6;
+    int sides = 12;  // Smoother bullet
+    int nose_rings = 4;  // Rings for the nose sphere
+    
     for (int i = 0; i < sides; i++) {
-        float angle0 = (float)i / sides * 6.28318f;
-        float angle1 = (float)(i + 1) / sides * 6.28318f;
+        float angle0 = (float)i / sides * 2.0f * PZ_PI;
+        float angle1 = (float)(i + 1) / sides * 2.0f * PZ_PI;
 
         float c0 = cosf(angle0);
         float s0 = sinf(angle0);
@@ -585,80 +588,112 @@ pz_mesh_create_projectile(void)
         float x1 = radius * c1;
         float y1 = radius * s1;
 
+        // ====================================================================
+        // Cylinder body (from z=0 to z=-body_length)
+        // ====================================================================
         float nx = (c0 + c1) * 0.5f;
         float ny = (s0 + s1) * 0.5f;
 
-        // Side face
-        v = emit_quad(v, x0, y0, -hl, x0, y0, hl, x1, y1, hl, x1, y1, -hl, nx,
-            ny, 0, 0, 1, 1, 0);
+        v = emit_quad(v, 
+            x0, y0, 0,              // front-left
+            x0, y0, -body_length,   // back-left
+            x1, y1, -body_length,   // back-right
+            x1, y1, 0,              // front-right
+            nx, ny, 0, 0, 1, 1, 0);
 
-        // Front cap triangle
+        // ====================================================================
+        // Back cap (flat, at z=-body_length)
+        // ====================================================================
         pz_mesh_vertex *vt = v;
-        vt->x = 0;
-        vt->y = 0;
-        vt->z = hl;
-        vt->nx = 0;
-        vt->ny = 0;
-        vt->nz = 1;
-        vt->u = 0.5f;
-        vt->v = 0.5f;
+        vt->x = 0; vt->y = 0; vt->z = -body_length;
+        vt->nx = 0; vt->ny = 0; vt->nz = -1;
+        vt->u = 0.5f; vt->v = 0.5f;
         v++;
 
         vt = v;
-        vt->x = x0;
-        vt->y = y0;
-        vt->z = hl;
-        vt->nx = 0;
-        vt->ny = 0;
-        vt->nz = 1;
-        vt->u = 0.5f + c0 * 0.5f;
-        vt->v = 0.5f + s0 * 0.5f;
+        vt->x = x1; vt->y = y1; vt->z = -body_length;
+        vt->nx = 0; vt->ny = 0; vt->nz = -1;
+        vt->u = 0.5f + c1 * 0.5f; vt->v = 0.5f + s1 * 0.5f;
         v++;
 
         vt = v;
-        vt->x = x1;
-        vt->y = y1;
-        vt->z = hl;
-        vt->nx = 0;
-        vt->ny = 0;
-        vt->nz = 1;
-        vt->u = 0.5f + c1 * 0.5f;
-        vt->v = 0.5f + s1 * 0.5f;
+        vt->x = x0; vt->y = y0; vt->z = -body_length;
+        vt->nx = 0; vt->ny = 0; vt->nz = -1;
+        vt->u = 0.5f + c0 * 0.5f; vt->v = 0.5f + s0 * 0.5f;
         v++;
 
-        // Back cap triangle
-        vt = v;
-        vt->x = 0;
-        vt->y = 0;
-        vt->z = -hl;
-        vt->nx = 0;
-        vt->ny = 0;
-        vt->nz = -1;
-        vt->u = 0.5f;
-        vt->v = 0.5f;
-        v++;
-
-        vt = v;
-        vt->x = x1;
-        vt->y = y1;
-        vt->z = -hl;
-        vt->nx = 0;
-        vt->ny = 0;
-        vt->nz = -1;
-        vt->u = 0.5f + c1 * 0.5f;
-        vt->v = 0.5f + s1 * 0.5f;
-        v++;
-
-        vt = v;
-        vt->x = x0;
-        vt->y = y0;
-        vt->z = -hl;
-        vt->nx = 0;
-        vt->ny = 0;
-        vt->nz = -1;
-        vt->u = 0.5f + c0 * 0.5f;
-        vt->v = 0.5f + s0 * 0.5f;
-        v++;
+        // ====================================================================
+        // Spherical nose (from z=0 to z=+nose_length)
+        // ====================================================================
+        for (int r = 0; r < nose_rings; r++) {
+            // Latitude angles (0 = equator at z=0, PI/2 = tip at z=nose_length)
+            float lat0 = (float)r / nose_rings * (PZ_PI * 0.5f);
+            float lat1 = (float)(r + 1) / nose_rings * (PZ_PI * 0.5f);
+            
+            float cos_lat0 = cosf(lat0);
+            float sin_lat0 = sinf(lat0);
+            float cos_lat1 = cosf(lat1);
+            float sin_lat1 = sinf(lat1);
+            
+            // Ring radii
+            float r0 = radius * cos_lat0;
+            float r1 = radius * cos_lat1;
+            
+            // Z positions
+            float z0 = nose_length * sin_lat0;
+            float z1 = nose_length * sin_lat1;
+            
+            // Four corners of quad on sphere
+            float qx00 = r0 * c0, qy00 = r0 * s0;
+            float qx01 = r0 * c1, qy01 = r0 * s1;
+            float qx10 = r1 * c0, qy10 = r1 * s0;
+            float qx11 = r1 * c1, qy11 = r1 * s1;
+            
+            // Normals point outward from sphere center
+            float nx00 = cos_lat0 * c0, ny00 = cos_lat0 * s0, nz00 = sin_lat0;
+            float nx01 = cos_lat0 * c1, ny01 = cos_lat0 * s1, nz01 = sin_lat0;
+            float nx10 = cos_lat1 * c0, ny10 = cos_lat1 * s0, nz10 = sin_lat1;
+            float nx11 = cos_lat1 * c1, ny11 = cos_lat1 * s1, nz11 = sin_lat1;
+            
+            // Emit two triangles for this quad
+            // Triangle 1: 00, 10, 11
+            vt = v;
+            vt->x = qx00; vt->y = qy00; vt->z = z0;
+            vt->nx = nx00; vt->ny = ny00; vt->nz = nz00;
+            vt->u = 0; vt->v = 0;
+            v++;
+            
+            vt = v;
+            vt->x = qx10; vt->y = qy10; vt->z = z1;
+            vt->nx = nx10; vt->ny = ny10; vt->nz = nz10;
+            vt->u = 0; vt->v = 1;
+            v++;
+            
+            vt = v;
+            vt->x = qx11; vt->y = qy11; vt->z = z1;
+            vt->nx = nx11; vt->ny = ny11; vt->nz = nz11;
+            vt->u = 1; vt->v = 1;
+            v++;
+            
+            // Triangle 2: 00, 11, 01
+            vt = v;
+            vt->x = qx00; vt->y = qy00; vt->z = z0;
+            vt->nx = nx00; vt->ny = ny00; vt->nz = nz00;
+            vt->u = 0; vt->v = 0;
+            v++;
+            
+            vt = v;
+            vt->x = qx11; vt->y = qy11; vt->z = z1;
+            vt->nx = nx11; vt->ny = ny11; vt->nz = nz11;
+            vt->u = 1; vt->v = 1;
+            v++;
+            
+            vt = v;
+            vt->x = qx01; vt->y = qy01; vt->z = z0;
+            vt->nx = nx01; vt->ny = ny01; vt->nz = nz01;
+            vt->u = 1; vt->v = 0;
+            v++;
+        }
     }
 
     mesh->vertex_count = (int)(v - mesh->vertices);
