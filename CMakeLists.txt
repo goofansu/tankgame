@@ -38,6 +38,7 @@ set(CORE_SOURCES
     src/core/pz_ds.c
     src/core/pz_str.c
     src/core/pz_platform.c
+    src/core/pz_debug_cmd.c
 )
 
 set(ENGINE_SOURCES
@@ -49,6 +50,10 @@ set(ENGINE_SOURCES
     # src/engine/pz_input.c
     # src/engine/pz_audio.c
     # src/engine/pz_assets.c
+)
+
+set(THIRD_PARTY_SOURCES
+    third_party/stb_image_write_impl.c
 )
 
 set(GAME_SOURCES
@@ -85,10 +90,12 @@ add_executable(tankgame
     ${GAME_SOURCES}
     ${EDITOR_SOURCES}
     ${NET_SOURCES}
+    ${THIRD_PARTY_SOURCES}
 )
 
 target_include_directories(tankgame PRIVATE
     ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}
 )
 
 # Dependencies

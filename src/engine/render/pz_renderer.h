@@ -284,4 +284,19 @@ pz_shader_handle pz_renderer_load_shader(pz_renderer *r,
 bool pz_renderer_reload_shader(pz_renderer *r, pz_shader_handle handle,
     const char *vertex_path, const char *fragment_path);
 
+/* ============================================================================
+ * Screenshot
+ * ============================================================================
+ */
+
+// Capture the current framebuffer to RGBA pixel data
+// Returns pixel data (caller must pz_free), NULL on failure
+// Pixels are in top-to-bottom order (suitable for image writing)
+uint8_t *pz_renderer_screenshot(
+    pz_renderer *r, int *out_width, int *out_height);
+
+// Save a screenshot to a PNG file
+// Returns true on success
+bool pz_renderer_save_screenshot(pz_renderer *r, const char *path);
+
 #endif // PZ_RENDERER_H

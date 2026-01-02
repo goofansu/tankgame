@@ -71,3 +71,20 @@ Example progress.md:
 - `spec/03-gameplay-tech.md` - gameplay systems
 - `spec/04-network-protocol.md` - networking
 - `spec/05-tooling-and-debugging.md` - dev tools
+
+## Visual Validation
+
+**Always validate visual changes with screenshots.** Don't assume rendering code works - verify it.
+
+Quick screenshot (runs 3 frames then exits):
+```bash
+./build/tankgame --screenshot screenshots/test.png --screenshot-frames 3
+```
+
+Live debugging (while game is running):
+```bash
+echo "screenshot screenshots/debug.png" > /tmp/tankgame_cmd
+echo "quit" > /tmp/tankgame_cmd
+```
+
+View screenshots with the `read` tool - PNG files display as images.

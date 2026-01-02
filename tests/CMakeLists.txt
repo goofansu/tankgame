@@ -43,7 +43,12 @@ add_executable(test_renderer test_renderer.c
     ../src/core/pz_log.c
     ../src/core/pz_math.c
     ../src/core/pz_platform.c
+    ../third_party/stb_image_write_impl.c
 )
-target_include_directories(test_renderer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(test_renderer PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR} 
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}
+)
 target_compile_definitions(test_renderer PRIVATE PZ_DEBUG)
 add_test(NAME renderer COMMAND test_renderer)

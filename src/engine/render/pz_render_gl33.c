@@ -1157,6 +1157,59 @@ apply_cull_mode(pz_cull_mode mode)
     }
 }
 
+/* ============================================================================
+ * Screenshot
+ * ============================================================================
+ */
+
+static uint8_t *
+gl33_screenshot(pz_renderer *r, int *out_width, int *out_height)
+{
+    int width = r->viewport_width;
+    int height = r->viewport_height;
+
+    // Allocate buffer for RGBA pixels
+    size_t pixel_count = (size_t)width * (size_t)height * 4;
+    uint8_t *pixels = pz_alloc(pixel_count);
+    if (!pixels) {
+        pz_log(PZ_LOG_ERROR, PZ_LOG_CAT_RENDER,
+            "Failed to allocate screenshot buffer");
+        return NULL;
+    }
+
+    // Read pixels from framebuffer (OpenGL reads bottom-to-top)
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+
+    if (!gl_check_error("screenshot")) {
+        pz_free(pixels);
+        return NULL;
+    }
+
+    // Flip the image vertically (OpenGL is bottom-up, images are top-down)
+    size_t row_size = (size_t)width * 4;
+    uint8_t *temp_row = pz_alloc(row_size);
+    if (temp_row) {
+        for (int y = 0; y < height / 2; y++) {
+            uint8_t *top_row = pixels + (size_t)y * row_size;
+            uint8_t *bottom_row = pixels + (size_t)(height - 1 - y) * row_size;
+            memcpy(temp_row, top_row, row_size);
+            memcpy(top_row, bottom_row, row_size);
+            memcpy(bottom_row, temp_row, row_size);
+        }
+        pz_free(temp_row);
+    }
+
+    *out_width = width;
+    *out_height = height;
+    return pixels;
+}
+
+/* ============================================================================
+ * Drawing
+ * ============================================================================
+ */
+
 static void
 gl33_draw(pz_renderer *r, const pz_draw_cmd *cmd)
 {
@@ -1268,6 +1321,7 @@ static const pz_render_backend_vtable s_gl33_vtable = {
     .set_uniform_int = gl33_set_uniform_int,
     .bind_texture = gl33_bind_texture,
     .draw = gl33_draw,
+    .screenshot = gl33_screenshot,
 };
 
 const pz_render_backend_vtable *

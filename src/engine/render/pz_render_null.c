@@ -359,6 +359,36 @@ null_draw(pz_renderer *r, const pz_draw_cmd *cmd)
 }
 
 /* ============================================================================
+ * Screenshot
+ * ============================================================================
+ */
+
+static uint8_t *
+null_screenshot(pz_renderer *r, int *out_width, int *out_height)
+{
+    // Return a solid color image for the null backend
+    int width = r->viewport_width;
+    int height = r->viewport_height;
+
+    size_t pixel_count = (size_t)width * (size_t)height * 4;
+    uint8_t *pixels = pz_calloc(1, pixel_count);
+    if (!pixels)
+        return NULL;
+
+    // Fill with cornflower blue for testing
+    for (size_t i = 0; i < pixel_count; i += 4) {
+        pixels[i + 0] = 100; // R
+        pixels[i + 1] = 149; // G
+        pixels[i + 2] = 237; // B
+        pixels[i + 3] = 255; // A
+    }
+
+    *out_width = width;
+    *out_height = height;
+    return pixels;
+}
+
+/* ============================================================================
  * Vtable
  * ============================================================================
  */
@@ -395,6 +425,7 @@ static const pz_render_backend_vtable s_null_vtable = {
     .set_uniform_int = null_set_uniform_int,
     .bind_texture = null_bind_texture,
     .draw = null_draw,
+    .screenshot = null_screenshot,
 };
 
 const pz_render_backend_vtable *

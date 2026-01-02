@@ -31,3 +31,6 @@ tankgame.wasm
 
 # Generated
 *.log
+
+# Screenshots (debug output)
+screenshots/

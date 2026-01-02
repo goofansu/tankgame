@@ -10,6 +10,8 @@
 #include "../../core/pz_platform.h"
 #include "pz_render_backend.h"
 
+#include "third_party/stb_image_write.h"
+
 /* ============================================================================
  * Lifecycle
  * ============================================================================
@@ -369,4 +371,50 @@ pz_renderer_reload_shader(pz_renderer *r, pz_shader_handle handle,
     (void)vertex_path;
     (void)fragment_path;
     return false;
+}
+
+/* ============================================================================
+ * Screenshot
+ * ============================================================================
+ */
+
+uint8_t *
+pz_renderer_screenshot(pz_renderer *r, int *out_width, int *out_height)
+{
+    if (!r || !r->vtable || !r->vtable->screenshot) {
+        return NULL;
+    }
+    return r->vtable->screenshot(r, out_width, out_height);
+}
+
+bool
+pz_renderer_save_screenshot(pz_renderer *r, const char *path)
+{
+    int width, height;
+    uint8_t *pixels = pz_renderer_screenshot(r, &width, &height);
+    if (!pixels) {
+        pz_log(PZ_LOG_ERROR, PZ_LOG_CAT_RENDER, "Failed to capture screenshot");
+        return false;
+    }
+
+    // Ensure screenshots directory exists
+    char *dir = pz_path_dirname(path);
+    if (dir) {
+        pz_dir_create(dir);
+        pz_free(dir);
+    }
+
+    // Save as PNG
+    int result = stbi_write_png(path, width, height, 4, pixels, width * 4);
+    pz_free(pixels);
+
+    if (result) {
+        pz_log(PZ_LOG_INFO, PZ_LOG_CAT_RENDER, "Screenshot saved: %s (%dx%d)",
+            path, width, height);
+        return true;
+    } else {
+        pz_log(PZ_LOG_ERROR, PZ_LOG_CAT_RENDER,
+            "Failed to write screenshot: %s", path);
+        return false;
+    }
 }

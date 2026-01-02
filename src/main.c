@@ -5,24 +5,56 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <time.h>
 
 #include <SDL.h>
 
+#include "core/pz_debug_cmd.h"
 #include "core/pz_log.h"
 #include "core/pz_math.h"
 #include "core/pz_mem.h"
 #include "core/pz_platform.h"
+#include "core/pz_str.h"
 #include "engine/render/pz_renderer.h"
 
 #define WINDOW_TITLE "Tank Game"
 #define WINDOW_WIDTH 1280
 #define WINDOW_HEIGHT 720
 
+// Generate a timestamped screenshot filename
+static char *
+generate_screenshot_path(void)
+{
+    time_t now = time(NULL);
+    struct tm *t = localtime(&now);
+
+    char filename[128];
+    snprintf(filename, sizeof(filename),
+        "screenshots/screenshot_%04d%02d%02d_%02d%02d%02d.png",
+        t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min,
+        t->tm_sec);
+
+    return pz_str_dup(filename);
+}
+
 int
 main(int argc, char *argv[])
 {
-    (void)argc;
-    (void)argv;
+    bool auto_screenshot = false;
+    const char *screenshot_path = NULL;
+    int screenshot_frames = 1; // Number of frames to wait before screenshot
+
+    // Parse command line arguments
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--screenshot") == 0 && i + 1 < argc) {
+            auto_screenshot = true;
+            screenshot_path = argv[++i];
+        } else if (strcmp(argv[i], "--screenshot-frames") == 0
+            && i + 1 < argc) {
+            screenshot_frames = atoi(argv[++i]);
+        }
+    }
 
     printf("Tank Game - Starting...\n");
 
@@ -101,6 +133,9 @@ main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
+    // Initialize debug command interface
+    pz_debug_cmd_init(NULL);
+
     // Load test shader
     pz_shader_handle shader = pz_renderer_load_shader(
         renderer, "shaders/test.vert", "shaders/test.frag", "test");
@@ -154,8 +189,14 @@ main(int argc, char *argv[])
     // Main loop
     bool running = true;
     SDL_Event event;
+    int frame_count = 0;
 
     while (running) {
+        // Poll debug commands
+        if (!pz_debug_cmd_poll(renderer)) {
+            running = false;
+        }
+
         // Handle events
         while (SDL_PollEvent(&event)) {
             switch (event.type) {
@@ -165,6 +206,12 @@ main(int argc, char *argv[])
             case SDL_KEYDOWN:
                 if (event.key.keysym.sym == SDLK_ESCAPE) {
                     running = false;
+                } else if (event.key.keysym.sym == SDLK_F12) {
+                    char *path = generate_screenshot_path();
+                    if (path) {
+                        pz_renderer_save_screenshot(renderer, path);
+                        pz_free(path);
+                    }
                 }
                 break;
             case SDL_WINDOWEVENT:
@@ -202,9 +249,17 @@ main(int argc, char *argv[])
 
         // Swap buffers
         SDL_GL_SwapWindow(window);
+
+        // Auto-screenshot mode
+        frame_count++;
+        if (auto_screenshot && frame_count >= screenshot_frames) {
+            pz_renderer_save_screenshot(renderer, screenshot_path);
+            running = false;
+        }
     }
 
     // Cleanup
+    pz_debug_cmd_shutdown();
     pz_renderer_destroy_pipeline(renderer, pipeline);
     pz_renderer_destroy_buffer(renderer, vertex_buffer);
     pz_renderer_destroy_shader(renderer, shader);

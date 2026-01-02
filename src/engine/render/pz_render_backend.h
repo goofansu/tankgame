@@ -89,6 +89,9 @@ typedef struct pz_render_backend_vtable {
     // Drawing
     void (*draw)(pz_renderer *r, const pz_draw_cmd *cmd);
 
+    // Screenshot
+    uint8_t *(*screenshot)(pz_renderer *r, int *out_width, int *out_height);
+
 } pz_render_backend_vtable;
 
 /* ============================================================================
