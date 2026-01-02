@@ -372,6 +372,9 @@ gl33_init(pz_renderer *r, const pz_renderer_config *config)
     glCullFace(GL_BACK);
     glFrontFace(GL_CCW);
 
+    // Enable multisampling (MSAA) if available
+    glEnable(GL_MULTISAMPLE);
+
     // Set viewport
     glViewport(0, 0, r->viewport_width, r->viewport_height);
 

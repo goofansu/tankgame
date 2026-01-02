@@ -95,6 +95,10 @@ main(int argc, char *argv[])
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
 
+    // Enable MSAA (4x multisampling for anti-aliasing)
+    SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 1);
+    SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 4);
+
     // Create window with OpenGL context
     SDL_Window *window = SDL_CreateWindow(WINDOW_TITLE, SDL_WINDOWPOS_CENTERED,
         SDL_WINDOWPOS_CENTERED, WINDOW_WIDTH, WINDOW_HEIGHT,
@@ -141,11 +145,9 @@ main(int argc, char *argv[])
     // Create texture manager
     pz_texture_manager *tex_manager = pz_texture_manager_create(renderer);
 
-    // Initialize camera
+    // Initialize camera (will be set up after map loads)
     pz_camera camera;
     pz_camera_init(&camera, WINDOW_WIDTH, WINDOW_HEIGHT);
-    pz_camera_setup_game_view(
-        &camera, (pz_vec3) { 0, 0, 0 }, 35.0f, 20.0f); // Height 35, 20° pitch
 
     // Try to load map from file, fall back to test map
     const char *map_path = "assets/maps/test_arena.map";
@@ -161,6 +163,12 @@ main(int argc, char *argv[])
     }
     if (!game_map) {
         pz_log(PZ_LOG_ERROR, PZ_LOG_CAT_GAME, "Failed to create map");
+    }
+
+    // Set up camera to fit the map
+    if (game_map) {
+        pz_camera_fit_map(
+            &camera, game_map->world_width, game_map->world_height, 20.0f);
     }
 
     // Create map renderer

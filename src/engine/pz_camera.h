@@ -128,4 +128,10 @@ void pz_camera_zoom(pz_camera *cam, float delta);
 void pz_camera_setup_game_view(
     pz_camera *cam, pz_vec3 look_at_point, float height, float pitch_degrees);
 
+// Set up camera to fit an entire map in view
+// map_width/map_height: world size of the map
+// pitch_degrees: camera tilt angle
+void pz_camera_fit_map(
+    pz_camera *cam, float map_width, float map_height, float pitch_degrees);
+
 #endif // PZ_CAMERA_H

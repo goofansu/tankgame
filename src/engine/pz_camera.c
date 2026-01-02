@@ -295,3 +295,35 @@ pz_camera_setup_game_view(
 
     pz_camera_update(cam);
 }
+
+void
+pz_camera_fit_map(
+    pz_camera *cam, float map_width, float map_height, float pitch_degrees)
+{
+    // Simple approach: calculate height needed for width, add extra for depth,
+    // then position camera to center the map.
+
+    float pitch_rad = pitch_degrees * (PZ_PI / 180.0f);
+    float fov_rad = cam->fov * (PZ_PI / 180.0f);
+
+    // Height needed to fit map width horizontally
+    float hfov_rad = 2.0f * atanf(tanf(fov_rad / 2.0f) * cam->aspect);
+    float height_for_width = (map_width / 2.0f) / tanf(hfov_rad / 2.0f);
+
+    // For depth: approximate by treating it as foreshortened
+    float cos_pitch = cosf(pitch_rad);
+    float apparent_depth = map_height * cos_pitch;
+    float height_for_depth = (apparent_depth / 2.0f) / tanf(fov_rad / 2.0f);
+
+    // Take the larger, add generous margin
+    float height = height_for_depth > height_for_width ? height_for_depth
+                                                       : height_for_width;
+    height *= 1.25f; // 25% margin to ensure everything fits
+
+    // Position: look at map center (0,0,0)
+    // The tilted view naturally shows more "behind" (positive Z from camera's
+    // view) than "in front", so we don't need z_offset
+    pz_vec3 look_at = { 0.0f, 0.0f, 0.0f };
+
+    pz_camera_setup_game_view(cam, look_at, height, pitch_degrees);
+}

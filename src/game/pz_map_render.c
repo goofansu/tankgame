@@ -64,9 +64,10 @@ struct pz_map_renderer {
 // Ground Mesh Generation
 // ============================================================================
 
-// Ground plane Y offset - slightly below walls 
+// Ground plane Y offset - slightly below walls
 #define GROUND_Y_OFFSET -0.01f
-// Ground shrink amount - shrink tiles slightly to avoid z-fighting with wall sides
+// Ground shrink amount - shrink tiles slightly to avoid z-fighting with wall
+// sides
 #define GROUND_SHRINK 0.001f
 
 // Create vertices for a single tile quad on ground plane
@@ -79,7 +80,7 @@ emit_ground_quad(float *v, float x0, float z0, float x1, float z1)
     z0 += GROUND_SHRINK;
     x1 -= GROUND_SHRINK;
     z1 -= GROUND_SHRINK;
-    
+
     // Y = GROUND_Y_OFFSET (slightly below 0)
     // Tile UVs: 0-1 per tile
 
@@ -223,8 +224,7 @@ emit_wall_box(float *v, float x0, float z0, float x1, float z1, float height,
     // Top face (always visible, normal up +Y)
     // Looking from above (+Y looking down): x increases right, z increases away
     // CCW from above: (x0,z0) -> (x0,z1) -> (x1,z1) -> (x1,z0)
-    v = emit_wall_face(v, 
-        x0, y1, z0, // v0: near-left
+    v = emit_wall_face(v, x0, y1, z0, // v0: near-left
         x0, y1, z1, // v1: far-left
         x1, y1, z1, // v2: far-right
         x1, y1, z0, // v3: near-right
@@ -313,18 +313,21 @@ pz_map_renderer_create(pz_renderer *renderer, pz_texture_manager *tex_manager)
     mr->renderer = renderer;
     mr->tex_manager = tex_manager;
 
-    // Load terrain textures
+    // Load terrain textures with mipmapping for better quality at distance
     for (int i = 0; i < PZ_TILE_COUNT; i++) {
-        mr->textures[i] = pz_texture_load(tex_manager, terrain_textures[i]);
+        mr->textures[i] = pz_texture_load_ex(tex_manager, terrain_textures[i],
+            PZ_FILTER_LINEAR_MIPMAP, PZ_WRAP_REPEAT);
         if (mr->textures[i] == PZ_INVALID_HANDLE) {
             pz_log(PZ_LOG_WARN, PZ_LOG_CAT_RENDER,
                 "Failed to load terrain texture: %s", terrain_textures[i]);
         }
     }
 
-    // Load wall textures
-    mr->wall_top_tex = pz_texture_load(tex_manager, wall_top_texture);
-    mr->wall_side_tex = pz_texture_load(tex_manager, wall_side_texture);
+    // Load wall textures with mipmapping
+    mr->wall_top_tex = pz_texture_load_ex(
+        tex_manager, wall_top_texture, PZ_FILTER_LINEAR_MIPMAP, PZ_WRAP_REPEAT);
+    mr->wall_side_tex = pz_texture_load_ex(tex_manager, wall_side_texture,
+        PZ_FILTER_LINEAR_MIPMAP, PZ_WRAP_REPEAT);
     if (mr->wall_side_tex == PZ_INVALID_HANDLE) {
         // Fall back to top texture if side isn't available
         mr->wall_side_tex = mr->wall_top_tex;
@@ -701,10 +704,10 @@ pz_map_renderer_check_hot_reload(pz_map_renderer *mr)
 // ============================================================================
 
 struct pz_map_hot_reload {
-    char *path;              // Path to map file
-    pz_map **map_ptr;        // Pointer to the map pointer (for swapping)
+    char *path; // Path to map file
+    pz_map **map_ptr; // Pointer to the map pointer (for swapping)
     pz_map_renderer *renderer; // Renderer to update on reload
-    int64_t last_mtime;      // Last modification time
+    int64_t last_mtime; // Last modification time
 };
 
 pz_map_hot_reload *

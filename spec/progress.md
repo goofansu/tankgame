@@ -19,3 +19,11 @@
 - [x] M3.1: ground rendering using map (wood textures, terrain types visible)
 - [x] M3.3: terrain mesh batched by type, different textures per terrain
 - [x] M3.4: 3D wall geometry from height map with lighting
+- [x] M3.5: map hot-reload (already done earlier)
+
+## Quality Improvements (pre-M4)
+- [x] Wider map (24x14) for better 16:9 fit
+- [x] MSAA (4x multisampling) for anti-aliased edges
+- [x] Mipmapping on terrain textures for cleaner distant tiles
+- [x] Camera auto-fit to show entire map
+- [x] Fixed map parser to correctly load terrain types (wall lines starting with #)

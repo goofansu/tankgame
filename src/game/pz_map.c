@@ -464,8 +464,8 @@ pz_map_load(const char *path)
 {
     char *file_data = pz_file_read_text(path);
     if (!file_data) {
-        pz_log(PZ_LOG_ERROR, PZ_LOG_CAT_GAME, "Failed to read map file: %s",
-            path);
+        pz_log(
+            PZ_LOG_ERROR, PZ_LOG_CAT_GAME, "Failed to read map file: %s", path);
         return NULL;
     }
 
@@ -530,8 +530,9 @@ pz_map_load(const char *path)
     while (read_line(&text, line, sizeof(line)) && terrain_rows_read < height) {
         const char *p = skip_whitespace(line);
 
-        // Skip empty lines and comments
-        if (!*p || *p == '#') {
+        // Skip empty lines only (NOT lines starting with #, those are wall
+        // tiles!)
+        if (!*p) {
             continue;
         }
 
@@ -630,8 +631,7 @@ pz_map_save(const pz_map *map, const char *path)
 
     // Build map file content
     // Calculate approximate size needed
-    size_t buf_size
-        = 1024 + (size_t)(map->width + 2) * (size_t)map->height * 2
+    size_t buf_size = 1024 + (size_t)(map->width + 2) * (size_t)map->height * 2
         + (size_t)map->spawn_count * 64;
     char *buf = pz_alloc(buf_size);
     if (!buf) {
