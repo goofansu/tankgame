@@ -105,17 +105,21 @@ pz_powerup_manager_create(pz_renderer *renderer)
         renderer, "shaders/entity.vert", "shaders/entity.frag", "powerup");
 
     if (mgr->shader != PZ_INVALID_HANDLE) {
+        // Create transparent pipeline with alpha blending
         pz_pipeline_desc desc = {
             .shader = mgr->shader,
             .vertex_layout = pz_mesh_get_vertex_layout(),
-            .blend = PZ_BLEND_NONE,
+            .blend = PZ_BLEND_ALPHA,
             .depth = PZ_DEPTH_READ_WRITE,
             .cull = PZ_CULL_BACK,
             .primitive = PZ_PRIMITIVE_TRIANGLES,
         };
         mgr->pipeline = pz_renderer_create_pipeline(renderer, &desc);
+        mgr->pipeline_transparent = mgr->pipeline; // Same pipeline, uses alpha
         mgr->render_ready = (mgr->pipeline != PZ_INVALID_HANDLE);
     }
+
+    mgr->time = 0.0f;
 
     if (!mgr->render_ready) {
         pz_log(PZ_LOG_WARN, PZ_LOG_CAT_GAME,
@@ -205,6 +209,9 @@ pz_powerup_update(pz_powerup_manager *mgr, float dt)
 {
     if (!mgr)
         return;
+
+    // Update global time for flicker effects
+    mgr->time += dt;
 
     for (int i = 0; i < PZ_MAX_POWERUPS; i++) {
         pz_powerup *powerup = &mgr->powerups[i];
@@ -319,6 +326,10 @@ pz_powerup_render(pz_powerup_manager *mgr, pz_renderer *renderer,
         const pz_weapon_stats *stats = pz_weapon_get_stats(powerup->type);
         pz_vec4 color = stats->projectile_color;
 
+        // Animated transparency (10% to 30% translucent = 70% to 90% alpha)
+        float alpha = pz_powerup_get_alpha(mgr, i);
+        color.w = alpha;
+
         // Build model matrix
         pz_mat4 model = pz_mat4_identity();
         model = pz_mat4_mul(model,
@@ -379,4 +390,58 @@ pz_powerup_type_name(pz_powerup_type type)
     default:
         return "None";
     }
+}
+
+float
+pz_powerup_get_flicker(const pz_powerup_manager *mgr, int index)
+{
+    if (!mgr || index < 0 || index >= PZ_MAX_POWERUPS) {
+        return 1.0f;
+    }
+
+    const pz_powerup *powerup = &mgr->powerups[index];
+    if (!powerup->active || powerup->collected) {
+        return 0.0f;
+    }
+
+    // Multi-frequency flicker for organic feel
+    // Use powerup index as phase offset so each one flickers differently
+    float phase = (float)index * 1.7f;
+    float t = mgr->time;
+
+    // Combine multiple sine waves for complex flicker
+    float flicker = 0.7f // Base intensity
+        + 0.15f * sinf(t * 4.0f + phase) // Slow pulse
+        + 0.10f * sinf(t * 9.0f + phase * 2.0f) // Medium flicker
+        + 0.05f * sinf(t * 17.0f + phase * 3.0f); // Fast shimmer
+
+    // Clamp to reasonable range (0.5 to 1.0)
+    if (flicker < 0.5f)
+        flicker = 0.5f;
+    if (flicker > 1.0f)
+        flicker = 1.0f;
+
+    return flicker;
+}
+
+float
+pz_powerup_get_alpha(const pz_powerup_manager *mgr, int index)
+{
+    if (!mgr || index < 0 || index >= PZ_MAX_POWERUPS) {
+        return 1.0f;
+    }
+
+    const pz_powerup *powerup = &mgr->powerups[index];
+    if (!powerup->active || powerup->collected) {
+        return 0.0f;
+    }
+
+    // Animate between 70% and 90% alpha (10% to 30% translucent)
+    float phase = (float)index * 2.3f;
+    float t = mgr->time;
+
+    // Smooth sine wave animation
+    float alpha_factor = 0.8f + 0.1f * sinf(t * 2.5f + phase);
+
+    return alpha_factor;
 }

@@ -52,7 +52,11 @@ typedef struct pz_powerup_manager {
     pz_mesh *mesh;
     pz_shader_handle shader;
     pz_pipeline_handle pipeline;
+    pz_pipeline_handle pipeline_transparent; // For translucent rendering
     bool render_ready;
+
+    // Animation time (for flicker effects)
+    float time;
 } pz_powerup_manager;
 
 // Powerup spawn configuration (from map)
@@ -115,5 +119,11 @@ int pz_powerup_count(const pz_powerup_manager *mgr);
 
 // Get powerup type name
 const char *pz_powerup_type_name(pz_powerup_type type);
+
+// Get powerup flicker intensity (0-1) for light effects
+float pz_powerup_get_flicker(const pz_powerup_manager *mgr, int index);
+
+// Get powerup alpha (0-1) for rendering transparency
+float pz_powerup_get_alpha(const pz_powerup_manager *mgr, int index);
 
 #endif // PZ_POWERUP_H

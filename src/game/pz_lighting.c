@@ -762,14 +762,17 @@ pz_lighting_render(pz_lighting *lighting)
                 = light->position.x / lighting->world_width + 0.5f;
             float light_center_uv_y
                 = light->position.y / lighting->world_height + 0.5f;
-            float light_radius_uv = light->radius
-                / lighting->world_width; // Assume square-ish world
 
+            // Pass world dimensions so shader can convert UV delta to world
+            // distance for proper circular falloff
             pz_renderer_set_uniform_vec2(lighting->renderer,
                 lighting->light_shader, "u_light_center_uv",
                 (pz_vec2) { light_center_uv_x, light_center_uv_y });
             pz_renderer_set_uniform_float(lighting->renderer,
-                lighting->light_shader, "u_light_radius_uv", light_radius_uv);
+                lighting->light_shader, "u_light_radius", light->radius);
+            pz_renderer_set_uniform_vec2(lighting->renderer,
+                lighting->light_shader, "u_world_size",
+                (pz_vec2) { lighting->world_width, lighting->world_height });
 
             // Draw this light's geometry
             pz_draw_cmd cmd = {

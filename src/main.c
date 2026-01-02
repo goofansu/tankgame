@@ -214,7 +214,7 @@ main(int argc, char *argv[])
             .world_width = game_map->world_width,
             .world_height = game_map->world_height,
             .texture_size = 512, // 512x512 light map
-            .ambient = { 0.08f, 0.08f, 0.1f }, // Very dark ambient
+            .ambient = { 0.12f, 0.12f, 0.15f }, // Slightly brighter ambient
         };
         lighting = pz_lighting_create(renderer, &light_config);
     }
@@ -781,14 +781,36 @@ main(int argc, char *argv[])
                             3.0f * intensity, // Very bright
                             8.0f); // Rounder explosion (was 12.0)
                     } else {
-                        // Small bullet impact: brief orange flash
-                        pz_vec3 exp_color = { 1.0f, 0.6f, 0.2f };
+                        // Small bullet impact: bright blue-gray flash
+                        pz_vec3 exp_color = { 0.7f, 0.8f, 1.0f };
                         pz_lighting_add_point_light(lighting,
                             explosion_lights[i].pos, exp_color,
-                            1.5f * intensity, // Medium bright
-                            5.0f); // Medium radius
+                            2.0f * intensity, // Bright flash
+                            4.0f); // Medium radius
                     }
                 }
+            }
+
+            // Add glowing lights for powerups
+            for (int i = 0; i < PZ_MAX_POWERUPS; i++) {
+                pz_powerup *powerup = &powerup_mgr->powerups[i];
+                if (!powerup->active || powerup->collected)
+                    continue;
+
+                // Get the powerup's color from weapon stats
+                const pz_weapon_stats *stats
+                    = pz_weapon_get_stats(powerup->type);
+                pz_vec3 powerup_color = { stats->projectile_color.x,
+                    stats->projectile_color.y, stats->projectile_color.z };
+
+                // Get flicker intensity for this powerup
+                float flicker = pz_powerup_get_flicker(powerup_mgr, i);
+
+                // Add point light at powerup position
+                pz_lighting_add_point_light(lighting, powerup->pos,
+                    powerup_color,
+                    1.0f * flicker, // Flickering intensity
+                    3.5f); // Light radius
             }
 
             // Render the light map
