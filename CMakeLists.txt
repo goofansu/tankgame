@@ -19,7 +19,7 @@ set(CMAKE_C_FLAGS_RELEASE "-O3 -DNDEBUG -DPZ_RELEASE")
 
 # Platform-specific flags
 if(APPLE)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Wpedantic")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Wpedantic -DGL_SILENCE_DEPRECATION")
 elseif(UNIX)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Wpedantic")
 endif()
@@ -32,9 +32,9 @@ endif()
 
 # Sources
 set(CORE_SOURCES
-    # src/core/pz_mem.c
-    # src/core/pz_log.c
-    # src/core/pz_math.c
+    src/core/pz_mem.c
+    src/core/pz_log.c
+    src/core/pz_math.c
     # src/core/pz_list.c
     # src/core/pz_array.c
     # src/core/pz_hashmap.c
@@ -97,13 +97,23 @@ target_include_directories(tankgame PRIVATE
     ${CMAKE_SOURCE_DIR}/src
 )
 
-# Dependencies will be added in M0.2
-# find_package(SDL2 REQUIRED)
-# target_link_libraries(tankgame PRIVATE SDL2::SDL2)
+# Dependencies
+find_package(SDL2 REQUIRED)
+target_link_libraries(tankgame PRIVATE SDL2::SDL2)
+
+# macOS framework dependencies
+if(APPLE)
+    target_link_libraries(tankgame PRIVATE
+        "-framework OpenGL"
+        "-framework Cocoa"
+        "-framework IOKit"
+        "-framework CoreVideo"
+    )
+endif()
 
 # Testing (M0.4)
 enable_testing()
-# add_subdirectory(tests)
+add_subdirectory(tests)
 
 # Print build info
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
