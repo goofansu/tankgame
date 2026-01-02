@@ -42,7 +42,7 @@ null_init(pz_renderer *r, const pz_renderer_config *config)
     data->next_render_target_id = 1;
 
     r->backend_data = data;
-    pz_log(PZ_LOG_DEBUG, "render", "Null backend initialized");
+    pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_RENDER, "Null backend initialized");
     return true;
 }
 
@@ -53,7 +53,7 @@ null_shutdown(pz_renderer *r)
         pz_free(r->backend_data);
         r->backend_data = NULL;
     }
-    pz_log(PZ_LOG_DEBUG, "render", "Null backend shutdown");
+    pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_RENDER, "Null backend shutdown");
 }
 
 /* ============================================================================
@@ -84,7 +84,7 @@ static pz_shader_handle
 null_create_shader(pz_renderer *r, const pz_shader_desc *desc)
 {
     null_backend_data *data = r->backend_data;
-    pz_log(PZ_LOG_DEBUG, "render", "Null: create shader '%s'",
+    pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_RENDER, "Null: create shader '%s'",
         desc->name ? desc->name : "unnamed");
     return data->next_shader_id++;
 }
@@ -105,8 +105,8 @@ static pz_texture_handle
 null_create_texture(pz_renderer *r, const pz_texture_desc *desc)
 {
     null_backend_data *data = r->backend_data;
-    pz_log(PZ_LOG_DEBUG, "render", "Null: create texture %dx%d", desc->width,
-        desc->height);
+    pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_RENDER, "Null: create texture %dx%d",
+        desc->width, desc->height);
     return data->next_texture_id++;
 }
 
@@ -139,7 +139,8 @@ static pz_buffer_handle
 null_create_buffer(pz_renderer *r, const pz_buffer_desc *desc)
 {
     null_backend_data *data = r->backend_data;
-    pz_log(PZ_LOG_DEBUG, "render", "Null: create buffer size=%zu", desc->size);
+    pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_RENDER, "Null: create buffer size=%zu",
+        desc->size);
     return data->next_buffer_id++;
 }
 
@@ -190,7 +191,7 @@ static pz_render_target_handle
 null_create_render_target(pz_renderer *r, const pz_render_target_desc *desc)
 {
     null_backend_data *data = r->backend_data;
-    pz_log(PZ_LOG_DEBUG, "render", "Null: create render target %dx%d",
+    pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_RENDER, "Null: create render target %dx%d",
         desc->width, desc->height);
     return data->next_render_target_id++;
 }

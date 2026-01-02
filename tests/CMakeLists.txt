@@ -34,3 +34,16 @@ add_executable(test_platform test_platform.c ../src/core/pz_platform.c ../src/co
 target_include_directories(test_platform PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/src)
 target_compile_definitions(test_platform PRIVATE PZ_DEBUG)
 add_test(NAME platform COMMAND test_platform)
+
+# Renderer tests (using null backend - no OpenGL needed)
+add_executable(test_renderer test_renderer.c
+    ../src/engine/render/pz_renderer.c
+    ../src/engine/render/pz_render_null.c
+    ../src/core/pz_mem.c
+    ../src/core/pz_log.c
+    ../src/core/pz_math.c
+    ../src/core/pz_platform.c
+)
+target_include_directories(test_renderer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(test_renderer PRIVATE PZ_DEBUG)
+add_test(NAME renderer COMMAND test_renderer)

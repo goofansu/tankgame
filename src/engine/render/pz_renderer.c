@@ -20,7 +20,7 @@ pz_renderer_create(const pz_renderer_config *config)
 {
     pz_renderer *r = pz_calloc(1, sizeof(pz_renderer));
     if (!r) {
-        pz_log(PZ_LOG_ERROR, "render", "Failed to allocate renderer");
+        pz_log(PZ_LOG_ERROR, PZ_LOG_CAT_RENDER, "Failed to allocate renderer");
         return NULL;
     }
 
@@ -38,7 +38,7 @@ pz_renderer_create(const pz_renderer_config *config)
         r->vtable = pz_render_backend_gl33_vtable();
         break;
     default:
-        pz_log(PZ_LOG_ERROR, "render", "Unknown backend type: %d",
+        pz_log(PZ_LOG_ERROR, PZ_LOG_CAT_RENDER, "Unknown backend type: %d",
             config->backend);
         pz_free(r);
         return NULL;
@@ -46,12 +46,12 @@ pz_renderer_create(const pz_renderer_config *config)
 
     // Initialize backend
     if (!r->vtable->init(r, config)) {
-        pz_log(PZ_LOG_ERROR, "render", "Failed to initialize backend");
+        pz_log(PZ_LOG_ERROR, PZ_LOG_CAT_RENDER, "Failed to initialize backend");
         pz_free(r);
         return NULL;
     }
 
-    pz_log(PZ_LOG_INFO, "render", "Renderer created (backend=%d)",
+    pz_log(PZ_LOG_INFO, PZ_LOG_CAT_RENDER, "Renderer created (backend=%d)",
         r->backend_type);
     return r;
 }
@@ -67,7 +67,7 @@ pz_renderer_destroy(pz_renderer *r)
     }
 
     pz_free(r);
-    pz_log(PZ_LOG_INFO, "render", "Renderer destroyed");
+    pz_log(PZ_LOG_INFO, PZ_LOG_CAT_RENDER, "Renderer destroyed");
 }
 
 /* ============================================================================
@@ -328,15 +328,15 @@ pz_renderer_load_shader(pz_renderer *r, const char *vertex_path,
 {
     char *vertex_src = pz_file_read_text(vertex_path);
     if (!vertex_src) {
-        pz_log(PZ_LOG_ERROR, "render", "Failed to load vertex shader: %s",
-            vertex_path);
+        pz_log(PZ_LOG_ERROR, PZ_LOG_CAT_RENDER,
+            "Failed to load vertex shader: %s", vertex_path);
         return PZ_INVALID_HANDLE;
     }
 
     char *fragment_src = pz_file_read_text(fragment_path);
     if (!fragment_src) {
-        pz_log(PZ_LOG_ERROR, "render", "Failed to load fragment shader: %s",
-            fragment_path);
+        pz_log(PZ_LOG_ERROR, PZ_LOG_CAT_RENDER,
+            "Failed to load fragment shader: %s", fragment_path);
         pz_free(vertex_src);
         return PZ_INVALID_HANDLE;
     }

@@ -10,4 +10,4 @@
 - [x] M1.4: data structures (list, array, hashmap)
 - [x] M1.5: string utilities
 - [x] M1.6: platform layer (timer, file I/O, paths)
-- [ ] M2.1: in progress - renderer API, null backend done, GL33 backend TODO
+- [x] M2.1: renderer API, null backend, GL33 backend, shaders, test triangle renders

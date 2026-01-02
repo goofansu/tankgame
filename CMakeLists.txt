@@ -35,26 +35,20 @@ set(CORE_SOURCES
     src/core/pz_mem.c
     src/core/pz_log.c
     src/core/pz_math.c
-    # src/core/pz_list.c
-    # src/core/pz_array.c
-    # src/core/pz_hashmap.c
-    # src/core/pz_str.c
-    # src/core/pz_platform.c
+    src/core/pz_ds.c
+    src/core/pz_str.c
+    src/core/pz_platform.c
 )
 
 set(ENGINE_SOURCES
+    src/engine/render/pz_renderer.c
+    src/engine/render/pz_render_null.c
+    src/engine/render/pz_render_gl33.c
     # src/engine/pz_engine.c
     # src/engine/pz_window.c
     # src/engine/pz_input.c
     # src/engine/pz_audio.c
     # src/engine/pz_assets.c
-    # src/engine/render/pz_renderer.c
-    # src/engine/render/pz_render_backend.c
-    # src/engine/render/pz_render_gl.c
-    # src/engine/render/pz_render_null.c
-    # src/engine/render/pz_shader.c
-    # src/engine/render/pz_texture.c
-    # src/engine/render/pz_mesh.c
 )
 
 set(GAME_SOURCES
