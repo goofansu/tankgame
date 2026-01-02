@@ -208,10 +208,10 @@ This document breaks the project into small, verifiable milestones. Each milesto
 ## Phase 4: First Entity - The Tank
 *Something that moves*
 
-### M4.1: Simple 3D Mesh Loading
-- [ ] Define simple mesh format (or hardcode tank geometry)
-- [ ] Tank body mesh (box with details)
-- [ ] Tank turret mesh (separate piece)
+### M4.1: Simple 3D Mesh Loading ✓ (DONE)
+- [x] Define simple mesh format (or hardcode tank geometry)
+- [x] Tank body mesh (box with details)
+- [x] Tank turret mesh (separate piece)
 
 **Validation:** Render static tank mesh at origin
 
@@ -229,10 +229,10 @@ This document breaks the project into small, verifiable milestones. Each milesto
 
 **Validation:** Tank visible on map, turret points different direction than body
 
-### M4.4: Input System
-- [ ] Implement `pz_input` (keyboard state, mouse position)
-- [ ] Track pressed/released this frame
-- [ ] Mouse world position via camera
+### M4.4: Input System ✓ (FRONTLOADED)
+- [x] Implement `pz_input` (keyboard state, mouse position)
+- [x] Track pressed/released this frame
+- [x] Mouse world position via camera
 
 **Validation:** Print key presses, mouse world coords in debug overlay
 
@@ -247,18 +247,20 @@ This document breaks the project into small, verifiable milestones. Each milesto
 - Record inputs for a short session, replay produces same state hash
 - Tank position and turret angle match on replay
 
-### M4.6: Tank Movement
-- [ ] WASD to set movement direction (via `pz_tank_input`)
-- [ ] Tank rotates toward movement direction (turn in place)
-- [ ] Tank moves forward/backward with small acceleration
-- [ ] Mouse aims turret
+### M4.6: Tank Movement ✓ (FRONTLOADED)
+- [x] WASD to set movement direction
+- [x] Tank rotates toward movement direction (turn in place)
+- [x] Tank moves forward/backward with acceleration
+- [x] Mouse aims turret
+- [x] Heavy friction (25.0) for quick stopping
 
 **Validation:** Drive tank around with WASD, aim with mouse
 
-### M4.7: Tank-Wall Collision
-- [ ] Simple AABB collision for tank
-- [ ] Query map for solid tiles
-- [ ] Stop tank at walls (slide along)
+### M4.7: Tank-Wall Collision ✓ (FRONTLOADED)
+- [x] Simple AABB collision for tank
+- [x] Query map for solid tiles
+- [x] Stop tank at walls (slide along)
+- [x] Separate axis collision for smooth sliding
 
 **Validation:** Tank cannot drive through walls
 
@@ -303,26 +305,26 @@ This document breaks the project into small, verifiable milestones. Each milesto
 ## Phase 6: Weapons and Projectiles
 *Pew pew*
 
-### M6.1: Projectile Entity
-- [ ] Define `pz_projectile` structure
-- [ ] Simple sphere/capsule mesh
-- [ ] Move in straight line
-- [ ] Destroy after lifetime
+### M6.1: Projectile Entity ✓ (FRONTLOADED)
+- [x] Define `pz_projectile` structure
+- [x] Simple sphere mesh
+- [x] Move in straight line
+- [x] Destroy after lifetime
 
 **Validation:** Spawn projectile, watch it fly and disappear
 
-### M6.2: Tank Firing
-- [ ] Fire on left click
-- [ ] Spawn projectile at turret tip
-- [ ] Projectile inherits turret direction
-- [ ] Fire cooldown
+### M6.2: Tank Firing ✓ (FRONTLOADED)
+- [x] Fire on left click
+- [x] Spawn projectile at turret tip
+- [x] Projectile inherits turret direction
+- [x] Fire cooldown
 
 **Validation:** Click to fire, see projectile spawn and fly
 
-### M6.3: Projectile-Wall Collision
-- [ ] Detect wall hit
-- [ ] Bounce off wall (reflect velocity)
-- [ ] Track bounce count, destroy after max
+### M6.3: Projectile-Wall Collision ✓ (FRONTLOADED)
+- [x] Detect wall hit
+- [x] Bounce off wall (reflect velocity)
+- [x] Track bounce count, destroy after 1 bounce
 
 **Validation:** Fire at wall, projectile bounces off
 
@@ -343,26 +345,26 @@ This document breaks the project into small, verifiable milestones. Each milesto
 
 ---
 
-## Phase 7: Track Accumulation
+## Phase 7: Track Accumulation ✓ (FRONTLOADED)
 *Visual polish that matters*
 
-### M7.1: Track Texture System
-- [ ] Create FBO for track accumulation
-- [ ] Render track marks as textured quads
-- [ ] Blend additively into accumulation texture
+### M7.1: Track Texture System ✓
+- [x] Create FBO for track accumulation
+- [x] Render track marks as textured quads
+- [x] Blend into accumulation texture
 
 **Validation:** Tank moves, leaves dark track marks
 
-### M7.2: Track Rendering
-- [ ] Sample track texture when rendering ground
-- [ ] Properly UV map to world coordinates
+### M7.2: Track Rendering ✓
+- [x] Sample track texture when rendering ground
+- [x] Properly UV map to world coordinates
 
 **Validation:** Tracks persist, visible on ground
 
-### M7.3: Track Fidelity
-- [ ] Place track marks at regular intervals based on distance
-- [ ] Rotate track marks to match tank angle
-- [ ] Both treads leave separate marks
+### M7.3: Track Fidelity ✓
+- [x] Place track marks at regular intervals based on distance
+- [x] Rotate track marks to match tank angle
+- [x] Both treads leave separate marks
 
 **Validation:** Tracks look like tank treads, not just blobs
 
