@@ -27,3 +27,6 @@
 - [x] Mipmapping on terrain textures for cleaner distant tiles
 - [x] Camera auto-fit to show entire map
 - [x] Fixed map parser to correctly load terrain types (wall lines starting with #)
+
+## Phase 4: First Entity - The Tank
+- [x] M4.1: tank body mesh, turret mesh, entity shader, renders at origin

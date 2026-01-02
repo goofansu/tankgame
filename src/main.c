@@ -22,6 +22,7 @@
 #include "engine/render/pz_texture.h"
 #include "game/pz_map.h"
 #include "game/pz_map_render.h"
+#include "game/pz_mesh.h"
 
 #define WINDOW_TITLE "Tank Game"
 #define WINDOW_WIDTH 1280
@@ -198,6 +199,37 @@ main(int argc, char *argv[])
     // Note: Map renderer handles its own shaders and pipelines
 
     // ========================================================================
+    // Tank mesh test (M4.1)
+    // ========================================================================
+    pz_mesh *tank_body = pz_mesh_create_tank_body();
+    pz_mesh *tank_turret = pz_mesh_create_tank_turret();
+
+    pz_mesh_upload(tank_body, renderer);
+    pz_mesh_upload(tank_turret, renderer);
+
+    // Create shader and pipeline for entity rendering
+    pz_shader_handle entity_shader = pz_renderer_load_shader(
+        renderer, "shaders/entity.vert", "shaders/entity.frag", "entity");
+
+    pz_pipeline_handle entity_pipeline = PZ_INVALID_HANDLE;
+    if (entity_shader != PZ_INVALID_HANDLE) {
+        pz_pipeline_desc pipeline_desc = {
+            .shader = entity_shader,
+            .vertex_layout = pz_mesh_get_vertex_layout(),
+            .blend = PZ_BLEND_NONE,
+            .depth = PZ_DEPTH_READ_WRITE,
+            .cull = PZ_CULL_BACK,
+            .primitive = PZ_PRIMITIVE_TRIANGLES,
+        };
+        entity_pipeline = pz_renderer_create_pipeline(renderer, &pipeline_desc);
+    }
+
+    // Tank position (center of map for testing)
+    pz_vec2 tank_pos = { 12.0f, 7.0f };
+    float tank_angle = 0.0f; // Body rotation (radians)
+    float turret_angle = 0.0f; // Turret rotation relative to body
+
+    // ========================================================================
     // Main loop
     // ========================================================================
 
@@ -294,9 +326,90 @@ main(int argc, char *argv[])
         // ====================================================================
         // Draw map
         // ====================================================================
+        const pz_mat4 *vp = pz_camera_get_view_projection(&camera);
         {
-            const pz_mat4 *vp = pz_camera_get_view_projection(&camera);
             pz_map_renderer_draw(map_renderer, vp);
+        }
+
+        // ====================================================================
+        // Draw tank (M4.1 test)
+        // ====================================================================
+        if (entity_pipeline != PZ_INVALID_HANDLE) {
+            // Slowly rotate tank for visual testing
+            tank_angle += 0.005f;
+            turret_angle += 0.01f;
+
+            // Light direction and color (same as walls)
+            pz_vec3 light_dir = { 0.5f, 1.0f, 0.3f };
+            pz_vec3 light_color = { 0.8f, 0.75f, 0.7f };
+            pz_vec3 ambient = { 0.3f, 0.35f, 0.4f };
+
+            // Tank body model matrix
+            pz_mat4 body_model = pz_mat4_identity();
+            body_model = pz_mat4_mul(body_model,
+                pz_mat4_translate((pz_vec3) { tank_pos.x, 0.0f, tank_pos.y }));
+            body_model = pz_mat4_mul(body_model, pz_mat4_rotate_y(tank_angle));
+
+            pz_mat4 body_mvp = pz_mat4_mul(*vp, body_model);
+
+            // Set uniforms for body
+            pz_renderer_set_uniform_mat4(
+                renderer, entity_shader, "u_mvp", &body_mvp);
+            pz_renderer_set_uniform_mat4(
+                renderer, entity_shader, "u_model", &body_model);
+            pz_renderer_set_uniform_vec4(renderer, entity_shader, "u_color",
+                (pz_vec4) { 0.3f, 0.5f, 0.3f, 1.0f }); // Olive green
+            pz_renderer_set_uniform_vec3(
+                renderer, entity_shader, "u_light_dir", light_dir);
+            pz_renderer_set_uniform_vec3(
+                renderer, entity_shader, "u_light_color", light_color);
+            pz_renderer_set_uniform_vec3(
+                renderer, entity_shader, "u_ambient", ambient);
+
+            // Draw body
+            pz_draw_cmd body_cmd = {
+                .pipeline = entity_pipeline,
+                .vertex_buffer = tank_body->buffer,
+                .index_buffer = PZ_INVALID_HANDLE,
+                .vertex_count = tank_body->vertex_count,
+                .index_count = 0,
+                .vertex_offset = 0,
+                .index_offset = 0,
+            };
+            pz_renderer_draw(renderer, &body_cmd);
+
+            // Turret model matrix (positioned on top of body, rotates
+            // independently)
+            float turret_y_offset = 0.6f; // Height where turret sits on body
+            pz_mat4 turret_model = pz_mat4_identity();
+            turret_model = pz_mat4_mul(turret_model,
+                pz_mat4_translate(
+                    (pz_vec3) { tank_pos.x, turret_y_offset, tank_pos.y }));
+            turret_model = pz_mat4_mul(
+                turret_model, pz_mat4_rotate_y(tank_angle + turret_angle));
+
+            pz_mat4 turret_mvp = pz_mat4_mul(*vp, turret_model);
+
+            // Set uniforms for turret
+            pz_renderer_set_uniform_mat4(
+                renderer, entity_shader, "u_mvp", &turret_mvp);
+            pz_renderer_set_uniform_mat4(
+                renderer, entity_shader, "u_model", &turret_model);
+            pz_renderer_set_uniform_vec4(renderer, entity_shader, "u_color",
+                (pz_vec4) {
+                    0.25f, 0.45f, 0.25f, 1.0f }); // Slightly darker green
+
+            // Draw turret
+            pz_draw_cmd turret_cmd = {
+                .pipeline = entity_pipeline,
+                .vertex_buffer = tank_turret->buffer,
+                .index_buffer = PZ_INVALID_HANDLE,
+                .vertex_count = tank_turret->vertex_count,
+                .index_count = 0,
+                .vertex_offset = 0,
+                .index_offset = 0,
+            };
+            pz_renderer_draw(renderer, &turret_cmd);
         }
 
         // Render debug overlay (before end frame)
@@ -320,6 +433,16 @@ main(int argc, char *argv[])
     // Cleanup
     pz_debug_overlay_destroy(debug_overlay);
     pz_debug_cmd_shutdown();
+
+    // Cleanup tank meshes (M4.1)
+    if (entity_pipeline != PZ_INVALID_HANDLE) {
+        pz_renderer_destroy_pipeline(renderer, entity_pipeline);
+    }
+    if (entity_shader != PZ_INVALID_HANDLE) {
+        pz_renderer_destroy_shader(renderer, entity_shader);
+    }
+    pz_mesh_destroy(tank_turret, renderer);
+    pz_mesh_destroy(tank_body, renderer);
 
     pz_map_hot_reload_destroy(map_hot_reload);
     pz_map_renderer_destroy(map_renderer);
