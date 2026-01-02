@@ -22,6 +22,10 @@ Use the top-level Makefile:
 - Complete milestones sequentially as defined in the execution plan
 - Validate each milestone before moving on
 
+## After Completing Work
+
+Run `make format` and `make check` before finishing a step to ensure code is formatted and passes linting.
+
 ## Progress Tracking
 
 Update `spec/progress.md` as you work:
