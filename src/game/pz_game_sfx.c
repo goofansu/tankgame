@@ -33,7 +33,7 @@ struct pz_game_sfx {
 #define GUNFIRE_VOLUME 1.0f
 #define BULLET_HIT_VOLUME 0.5f
 #define EXPLOSION_VOLUME 0.3f
-#define ENGINE_VOLUME 0.3f
+#define ENGINE_VOLUME 0.55f
 
 // Speed threshold for moving vs idle
 #define MOVING_SPEED_THRESHOLD 0.3f

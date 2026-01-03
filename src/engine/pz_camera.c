@@ -319,9 +319,8 @@ pz_camera_fit_map(
                                                        : height_for_width;
     height *= 1.05f; // 5% margin to ensure everything fits
 
-    // Position: look slightly behind map center (negative Z) to
-    // move the map up on screen and reduce empty space at top
-    float z_offset = -map_height * 0.05f;
+    // Position: look slightly in front of map center (positive Z) to
+    float z_offset = map_height * 0.03f;
     pz_vec3 look_at = { 0.0f, 0.0f, z_offset };
 
     pz_camera_setup_game_view(cam, look_at, height, pitch_degrees);
