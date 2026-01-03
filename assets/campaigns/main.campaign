@@ -4,8 +4,30 @@
 NAME Main Campaign
 
 # Starting lives for the campaign
-LIVES 3
+LIVES 5
 
-# Maps in order (paths relative to assets/)
+# Maps in order of difficulty
+
+# Level 1: Night Arena - Introduction
+# 1x Level 1 + 1x Level 2 + 1x Level 3 enemies (mixed intro)
 MAP assets/maps/night_arena.map
+
+# Level 2: Sunset Fortress - Easy
+# 2x Level 1 enemies (stationary targets)
+MAP assets/maps/sunset_fortress.map
+
+# Level 3: Day Arena - Medium
+# 3x Level 3 aggressive enemies
 MAP assets/maps/day_arena.map
+
+# Level 4: Dawn Waterway - Medium-Hard
+# 1x Level 1 + 2x Level 2 enemies with water hazards
+MAP assets/maps/dawn_waterway.map
+
+# Level 5: Midnight Maze - Hard
+# 2x Level 2 + 1x Level 3 in dark maze with limited visibility
+MAP assets/maps/midnight_maze.map
+
+# Level 6: Golden Hour Assault - Very Hard
+# 3x Level 3 + 1x Level 2 enemies with water obstacles
+MAP assets/maps/golden_hour_assault.map

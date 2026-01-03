@@ -1,0 +1,45 @@
+# Tank Game Map
+version 2
+name Midnight Maze
+size 24 14
+tile_size 2.0
+music march
+
+# Tile definitions - dark industrial theme
+tile . carpet_gray
+tile # wood_rustic_dark
+tile * wood_walnut
+tile : mud_churned
+
+# Object tags
+tag P1 spawn angle=0.785 team=0
+tag P2 spawn angle=-2.356 team=0
+tag E1 enemy angle=1.57 level=2
+tag E2 enemy angle=-1.57 level=2
+tag E3 enemy angle=3.14 level=3
+
+grid
+2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2#
+2# 0.|P1 0. 0. 2# 0. 0. 0. 0. 0. 2# 0. 0. 2# 0. 0. 0. 0. 0. 2# 0. 0. 0. 2#
+2# 0. 0. 0. 2# 0. 2# 2# 0. 0. 2# 0. 0. 2# 0. 0. 2# 2# 0. 2# 0. 0. 0. 2#
+2# 0. 2# 0. 0. 0. 2# 2# 0. 0. 0. 0. 0. 0. 0. 0. 2# 2# 0. 0. 0. 2# 0. 2#
+2# 0. 2# 0. 0. 0. 0. 0. 0. 0: 0:|E1 0: 0: 0. 0. 0. 0. 0. 0. 0. 2# 0. 2#
+2# 0. 2# 2# 2# 0. 2# 0. 0. 0: 0: 0: 0: 0. 0. 2# 0. 2# 2# 2# 2# 0. 0. 2#
+2# 0. 0. 0. 0. 0. 2# 0. 0. 0. 0.|E3 0. 0. 0. 2# 0. 0. 0. 0. 0. 0. 0. 2#
+2# 0. 0. 0. 0. 0. 2# 0. 0. 0. 0. 0. 0. 0. 0. 2# 0. 0. 0. 0. 0. 0. 0. 2#
+2# 0. 2# 2# 2# 0. 2# 0. 0. 0: 0: 0: 0: 0. 0. 2# 0. 2# 2# 2# 2# 0. 0. 2#
+2# 0. 2# 0. 0. 0. 0. 0. 0. 0: 0:|E2 0: 0. 0. 0. 0. 0. 0. 0. 2# 0. 0. 2#
+2# 0. 2# 0. 0. 0. 2# 2# 0. 0. 0. 0. 0. 0. 0. 0. 2# 2# 0. 0. 0. 2# 0. 2#
+2# 0. 0. 0. 2# 0. 2# 2# 0. 0. 2# 0. 0. 2# 0. 0. 2# 2# 0. 2# 0. 0. 0. 2#
+2# 0. 0. 0. 2# 0. 0. 0. 0. 0. 2# 0. 0. 2# 0. 0. 0. 0. 0. 2# 0. 0. 0.|P2 2#
+2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2#
+
+# Lighting - Deep midnight (very dark with cold tones)
+ambient_color 0.08 0.08 0.12
+ambient_darkness 0.9
+
+# Background - Midnight gradient (near black to deep blue)
+background_gradient vertical 0.02 0.02 0.06 0.06 0.04 0.1
+
+# No water
+water_level -100
