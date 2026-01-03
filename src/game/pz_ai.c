@@ -41,12 +41,12 @@ static const pz_enemy_stats ENEMY_STATS[] = {
         .aim_speed = 1.3f,
         .body_color = { 0.7f, 0.4f, 0.1f, 1.0f } }, // Orange-brown
 
-    // Level 3: Advanced enemy
+    // Level 3: Aggressive hunter enemy
     { .health = 20,
         .max_bounces = 2,
-        .fire_cooldown = 0.6f,
-        .aim_speed = 1.6f,
-        .body_color = { 0.4f, 0.1f, 0.4f, 1.0f } }, // Purple
+        .fire_cooldown = 0.5f,
+        .aim_speed = 2.0f,
+        .body_color = { 0.2f, 0.5f, 0.2f, 1.0f } }, // Dark green (hunter)
 };
 
 const pz_enemy_stats *
@@ -478,12 +478,457 @@ update_level2_ai(pz_ai_controller *ctrl, pz_tank *tank,
 }
 
 /* ============================================================================
+ * Level 3 Aggressive Hunter AI
+ * ============================================================================
+ */
+
+// Check if there's an incoming projectile that threatens the tank
+// Returns true if evasion is needed, sets evade_dir
+static bool
+check_incoming_projectiles(pz_ai_controller *ctrl, pz_tank *tank,
+    pz_projectile_manager *proj_mgr, pz_vec2 *evade_dir)
+{
+    if (!proj_mgr) {
+        return false;
+    }
+
+    const float threat_radius = 3.0f; // How close before we evade
+    const float threat_time = 0.5f; // How many seconds ahead to predict
+
+    bool threat_found = false;
+    pz_vec2 best_evade = { 0.0f, 0.0f };
+    float closest_threat = threat_radius;
+
+    // Check all active projectiles
+    for (int i = 0; i < PZ_MAX_PROJECTILES; i++) {
+        const pz_projectile *proj = &proj_mgr->projectiles[i];
+        if (!proj->active) {
+            continue;
+        }
+
+        // Ignore our own projectiles
+        if (proj->owner_id == tank->id) {
+            continue;
+        }
+
+        // Predict where projectile will be
+        pz_vec2 proj_future = pz_vec2_add(
+            proj->pos, pz_vec2_scale(proj->velocity, threat_time));
+
+        // Check distance to predicted position
+        pz_vec2 to_proj = pz_vec2_sub(proj->pos, tank->pos);
+        pz_vec2 to_future = pz_vec2_sub(proj_future, tank->pos);
+
+        // Check if projectile is heading toward us
+        float proj_speed = pz_vec2_len(proj->velocity);
+        if (proj_speed < 0.1f) {
+            continue;
+        }
+
+        pz_vec2 proj_dir = pz_vec2_scale(proj->velocity, 1.0f / proj_speed);
+
+        // Calculate closest approach distance
+        float dot = pz_vec2_dot(to_proj, proj_dir);
+        if (dot > 0) {
+            continue; // Projectile moving away from us
+        }
+
+        // Point of closest approach
+        pz_vec2 closest_point
+            = pz_vec2_sub(proj->pos, pz_vec2_scale(proj_dir, dot));
+        float closest_dist = pz_vec2_dist(closest_point, tank->pos);
+
+        if (closest_dist < closest_threat) {
+            closest_threat = closest_dist;
+            threat_found = true;
+
+            // Calculate perpendicular evasion direction
+            pz_vec2 perp = { -proj_dir.y, proj_dir.x };
+
+            // Choose which side to evade to (away from projectile)
+            if (pz_vec2_dot(perp, to_proj) > 0) {
+                best_evade = perp;
+            } else {
+                best_evade = pz_vec2_scale(perp, -1.0f);
+            }
+        }
+    }
+
+    if (threat_found) {
+        *evade_dir = best_evade;
+    }
+
+    return threat_found;
+}
+
+// Find a flanking position to approach player from the side
+static bool
+find_flank_position(
+    const pz_map *map, pz_vec2 ai_pos, pz_vec2 player_pos, pz_vec2 *flank_pos)
+{
+    const float tank_radius = 0.7f;
+    const float flank_distance = 8.0f; // How far to the side
+    const float approach_distance = 6.0f; // How close to get
+
+    // Direction from AI to player
+    pz_vec2 to_player = pz_vec2_sub(player_pos, ai_pos);
+    float dist = pz_vec2_len(to_player);
+    if (dist < 0.1f) {
+        return false;
+    }
+
+    pz_vec2 dir_to_player = pz_vec2_scale(to_player, 1.0f / dist);
+
+    // Perpendicular directions for flanking
+    pz_vec2 perp_left = { -dir_to_player.y, dir_to_player.x };
+    pz_vec2 perp_right = { dir_to_player.y, -dir_to_player.x };
+
+    // Try both flanking directions
+    pz_vec2 candidates[2];
+    candidates[0] = pz_vec2_add(player_pos,
+        pz_vec2_add(pz_vec2_scale(perp_left, flank_distance),
+            pz_vec2_scale(dir_to_player, -approach_distance)));
+    candidates[1] = pz_vec2_add(player_pos,
+        pz_vec2_add(pz_vec2_scale(perp_right, flank_distance),
+            pz_vec2_scale(dir_to_player, -approach_distance)));
+
+    // Choose the closest valid flanking position
+    float best_dist = 1e10f;
+    bool found = false;
+
+    for (int i = 0; i < 2; i++) {
+        if (!is_position_valid(map, candidates[i], tank_radius)) {
+            continue;
+        }
+
+        float d = pz_vec2_dist(ai_pos, candidates[i]);
+        if (d < best_dist) {
+            best_dist = d;
+            *flank_pos = candidates[i];
+            found = true;
+        }
+    }
+
+    return found;
+}
+
+static void
+update_level3_ai(pz_ai_controller *ctrl, pz_tank *tank,
+    pz_tank_manager *tank_mgr, const pz_map *map, pz_vec2 player_pos,
+    pz_projectile_manager *proj_mgr, float dt)
+{
+    const float move_speed = 4.5f; // Faster than Level 2
+    const float arrive_threshold = 0.5f;
+    const float engage_distance = 10.0f; // Distance to start shooting
+    const float chase_distance = 15.0f; // Distance to start chasing
+    const float too_close_distance = 4.0f; // Back off if too close
+    const float evade_duration = 0.4f;
+    const float health_retreat_threshold = 0.3f; // Retreat when below 30% HP
+
+    // Update timers
+    if (ctrl->evade_timer > 0.0f) {
+        ctrl->evade_timer -= dt;
+    }
+    if (ctrl->aggression_timer > 0.0f) {
+        ctrl->aggression_timer -= dt;
+    }
+    if (ctrl->cover_search_timer > 0.0f) {
+        ctrl->cover_search_timer -= dt;
+    }
+
+    float dist_to_player = pz_vec2_dist(tank->pos, player_pos);
+    float health_ratio = (float)tank->health / (float)tank->max_health;
+
+    // Check for incoming projectiles - highest priority
+    pz_vec2 evade_dir = { 0.0f, 0.0f };
+    bool should_evade
+        = check_incoming_projectiles(ctrl, tank, proj_mgr, &evade_dir);
+
+    if (should_evade && ctrl->evade_timer <= 0.0f) {
+        ctrl->state = PZ_AI_STATE_EVADING;
+        ctrl->evade_dir = evade_dir;
+        ctrl->evade_timer = evade_duration;
+        ctrl->wants_to_fire = false;
+    }
+
+    // State machine
+    pz_vec2 move_dir = { 0.0f, 0.0f };
+
+    switch (ctrl->state) {
+    case PZ_AI_STATE_IDLE:
+        // Start chasing the player
+        ctrl->state = PZ_AI_STATE_CHASING;
+        ctrl->aggression_timer = 2.0f + (float)(rand() % 200) / 100.0f;
+        break;
+
+    case PZ_AI_STATE_EVADING:
+        // Dodge incoming projectile
+        move_dir = ctrl->evade_dir;
+        ctrl->wants_to_fire = false;
+
+        if (ctrl->evade_timer <= 0.0f) {
+            // Return to previous behavior based on situation
+            if (health_ratio < health_retreat_threshold) {
+                ctrl->state = PZ_AI_STATE_SEEKING_COVER;
+                ctrl->has_cover = false;
+            } else if (dist_to_player < engage_distance) {
+                ctrl->state = PZ_AI_STATE_ENGAGING;
+            } else {
+                ctrl->state = PZ_AI_STATE_CHASING;
+            }
+        }
+        break;
+
+    case PZ_AI_STATE_CHASING: {
+        // Move toward player
+        pz_vec2 to_player = pz_vec2_sub(player_pos, tank->pos);
+
+        if (dist_to_player > 0.1f) {
+            move_dir = pz_vec2_scale(to_player, 1.0f / dist_to_player);
+        }
+
+        // Transition to engaging when close enough
+        if (dist_to_player < engage_distance && ctrl->can_see_player) {
+            ctrl->state = PZ_AI_STATE_ENGAGING;
+            ctrl->state_timer = 3.0f + (float)(rand() % 200) / 100.0f;
+        }
+
+        // Try to flank occasionally
+        if (ctrl->aggression_timer <= 0.0f && dist_to_player < chase_distance) {
+            if (find_flank_position(
+                    map, tank->pos, player_pos, &ctrl->flank_target)) {
+                ctrl->state = PZ_AI_STATE_FLANKING;
+                ctrl->aggression_timer = 4.0f;
+            } else {
+                ctrl->aggression_timer = 2.0f;
+            }
+        }
+
+        // Retreat if low health
+        if (health_ratio < health_retreat_threshold) {
+            ctrl->state = PZ_AI_STATE_SEEKING_COVER;
+            ctrl->has_cover = false;
+        }
+
+        ctrl->wants_to_fire
+            = ctrl->can_see_player && dist_to_player < engage_distance;
+        break;
+    }
+
+    case PZ_AI_STATE_FLANKING: {
+        // Move to flanking position
+        pz_vec2 to_flank = pz_vec2_sub(ctrl->flank_target, tank->pos);
+        float flank_dist = pz_vec2_len(to_flank);
+
+        if (flank_dist < arrive_threshold) {
+            // Reached flanking position, engage
+            ctrl->state = PZ_AI_STATE_ENGAGING;
+            ctrl->state_timer = 2.0f;
+        } else {
+            move_dir = pz_vec2_scale(to_flank, 1.0f / flank_dist);
+        }
+
+        // Fire while flanking if we have line of sight
+        ctrl->wants_to_fire = ctrl->can_see_player;
+
+        // Retreat if low health
+        if (health_ratio < health_retreat_threshold) {
+            ctrl->state = PZ_AI_STATE_SEEKING_COVER;
+            ctrl->has_cover = false;
+        }
+        break;
+    }
+
+    case PZ_AI_STATE_ENGAGING: {
+        // Strafe and shoot
+        ctrl->state_timer -= dt;
+
+        // Calculate strafing direction (perpendicular to player)
+        pz_vec2 to_player = pz_vec2_sub(player_pos, tank->pos);
+        if (dist_to_player > 0.1f) {
+            pz_vec2 dir_to_player
+                = pz_vec2_scale(to_player, 1.0f / dist_to_player);
+
+            // Strafe perpendicular, occasionally switching direction
+            pz_vec2 strafe = { -dir_to_player.y, dir_to_player.x };
+            if (((int)(ctrl->state_timer * 2.0f)) % 2 == 0) {
+                strafe = pz_vec2_scale(strafe, -1.0f);
+            }
+
+            // Also move closer or farther based on distance
+            if (dist_to_player > engage_distance * 0.7f) {
+                // Move closer
+                move_dir
+                    = pz_vec2_add(strafe, pz_vec2_scale(dir_to_player, 0.5f));
+            } else if (dist_to_player < too_close_distance) {
+                // Back off
+                move_dir
+                    = pz_vec2_add(strafe, pz_vec2_scale(dir_to_player, -0.8f));
+            } else {
+                // Just strafe
+                move_dir = strafe;
+            }
+
+            // Normalize
+            float len = pz_vec2_len(move_dir);
+            if (len > 0.1f) {
+                move_dir = pz_vec2_scale(move_dir, 1.0f / len);
+            }
+        }
+
+        ctrl->wants_to_fire = ctrl->can_see_player;
+
+        // Transition out of engaging
+        if (ctrl->state_timer <= 0.0f) {
+            if (health_ratio < health_retreat_threshold) {
+                ctrl->state = PZ_AI_STATE_SEEKING_COVER;
+                ctrl->has_cover = false;
+            } else if ((rand() % 100) < 40) {
+                ctrl->state = PZ_AI_STATE_CHASING;
+                ctrl->aggression_timer = 1.5f;
+            } else {
+                ctrl->state_timer = 2.0f + (float)(rand() % 200) / 100.0f;
+            }
+        }
+
+        // Lost line of sight - chase
+        if (!ctrl->can_see_player) {
+            ctrl->state = PZ_AI_STATE_CHASING;
+        }
+
+        // Retreat if low health
+        if (health_ratio < health_retreat_threshold) {
+            ctrl->state = PZ_AI_STATE_SEEKING_COVER;
+            ctrl->has_cover = false;
+        }
+        break;
+    }
+
+    case PZ_AI_STATE_SEEKING_COVER: {
+        // Find cover if we don't have it
+        if (!ctrl->has_cover && ctrl->cover_search_timer <= 0.0f) {
+            if (find_cover_position(map, tank->pos, player_pos,
+                    &ctrl->cover_pos, &ctrl->peek_pos)) {
+                ctrl->has_cover = true;
+                ctrl->move_target = ctrl->cover_pos;
+            } else {
+                ctrl->cover_search_timer = 1.0f;
+                // Can't find cover, just run away
+                pz_vec2 away = pz_vec2_sub(tank->pos, player_pos);
+                float len = pz_vec2_len(away);
+                if (len > 0.1f) {
+                    move_dir = pz_vec2_scale(away, 1.0f / len);
+                }
+            }
+        }
+
+        if (ctrl->has_cover) {
+            pz_vec2 to_cover = pz_vec2_sub(ctrl->cover_pos, tank->pos);
+            float cover_dist = pz_vec2_len(to_cover);
+
+            if (cover_dist < arrive_threshold) {
+                ctrl->state = PZ_AI_STATE_IN_COVER;
+                ctrl->state_timer = 1.5f + (float)(rand() % 150) / 100.0f;
+            } else {
+                move_dir = pz_vec2_scale(to_cover, 1.0f / cover_dist);
+            }
+        }
+
+        ctrl->wants_to_fire = false;
+        break;
+    }
+
+    case PZ_AI_STATE_IN_COVER:
+        // Wait and recover
+        ctrl->state_timer -= dt;
+
+        if (ctrl->state_timer <= 0.0f) {
+            // Health recovered enough or timeout - go aggressive again
+            if (health_ratio > 0.5f || ctrl->state_timer < -3.0f) {
+                ctrl->state = PZ_AI_STATE_CHASING;
+                ctrl->has_cover = false;
+                ctrl->aggression_timer = 1.0f;
+            } else {
+                // Peek out to fire
+                ctrl->state = PZ_AI_STATE_PEEKING;
+                ctrl->move_target = ctrl->peek_pos;
+                ctrl->shots_fired = 0;
+            }
+        }
+
+        ctrl->wants_to_fire = false;
+        break;
+
+    case PZ_AI_STATE_PEEKING: {
+        pz_vec2 to_peek = pz_vec2_sub(ctrl->peek_pos, tank->pos);
+        float peek_dist = pz_vec2_len(to_peek);
+
+        if (peek_dist < arrive_threshold) {
+            ctrl->state = PZ_AI_STATE_FIRING;
+            ctrl->state_timer = 1.5f;
+        } else {
+            move_dir = pz_vec2_scale(to_peek, 1.0f / peek_dist);
+        }
+
+        ctrl->wants_to_fire = ctrl->can_see_player;
+        break;
+    }
+
+    case PZ_AI_STATE_FIRING:
+        ctrl->state_timer -= dt;
+        ctrl->wants_to_fire = ctrl->can_see_player;
+
+        if (ctrl->state_timer <= 0.0f
+            || ctrl->shots_fired >= ctrl->max_shots_per_peek) {
+            // Go back to aggressive if health is ok
+            if (health_ratio > 0.5f) {
+                ctrl->state = PZ_AI_STATE_CHASING;
+                ctrl->has_cover = false;
+            } else {
+                ctrl->state = PZ_AI_STATE_RETREATING;
+                ctrl->move_target = ctrl->cover_pos;
+            }
+        }
+        break;
+
+    case PZ_AI_STATE_RETREATING: {
+        pz_vec2 to_cover = pz_vec2_sub(ctrl->cover_pos, tank->pos);
+        float cover_dist = pz_vec2_len(to_cover);
+
+        if (cover_dist < arrive_threshold) {
+            ctrl->state = PZ_AI_STATE_IN_COVER;
+            ctrl->state_timer = 2.0f;
+        } else {
+            move_dir = pz_vec2_scale(to_cover, 1.0f / cover_dist);
+        }
+
+        ctrl->wants_to_fire = false;
+        break;
+    }
+
+    default:
+        ctrl->state = PZ_AI_STATE_CHASING;
+        break;
+    }
+
+    // Apply movement
+    pz_tank_input input = {
+        .move_dir = pz_vec2_scale(move_dir, move_speed),
+        .target_turret = ctrl->current_aim_angle,
+        .fire = false,
+    };
+
+    pz_tank_update(tank_mgr, tank, &input, map, dt);
+}
+
+/* ============================================================================
  * AI Update
  * ============================================================================
  */
 
 void
-pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos, float dt)
+pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
+    pz_projectile_manager *proj_mgr, float dt)
 {
     if (!ai_mgr || !ai_mgr->tank_mgr) {
         return;
@@ -533,8 +978,12 @@ pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos, float dt)
         ctrl->current_aim_angle = normalize_angle(ctrl->current_aim_angle);
 
         // Level-specific behavior
-        if (ctrl->level >= PZ_ENEMY_LEVEL_2) {
-            // Level 2+: Use cover behavior
+        if (ctrl->level == PZ_ENEMY_LEVEL_3) {
+            // Level 3: Aggressive hunter
+            update_level3_ai(ctrl, tank, ai_mgr->tank_mgr, ai_mgr->map,
+                player_pos, proj_mgr, dt);
+        } else if (ctrl->level == PZ_ENEMY_LEVEL_2) {
+            // Level 2: Cover-based
             update_level2_ai(
                 ctrl, tank, ai_mgr->tank_mgr, ai_mgr->map, player_pos, dt);
         } else {
@@ -577,11 +1026,19 @@ pz_ai_fire(pz_ai_manager *ai_mgr, pz_projectile_manager *proj_mgr)
             continue;
         }
 
-        // Level 2+: Only fire in FIRING state
-        if (ctrl->level >= PZ_ENEMY_LEVEL_2
-            && ctrl->state != PZ_AI_STATE_FIRING) {
-            continue;
+        // Level-specific firing conditions
+        if (ctrl->level == PZ_ENEMY_LEVEL_3) {
+            // Level 3: Use wants_to_fire flag set by state machine
+            if (!ctrl->wants_to_fire) {
+                continue;
+            }
+        } else if (ctrl->level == PZ_ENEMY_LEVEL_2) {
+            // Level 2: Only fire in FIRING state
+            if (ctrl->state != PZ_AI_STATE_FIRING) {
+                continue;
+            }
         }
+        // Level 1: Always try to fire (stationary turret)
 
         // Only fire if:
         // 1. We can see the player

@@ -36,11 +36,13 @@ typedef struct pz_projectile_manager pz_projectile_manager;
  *   - Faster fire rate
  *   - Uses cover: hides behind walls, peeks out to fire
  *
- * Level 3: Advanced enemy
+ * Level 3: Aggressive enemy (Hunter)
  *   - 20 HP
  *   - Heavy weapon (2 bounces)
  *   - Fast fire rate
- *   - Stationary (turret only)
+ *   - Aggressively chases player
+ *   - Evades incoming bullets
+ *   - Seeks cover when low health or reloading
  */
 
 typedef enum {
@@ -74,6 +76,11 @@ typedef enum {
     PZ_AI_STATE_PEEKING, // Moving out from cover to fire
     PZ_AI_STATE_FIRING, // Exposed, aiming and firing
     PZ_AI_STATE_RETREATING, // Moving back to cover after firing
+    // Level 3 aggressive states
+    PZ_AI_STATE_CHASING, // Actively pursuing the player
+    PZ_AI_STATE_FLANKING, // Moving to a flanking position
+    PZ_AI_STATE_EVADING, // Dodging incoming projectiles
+    PZ_AI_STATE_ENGAGING, // In combat range, shooting while moving
 } pz_ai_state;
 
 // AI state for a single enemy
@@ -103,6 +110,15 @@ typedef struct pz_ai_controller {
     bool has_cover; // Whether we have a valid cover position
     int shots_fired; // Number of shots fired while peeking
     int max_shots_per_peek; // How many shots to fire before retreating
+
+    // Level 3 aggressive behavior
+    pz_vec2 evade_dir; // Direction to evade when dodging
+    float evade_timer; // Duration of current evade
+    float aggression_timer; // Time until switching to aggressive behavior
+    float last_player_pos_x; // For tracking player movement
+    float last_player_pos_y;
+    pz_vec2 flank_target; // Target position for flanking
+    bool wants_to_fire; // Request to fire (checked in pz_ai_fire)
 } pz_ai_controller;
 
 /* ============================================================================
@@ -137,7 +153,9 @@ pz_tank *pz_ai_spawn_enemy(
 // Update all AI controllers
 // This generates pz_tank_input for each AI-controlled tank
 // player_pos is the position of the player tank (for aiming)
-void pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos, float dt);
+// proj_mgr is optional - used by Level 3 to detect incoming projectiles
+void pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
+    pz_projectile_manager *proj_mgr, float dt);
 
 // Fire projectiles for AI tanks that want to fire
 // This should be called after pz_ai_update

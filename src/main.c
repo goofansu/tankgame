@@ -418,7 +418,8 @@ app_frame(void)
 
     if (g_app.ai_mgr && g_app.player_tank
         && !(g_app.player_tank->flags & PZ_TANK_FLAG_DEAD)) {
-        pz_ai_update(g_app.ai_mgr, g_app.player_tank->pos, dt);
+        pz_ai_update(
+            g_app.ai_mgr, g_app.player_tank->pos, g_app.projectile_mgr, dt);
         pz_ai_fire(g_app.ai_mgr, g_app.projectile_mgr);
 
         // Add track marks for moving enemy tanks

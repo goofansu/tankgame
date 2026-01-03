@@ -48,6 +48,8 @@ spawn 20.00 10.00 -2.356 0 0
 enemy 10.0 0.0 3.14 1
 # Level 2 enemy near the top-left wall cluster (uses cover)
 enemy -8.0 8.0 -0.785 2
+# Level 3 enemy (aggressive hunter) in the lower area
+enemy 0.0 -8.0 1.57 3
 
 # Lighting settings - Night mode (no sun, dark ambient, lights are primary)
 ambient_color 0.12 0.12 0.15
