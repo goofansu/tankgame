@@ -1,7 +1,5 @@
 # Tank Game Map
-version 2
 name Frozen Peaks
-size 24 14
 tile_size 2.0
 music march
 
@@ -21,7 +19,8 @@ tag E3 enemy angle=-1.57 level=3
 tag E4 enemy angle=0.0 level=2
 tag W1 powerup type=machine_gun respawn=25
 
-grid
+
+<grid>
 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5#
 5# 0.|P1 0. 0. 3# 4# 5# 0. 0. 0. 0. 0. 0. 0. 0. 5# 4# 3# 0. 0. 0. 0. 0. 5#
 5# 0. 0. 0. 3# 4# 5# 0. 0. -1: -1: -1: -1: 0. 0. 5# 4# 3# 0. 0. 0. 0. 0. 5#
@@ -36,6 +35,7 @@ grid
 5# 0. 0. 0. 3# 4# 5# 0. 0. -1: -1: -1: -1: 0. 0. 5# 4# 3# 0. 0. 0. 0.|P2 0. 5#
 5# 0. 0. 0. 3# 4# 5# 0. 0. 0. 0. 0. 0. 0. 0. 5# 4# 3# 0. 0. 0. 0. 0. 5#
 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5#
+</grid>
 
 # Lighting - Cold winter light
 sun_direction 0.4 -0.7 0.4

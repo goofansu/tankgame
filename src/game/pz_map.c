@@ -1022,6 +1022,49 @@ typedef struct tag_placement {
 
 #define MAX_TAG_PLACEMENTS 256
 
+// Count cells in a row string
+static int
+count_row_cells(const char *row)
+{
+    int count = 0;
+    const char *p = row;
+
+    while (*p) {
+        // Skip whitespace
+        while (*p && isspace((unsigned char)*p)) {
+            p++;
+        }
+        if (!*p)
+            break;
+
+        // Parse height (can be negative)
+        if (*p == '-') {
+            p++;
+        }
+        while (*p && isdigit((unsigned char)*p)) {
+            p++;
+        }
+
+        // Parse tile symbol
+        if (!*p || isspace((unsigned char)*p)) {
+            break; // Malformed
+        }
+        p++;
+
+        // Skip optional tags
+        if (*p == '|') {
+            p++;
+            while (*p && !isspace((unsigned char)*p)) {
+                p++;
+            }
+        }
+
+        count++;
+    }
+
+    return count;
+}
+
 pz_map *
 pz_map_load(const char *path)
 {
@@ -1036,9 +1079,7 @@ pz_map_load(const char *path)
     const char *text = file_data;
     char line[1024];
 
-    int version = 0;
     char name[64] = "Unnamed";
-    int width = 0, height = 0;
     float tile_size = 2.0f;
     char music_name[64] = "";
     bool has_music = false;
@@ -1056,21 +1097,77 @@ pz_map_load(const char *path)
     char tile_names[PZ_MAP_MAX_TILE_DEFS][32];
     int tile_def_count = 0;
 
-    // Parse header
+    // Grid rows stored temporarily until we know the size
+    char grid_rows[PZ_MAP_MAX_SIZE][1024];
+    int grid_row_count = 0;
+    int grid_width = -1; // Will be set from first row
+
+    // Post-grid directives stored for later parsing
+    char post_grid_lines[256][256];
+    int post_grid_count = 0;
+
+    bool in_grid = false;
+
+    // Parse file
     while (read_line(&text, line, sizeof(line))) {
         const char *p = skip_whitespace(line);
 
+        // Handle grid section specially
+        if (in_grid) {
+            // Check for end of grid
+            if (strcmp(p, "</grid>") == 0) {
+                in_grid = false;
+                continue;
+            }
+
+            // Skip empty/whitespace-only lines inside grid
+            if (!*p) {
+                continue;
+            }
+
+            // Store grid row
+            if (grid_row_count >= PZ_MAP_MAX_SIZE) {
+                pz_log(PZ_LOG_ERROR, PZ_LOG_CAT_GAME,
+                    "Map too tall (max %d rows)", PZ_MAP_MAX_SIZE);
+                pz_free(file_data);
+                return NULL;
+            }
+
+            // Count cells in this row
+            int row_cells = count_row_cells(p);
+
+            if (grid_width < 0) {
+                // First row sets the width
+                grid_width = row_cells;
+                if (grid_width <= 0 || grid_width > PZ_MAP_MAX_SIZE) {
+                    pz_log(PZ_LOG_ERROR, PZ_LOG_CAT_GAME,
+                        "Invalid grid width: %d", grid_width);
+                    pz_free(file_data);
+                    return NULL;
+                }
+            } else if (row_cells != grid_width) {
+                // All rows must have same width
+                pz_log(PZ_LOG_ERROR, PZ_LOG_CAT_GAME,
+                    "Row %d has %d cells, expected %d (first row width)",
+                    grid_row_count + 1, row_cells, grid_width);
+                pz_free(file_data);
+                return NULL;
+            }
+
+            strncpy(grid_rows[grid_row_count], p, sizeof(grid_rows[0]) - 1);
+            grid_rows[grid_row_count][sizeof(grid_rows[0]) - 1] = '\0';
+            grid_row_count++;
+            continue;
+        }
+
+        // Outside grid section
         if (!*p || *p == '#') {
             continue;
         }
 
-        if (strncmp(p, "version ", 8) == 0) {
-            version = atoi(p + 8);
-        } else if (strncmp(p, "name ", 5) == 0) {
+        if (strncmp(p, "name ", 5) == 0) {
             strncpy(name, p + 5, sizeof(name) - 1);
             name[sizeof(name) - 1] = '\0';
-        } else if (strncmp(p, "size ", 5) == 0) {
-            sscanf(p + 5, "%d %d", &width, &height);
         } else if (strncmp(p, "tile_size ", 10) == 0) {
             tile_size = (float)atof(p + 10);
         } else if (strncmp(p, "music ", 6) == 0) {
@@ -1098,25 +1195,30 @@ pz_map_load(const char *path)
                 strncpy(tags[tag_count].params, tparams, 127);
                 tag_count++;
             }
-        } else if (strcmp(p, "grid") == 0) {
-            break;
+        } else if (strcmp(p, "<grid>") == 0) {
+            in_grid = true;
+        } else {
+            // Store for post-grid processing
+            if (post_grid_count < 256) {
+                strncpy(post_grid_lines[post_grid_count], p,
+                    sizeof(post_grid_lines[0]) - 1);
+                post_grid_lines[post_grid_count][sizeof(post_grid_lines[0]) - 1]
+                    = '\0';
+                post_grid_count++;
+            }
         }
     }
 
-    if (version != 2) {
+    // Validate we got a grid
+    if (grid_row_count <= 0 || grid_width <= 0) {
         pz_log(PZ_LOG_ERROR, PZ_LOG_CAT_GAME,
-            "Unsupported map version: %d (expected 2)", version);
+            "No valid grid found in map file: %s", path);
         pz_free(file_data);
         return NULL;
     }
 
-    if (width <= 0 || height <= 0 || width > PZ_MAP_MAX_SIZE
-        || height > PZ_MAP_MAX_SIZE) {
-        pz_log(PZ_LOG_ERROR, PZ_LOG_CAT_GAME, "Invalid map size: %dx%d", width,
-            height);
-        pz_free(file_data);
-        return NULL;
-    }
+    int width = grid_width;
+    int height = grid_row_count;
 
     // Create the map
     map = pz_map_create(width, height, tile_size);
@@ -1125,7 +1227,6 @@ pz_map_load(const char *path)
         return NULL;
     }
     strncpy(map->name, name, sizeof(map->name) - 1);
-    map->version = version;
     if (has_music) {
         strncpy(map->music_name, music_name, sizeof(map->music_name) - 1);
         map->music_name[sizeof(map->music_name) - 1] = '\0';
@@ -1137,25 +1238,10 @@ pz_map_load(const char *path)
         pz_map_add_tile_def(map, tile_symbols[i], tile_names[i]);
     }
 
-    // Parse grid
-    int rows_read = 0;
-    while (read_line(&text, line, sizeof(line)) && rows_read < height) {
-        const char *p = skip_whitespace(line);
-
-        if (!*p)
-            continue;
-
-        // Check for end of grid section
-        if (*p == '#' || strncmp(p, "spawn ", 6) == 0
-            || strncmp(p, "enemy ", 6) == 0 || strncmp(p, "sun_", 4) == 0
-            || strncmp(p, "ambient_", 8) == 0 || strncmp(p, "music ", 6) == 0
-            || strncmp(p, "water_level ", 12) == 0) {
-            // Re-process this line below
-            break;
-        }
-
-        // Parse row of cells
-        int y = height - 1 - rows_read; // File is top-down
+    // Parse grid rows
+    for (int row = 0; row < height; row++) {
+        const char *p = grid_rows[row];
+        int y = height - 1 - row; // File is top-down
         int x = 0;
 
         while (*p && x < width) {
@@ -1217,13 +1303,6 @@ pz_map_load(const char *path)
 
             x++;
         }
-
-        if (x != width) {
-            pz_log(PZ_LOG_WARN, PZ_LOG_CAT_GAME,
-                "Row %d has %d cells, expected %d", rows_read, x, width);
-        }
-
-        rows_read++;
     }
 
     // Resolve tag placements
@@ -1267,21 +1346,9 @@ pz_map_load(const char *path)
         }
     }
 
-    // Continue parsing for remaining directives (spawns, enemies, lighting)
-    // The current line might need re-processing
-    const char *p = skip_whitespace(line);
-    bool first_iteration = (*p != '\0');
-
-    do {
-        if (!first_iteration) {
-            if (!read_line(&text, line, sizeof(line)))
-                break;
-            p = skip_whitespace(line);
-        }
-        first_iteration = false;
-
-        if (!*p || *p == '#')
-            continue;
+    // Process post-grid directives
+    for (int i = 0; i < post_grid_count; i++) {
+        const char *p = post_grid_lines[i];
 
         // Legacy spawn format: spawn x y angle team team_spawn
         if (strncmp(p, "spawn ", 6) == 0) {
@@ -1378,12 +1445,12 @@ pz_map_load(const char *path)
                 "Background textures not yet implemented: %s",
                 map->background.texture_path);
         }
-    } while (1);
+    }
 
     pz_free(file_data);
 
-    pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME, "Loaded map v%d: %s (%s)",
-        map->version, map->name, path);
+    pz_log(
+        PZ_LOG_INFO, PZ_LOG_CAT_GAME, "Loaded map: %s (%s)", map->name, path);
 
     return map;
 }
@@ -1421,11 +1488,9 @@ pz_map_save(const pz_map *map, const char *path)
     // Header
     written = snprintf(p, remaining,
         "# Tank Game Map\n"
-        "version 2\n"
         "name %s\n"
-        "size %d %d\n"
         "tile_size %.1f\n",
-        map->name, map->width, map->height, map->tile_size);
+        map->name, map->tile_size);
     p += written;
     remaining -= written;
 
@@ -1464,12 +1529,12 @@ pz_map_save(const pz_map *map, const char *path)
         remaining -= written;
     }
 
-    // For v2 save, we output spawns/enemies after the grid
+    // For save, we output spawns/enemies after the grid
     // (In a more complete implementation, we'd track which ones
     // came from tags and which from explicit coordinates)
 
     // Grid
-    written = snprintf(p, remaining, "\ngrid\n");
+    written = snprintf(p, remaining, "\n<grid>\n");
     p += written;
     remaining -= written;
 
@@ -1505,6 +1570,10 @@ pz_map_save(const pz_map *map, const char *path)
         *p++ = '\n';
         remaining--;
     }
+
+    written = snprintf(p, remaining, "</grid>\n");
+    p += written;
+    remaining -= written;
 
     // Spawn points (using explicit coordinates for now)
     if (map->spawn_count > 0) {

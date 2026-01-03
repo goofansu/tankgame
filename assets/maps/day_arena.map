@@ -1,7 +1,5 @@
 # Tank Game Map
-version 2
 name Day Arena
-size 24 14
 tile_size 2.0
 music march
 
@@ -19,7 +17,8 @@ tag E2 enemy angle=3.14 level=3
 tag E3 enemy angle=1.57 level=3
 tag W1 powerup type=machine_gun respawn=20
 
-grid
+
+<grid>
 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2#
 2# 0.|P1 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.|P2 2#
 2# 0. 0. 1# 1# 0. 0. 0. 1# 1# 0. 0. 0. 0. 1# 1# 0. 0. 1# 1# 0. 0. 0. 2#
@@ -34,6 +33,7 @@ grid
 2# 0. 0. 1# 1# 0. 1# 1# 0. 0. 0. 0. 0.|E3 0. 0. 0. 0. 0. 0. 0. 0. 1# 0. 2#
 2# 0.|P3 0. 1# 1# 0. 1# 1# 0. 1# 1# 0. 0. 0. 0. 1# 1# 0. 0. 0. 0. 1# 0.|P4 2#
 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2#
+</grid>
 
 # Lighting - Day mode
 sun_direction 0.4 -0.8 0.3

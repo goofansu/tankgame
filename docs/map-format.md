@@ -1,13 +1,11 @@
-# Map File Format (v2)
+# Map File Format
 
 Tank game maps use a text-based format with combined height+terrain cells.
 
 ## Structure
 
 ```
-version 2
 name Map Name
-size WIDTH HEIGHT
 tile_size 2.0
 
 # Tile definitions
@@ -19,8 +17,9 @@ tag NAME type key=value...
 # Optional water level
 water_level -1
 
-grid
+<grid>
 ... cells ...
+</grid>
 
 # Spawn/enemy (alternative to tags)
 spawn X Y ANGLE TEAM TEAM_SPAWN
@@ -33,7 +32,15 @@ ambient_color R G B
 ambient_darkness 0.0-1.0
 ```
 
-## Grid Cells
+## Grid Section
+
+The grid is wrapped in `<grid>...</grid>` tags. The map size is automatically detected from the grid:
+- **Width**: Number of cells in the first row
+- **Height**: Number of rows
+
+All rows must have the same number of cells. Empty lines inside the grid are ignored.
+
+### Cell Format
 
 Format: `HEIGHT TILE [|tag,tag,...]`
 
@@ -76,8 +83,9 @@ tag E1 enemy angle=3.14 level=3
 tag W1 powerup type=machine_gun respawn=15
 tag W2 powerup type=ricochet respawn=20
 
-grid
+<grid>
 2# 0.|P1 0.|E1 0.|W1 2#
+</grid>
 ```
 
 **Spawn params:** `angle`, `team`, `team_spawn`
@@ -111,9 +119,7 @@ ambient_darkness 0.85
 ## Complete Example
 
 ```
-version 2
 name Test Arena
-size 6 4
 tile_size 2.0
 
 tile . ground
@@ -124,11 +130,12 @@ tag P1 spawn angle=0.785 team=0
 tag P2 spawn angle=2.356 team=0
 tag E1 enemy angle=3.14 level=1
 
-grid
+<grid>
 2# 2# 2# 2# 2# 2#
 2# 0.|P1 0. 0: 0. 2#
 2# 0. 0.|E1 0. 0.|P2 2#
 2# 2# 2# 2# 2# 2#
+</grid>
 
 ambient_color 0.12 0.12 0.15
 ambient_darkness 0.85

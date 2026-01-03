@@ -1,7 +1,5 @@
 # Tank Game Map
-version 2
 name Volcanic Ridge
-size 24 14
 tile_size 2.0
 music march
 
@@ -20,7 +18,8 @@ tag E2 enemy angle=-0.785 level=2
 tag E3 enemy angle=1.57 level=3
 tag W1 powerup type=ricochet respawn=20
 
-grid
+
+<grid>
 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4#
 4# 0.|P1 0. 0. 0* 5# 5# 0. 0. 0. 0. 0. 0. 0. 0. 5# 5# 0* 0. 0. 0. 0. 0. 4#
 4# 0. 0. 0* 0* 5# 5# 0. -1: -2: -2: -2: -2: -1: 0. 5# 5# 0* 0* 0. 0. 0. 0. 4#
@@ -35,6 +34,7 @@ grid
 4# 0. 0. 0* 0* 5# 5# 0. -1: -2: -2: -2: -2: -1: 0. 5# 5# 0* 0* 0. 0. 0. 0. 4#
 4# 0. 0. 0. 0* 5# 5# 0. 0. 0. 0. 0. 0. 0. 0. 5# 5# 0* 0. 0. 0. 0. 0.|P2 4#
 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4#
+</grid>
 
 # Lighting - Fiery volcanic glow
 sun_direction 0.3 -0.6 0.4

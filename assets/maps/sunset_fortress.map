@@ -1,7 +1,5 @@
 # Tank Game Map
-version 2
 name Sunset Fortress
-size 24 14
 tile_size 2.0
 music march
 
@@ -17,7 +15,8 @@ tag P2 spawn angle=3.14 team=0
 tag E1 enemy angle=3.14 level=1
 tag E2 enemy angle=2.0 level=1
 
-grid
+
+<grid>
 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2#
 2# 0.|P1 0. 0. 0. 0* 0* 0. 0. 0. 0. 0. 0. 0. 0. 0. 0* 0* 0. 0. 0. 0. 0.|P2 2#
 2# 0. 0. 0. 0. 0* 0* 0. 0. 0. 0. 2# 2# 0. 0. 0. 0* 0* 0. 0. 0. 0. 0. 2#
@@ -32,6 +31,7 @@ grid
 2# 0. 0. 0. 0. 0* 0* 0. 0. 0. 0. 0. 0. 0. 0. 0. 0* 0* 0. 0. 0. 0. 0. 2#
 2# 0. 0. 0. 0. 0* 0* 0. 0. 0. 0. 0. 0. 0. 0. 0. 0* 0* 0. 0. 0. 0. 0. 2#
 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2#
+</grid>
 
 # Lighting - Sunset/Dusk (warm orange light)
 sun_direction 0.8 -0.4 0.2

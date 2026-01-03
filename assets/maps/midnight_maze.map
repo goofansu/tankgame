@@ -1,7 +1,5 @@
 # Tank Game Map
-version 2
 name Midnight Maze
-size 24 14
 tile_size 2.0
 music march
 
@@ -20,7 +18,8 @@ tag E3 enemy angle=3.14 level=3
 tag W1 powerup type=machine_gun respawn=25
 tag W2 powerup type=ricochet respawn=25
 
-grid
+
+<grid>
 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2#
 2# 0.|P1 0. 0. 2# 0. 0. 0. 0. 0. 2# 0. 0. 2# 0. 0. 0. 0. 0. 2# 0. 0. 0. 2#
 2# 0. 0. 0. 2# 0. 2# 2# 0. 0. 2# 0. 0. 2# 0. 0. 2# 2# 0. 2# 0. 0. 0. 2#
@@ -35,6 +34,7 @@ grid
 2# 0. 0. 0. 2# 0. 2# 2# 0. 0. 2# 0. 0. 2# 0. 0. 2# 2# 0. 2# 0. 0. 0. 2#
 2# 0. 0. 0. 2# 0. 0. 0. 0. 0. 2# 0. 0. 2# 0. 0. 0. 0. 0. 2# 0. 0. 0.|P2 2#
 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2#
+</grid>
 
 # Lighting - Deep midnight (very dark with cold tones)
 ambient_color 0.08 0.08 0.12

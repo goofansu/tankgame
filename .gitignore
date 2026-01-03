@@ -10,6 +10,12 @@ cmake-build-*/
 # IDE
 .idea/
 .vscode/
+.beads/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
 *.swp
 *.swo
 *~
