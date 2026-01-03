@@ -36,6 +36,11 @@ typedef struct pz_tile_config {
     float speed_multiplier; // Movement speed modifier (default 1.0)
     float friction; // Friction coefficient (default 1.0)
 
+    // Texture scale (how many tiles the texture spans)
+    // A scale of 6 means the texture covers a 6x6 tile area
+    int ground_texture_scale; // Ground texture scale (default 1)
+    int wall_texture_scale; // Wall texture scale (default 1)
+
     // Status
     bool valid; // False if tile failed to load properly
 } pz_tile_config;

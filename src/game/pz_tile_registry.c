@@ -73,6 +73,8 @@ parse_tile_file(const char *path, pz_tile_config *config)
     memset(config, 0, sizeof(*config));
     config->speed_multiplier = 1.0f;
     config->friction = 1.0f;
+    config->ground_texture_scale = 1;
+    config->wall_texture_scale = 1;
     config->valid = false;
     config->ground_texture = PZ_INVALID_HANDLE;
     config->wall_texture = PZ_INVALID_HANDLE;
@@ -156,6 +158,12 @@ parse_tile_file(const char *path, pz_tile_config *config)
             config->speed_multiplier = (float)atof(value);
         } else if (strcmp(key, "friction") == 0) {
             config->friction = (float)atof(value);
+        } else if (strcmp(key, "ground_texture_scale") == 0) {
+            int scale = atoi(value);
+            config->ground_texture_scale = scale > 0 ? scale : 1;
+        } else if (strcmp(key, "wall_texture_scale") == 0) {
+            int scale = atoi(value);
+            config->wall_texture_scale = scale > 0 ? scale : 1;
         }
         // Ignore unknown keys (forward compatibility)
 
@@ -217,6 +225,8 @@ pz_tile_registry_create(void)
         sizeof(registry->fallback.name) - 1);
     registry->fallback.speed_multiplier = 1.0f;
     registry->fallback.friction = 1.0f;
+    registry->fallback.ground_texture_scale = 1;
+    registry->fallback.wall_texture_scale = 1;
     registry->fallback.valid = true;
 
     return registry;
@@ -424,9 +434,10 @@ pz_tile_registry_print(const pz_tile_registry *registry)
         const pz_tile_config *t = &registry->tiles[i];
         pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
             "  [%d] %s: ground=%s, wall=%s, side=%s, speed=%.1f, "
-            "friction=%.1f%s",
+            "friction=%.1f, gscale=%d, wscale=%d%s",
             i, t->name, t->ground_texture_path, t->wall_texture_path,
             t->wall_side_texture_path, t->speed_multiplier, t->friction,
+            t->ground_texture_scale, t->wall_texture_scale,
             t->valid ? "" : " [INVALID]");
     }
 }

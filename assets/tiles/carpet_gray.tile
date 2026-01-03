@@ -3,3 +3,5 @@ name carpet_gray
 ground_texture assets/textures/carpet_gray.png
 speed_multiplier 1.2
 friction 0.3
+ground_texture_scale 6
+wall_texture_scale 6

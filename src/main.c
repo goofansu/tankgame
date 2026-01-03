@@ -114,6 +114,7 @@ typedef struct app_state {
     const char *map_path_arg;
     const char *campaign_path_arg;
     bool show_debug_overlay;
+    bool show_debug_texture_scale;
 
     // Core systems (persistent across maps)
     pz_renderer *renderer;
@@ -274,6 +275,11 @@ map_session_load(map_session *session, const char *map_path)
         g_app.renderer, g_app.tex_manager, g_app.tile_registry);
     if (session->renderer) {
         pz_map_renderer_set_map(session->renderer, session->map);
+
+        // Apply debug texture scale if requested via command line
+        if (g_app.show_debug_texture_scale) {
+            pz_map_renderer_set_debug_texture_scale(session->renderer, true);
+        }
     }
 
     // Set up hot-reload
@@ -469,6 +475,8 @@ parse_args(int argc, char *argv[])
             g_app.campaign_path_arg = argv[++i];
         } else if (strcmp(argv[i], "--debug") == 0) {
             g_app.show_debug_overlay = true;
+        } else if (strcmp(argv[i], "--debug-texture-scale") == 0) {
+            g_app.show_debug_texture_scale = true;
         }
     }
 }
@@ -1205,6 +1213,9 @@ app_frame(void)
 
     pz_map_renderer_draw(g_app.session.renderer, vp, &render_params);
 
+    // Draw debug texture scale grid if enabled
+    pz_map_renderer_draw_debug(g_app.session.renderer, vp);
+
     pz_tank_render_params tank_params = { 0 };
     if (g_app.session.lighting) {
         tank_params.light_texture
@@ -1487,6 +1498,14 @@ app_event(const sapp_event *event)
                 sapp_quit();
             } else if (event->key_code == SAPP_KEYCODE_F2) {
                 pz_debug_overlay_toggle(g_app.debug_overlay);
+            } else if (event->key_code == SAPP_KEYCODE_F3) {
+                // Toggle texture scale debug visualization
+                if (g_app.session.renderer) {
+                    bool enabled = pz_map_renderer_get_debug_texture_scale(
+                        g_app.session.renderer);
+                    pz_map_renderer_set_debug_texture_scale(
+                        g_app.session.renderer, !enabled);
+                }
             } else if (event->key_code == SAPP_KEYCODE_F11) {
                 if (g_app.session.lighting) {
                     pz_lighting_save_debug(g_app.session.lighting,

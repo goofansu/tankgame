@@ -6,7 +6,7 @@ tile_size 2.0
 music march
 
 # Tile definitions
-tile . wood_oak_brown
+tile . wood_oak_amber
 tile # wood_rustic_dark
 tile : mud_wet
 tile * carpet_gray

@@ -1,0 +1,6 @@
+name test_quadrants  
+ground_texture assets/textures/test_grid6.png
+speed_multiplier 1.0
+friction 1.0
+ground_texture_scale 6
+wall_texture_scale 6

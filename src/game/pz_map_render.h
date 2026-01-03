@@ -89,4 +89,18 @@ bool pz_map_hot_reload_check(pz_map_hot_reload *hr);
 // Get the map file path being watched
 const char *pz_map_hot_reload_get_path(const pz_map_hot_reload *hr);
 
+// ============================================================================
+// Debug Drawing
+// ============================================================================
+
+// Enable/disable debug visualization of texture scale boundaries
+void pz_map_renderer_set_debug_texture_scale(pz_map_renderer *mr, bool enabled);
+
+// Check if debug texture scale visualization is enabled
+bool pz_map_renderer_get_debug_texture_scale(pz_map_renderer *mr);
+
+// Draw debug lines (call after draw_ground/walls when debug is enabled)
+void pz_map_renderer_draw_debug(
+    pz_map_renderer *mr, const pz_mat4 *view_projection);
+
 #endif // PZ_MAP_RENDER_H

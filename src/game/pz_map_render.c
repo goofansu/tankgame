@@ -68,6 +68,13 @@ struct pz_map_renderer {
 
     // Current map
     const pz_map *map;
+
+    // Debug line rendering
+    pz_shader_handle debug_line_shader;
+    pz_pipeline_handle debug_line_pipeline;
+    pz_buffer_handle debug_line_buffer;
+    int debug_line_vertex_count;
+    bool debug_texture_scale_enabled;
 };
 
 // ============================================================================
@@ -127,61 +134,86 @@ emit_water_quad(float *v, float x0, float z0, float x1, float z1, float y)
 }
 
 // Create vertices for a single tile quad on ground plane (at custom Y height)
+// tile_x, tile_y: grid position of the tile (used for world-space UV alignment)
+// scale: texture scale (how many tiles the texture spans, e.g., 6 = 6x6)
 static float *
-emit_ground_quad_at_height(
-    float *v, float x0, float z0, float x1, float z1, float y)
+emit_ground_quad_at_height(float *v, float x0, float z0, float x1, float z1,
+    float y, int tile_x, int tile_y, int scale)
 {
     x0 += GROUND_SHRINK;
     z0 += GROUND_SHRINK;
     x1 -= GROUND_SHRINK;
     z1 -= GROUND_SHRINK;
 
+    // World-space UVs: tile position divided by scale
+    // This ensures adjacent tiles seamlessly continue the texture
+    float inv_scale = 1.0f / (float)scale;
+    float u0 = (float)tile_x * inv_scale;
+    float v0 = (float)tile_y * inv_scale;
+    float u1 = (float)(tile_x + 1) * inv_scale;
+    float v1 = (float)(tile_y + 1) * inv_scale;
+    // Flip U so the texture reads correctly from the default camera POV.
+    u0 = 1.0f - u0;
+    u1 = 1.0f - u1;
+
+    // Debug: log UVs for first few tiles
+    if (tile_x < 2 && tile_y < 2) {
+        pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_RENDER,
+            "Tile (%d,%d) scale=%d inv_scale=%f: UV (%f,%f) to (%f,%f)", tile_x,
+            tile_y, scale, inv_scale, u0, v0, u1, v1);
+    }
+
+    // After flip: u0 = 1 - tile_x/scale, u1 = 1 - (tile_x+1)/scale
+    // For tile_x=0, scale=6: u0=1.0, u1=0.833... (correct)
+
     // Triangle 1 (CCW when viewed from above +Y)
     *v++ = x0;
     *v++ = y;
     *v++ = z0;
-    *v++ = 0.0f;
-    *v++ = 1.0f;
+    *v++ = u0;
+    *v++ = v1;
 
     *v++ = x0;
     *v++ = y;
     *v++ = z1;
-    *v++ = 0.0f;
-    *v++ = 0.0f;
+    *v++ = u0;
+    *v++ = v0;
 
     *v++ = x1;
     *v++ = y;
     *v++ = z1;
-    *v++ = 1.0f;
-    *v++ = 0.0f;
+    *v++ = u1;
+    *v++ = v0;
 
     // Triangle 2
     *v++ = x0;
     *v++ = y;
     *v++ = z0;
-    *v++ = 0.0f;
-    *v++ = 1.0f;
+    *v++ = u0;
+    *v++ = v1;
 
     *v++ = x1;
     *v++ = y;
     *v++ = z1;
-    *v++ = 1.0f;
-    *v++ = 0.0f;
+    *v++ = u1;
+    *v++ = v0;
 
     *v++ = x1;
     *v++ = y;
     *v++ = z0;
-    *v++ = 1.0f;
-    *v++ = 1.0f;
+    *v++ = u1;
+    *v++ = v1;
 
     return v;
 }
 
-// Create vertices for a single tile quad on ground plane
+// Create vertices for a single tile quad on ground plane (default height)
 static float *
-emit_ground_quad(float *v, float x0, float z0, float x1, float z1)
+emit_ground_quad(float *v, float x0, float z0, float x1, float z1, int tile_x,
+    int tile_y, int scale)
 {
-    return emit_ground_quad_at_height(v, x0, z0, x1, z1, GROUND_Y_OFFSET);
+    return emit_ground_quad_at_height(
+        v, x0, z0, x1, z1, GROUND_Y_OFFSET, tile_x, tile_y, scale);
 }
 
 // ============================================================================
@@ -256,7 +288,7 @@ emit_wall_face(float *v, float x0, float y0, float z0, float x1, float y1,
 
 static float *
 emit_wall_box(float *v, float x0, float z0, float x1, float z1, float height,
-    int tile_x, int tile_y, const pz_map *map)
+    int tile_x, int tile_y, const pz_map *map, int scale)
 {
     float y0 = 0.0f;
     float y1 = height;
@@ -271,32 +303,47 @@ emit_wall_box(float *v, float x0, float z0, float x1, float z1, float height,
     bool back_exposed = !pz_map_in_bounds(map, tile_x, tile_y - 1)
         || pz_map_get_height(map, tile_x, tile_y - 1) < h;
 
-    // Top face (always visible)
+    // World-space UVs for wall top (same as ground)
+    float inv_scale = 1.0f / (float)scale;
+    float u0 = (float)tile_x * inv_scale;
+    float v0_uv = (float)tile_y * inv_scale;
+    float u1 = (float)(tile_x + 1) * inv_scale;
+    float v1_uv = (float)(tile_y + 1) * inv_scale;
+    // Flip U to match ground orientation from the default camera POV.
+    u0 = 1.0f - u0;
+    u1 = 1.0f - u1;
+
+    // Top face (always visible) - uses world-space UVs
     v = emit_wall_face(v, x0, y1, z0, x0, y1, z1, x1, y1, z1, x1, y1, z0, 0.0f,
-        1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+        1.0f, 0.0f, u0, v0_uv, u1, v1_uv);
+
+    // Side faces use world-space UVs too (scaled to tile size)
+    // V coords based on wall height - one tile height in UV space
+    float v_bottom = 0.0f;
+    float v_top = inv_scale; // One tile height in UV space
 
     // Back face (-Z)
     if (back_exposed) {
         v = emit_wall_face(v, x0, y0, z0, x0, y1, z0, x1, y1, z0, x1, y0, z0,
-            0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+            0.0f, 0.0f, -1.0f, u0, v_bottom, u1, v_top);
     }
 
     // Front face (+Z)
     if (front_exposed) {
         v = emit_wall_face(v, x1, y0, z1, x1, y1, z1, x0, y1, z1, x0, y0, z1,
-            0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+            0.0f, 0.0f, 1.0f, u1, v_bottom, u0, v_top);
     }
 
     // Left face (-X)
     if (left_exposed) {
         v = emit_wall_face(v, x0, y0, z1, x0, y1, z1, x0, y1, z0, x0, y0, z0,
-            -1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+            -1.0f, 0.0f, 0.0f, v1_uv, v_bottom, v0_uv, v_top);
     }
 
     // Right face (+X)
     if (right_exposed) {
         v = emit_wall_face(v, x1, y0, z0, x1, y1, z0, x1, y1, z1, x1, y0, z1,
-            1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+            1.0f, 0.0f, 0.0f, v0_uv, v_bottom, v1_uv, v_top);
     }
 
     return v;
@@ -333,7 +380,7 @@ count_wall_faces(int tile_x, int tile_y, float height, const pz_map *map)
 // Pit walls face INWARD (toward center of pit) so they're visible from above
 static float *
 emit_pit_box(float *v, float x0, float z0, float x1, float z1, float depth,
-    int tile_x, int tile_y, const pz_map *map)
+    int tile_x, int tile_y, const pz_map *map, int scale)
 {
     float y1 = GROUND_Y_OFFSET - depth; // Bottom of pit
 
@@ -354,6 +401,24 @@ emit_pit_box(float *v, float x0, float z0, float x1, float z1, float depth,
         ? pz_map_get_height(map, tile_x, tile_y - 1)
         : 0;
 
+    // World-space UVs for wall sides - same as ground tiles
+    // U spans one tile width, V spans wall height
+    float inv_scale = 1.0f / (float)scale;
+    float u0 = (float)tile_x * inv_scale;
+    float u1 = (float)(tile_x + 1) * inv_scale;
+    // Flip U to match ground orientation
+    u0 = 1.0f - u0;
+    u1 = 1.0f - u1;
+
+    // V coords for Z-aligned walls (back/front) - use tile_y
+    float v0_z = (float)tile_y * inv_scale;
+    float v1_z = (float)(tile_y + 1) * inv_scale;
+
+    // V coords based on wall height (for vertical extent)
+    // Scale V by height so texture tiles correctly
+    float v_bottom = 0.0f;
+    float v_top = inv_scale; // One tile height in UV space
+
     // Pit walls face INWARD so they're visible when looking down into the pit
     // This is opposite to regular walls which face outward
 
@@ -363,11 +428,12 @@ emit_pit_box(float *v, float x0, float z0, float x1, float z1, float depth,
         float neighbor_y
             = GROUND_Y_OFFSET - (back_h < 0 ? -back_h : 0) * WALL_HEIGHT_UNIT;
         // Use same winding as regular front face (+Z normal)
+        // U goes left-to-right (x1 to x0), V goes bottom-to-top
         v = emit_wall_face(v, x1, y1, z0, // bottom right
             x1, neighbor_y, z0, // top right
             x0, neighbor_y, z0, // top left
             x0, y1, z0, // bottom left
-            0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+            0.0f, 0.0f, 1.0f, u1, v_bottom, u0, v_top);
     }
 
     // Front wall (+Z edge of pit): faces -Z (into pit)
@@ -380,7 +446,7 @@ emit_pit_box(float *v, float x0, float z0, float x1, float z1, float depth,
             x0, neighbor_y, z1, // top left
             x1, neighbor_y, z1, // top right
             x1, y1, z1, // bottom right
-            0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+            0.0f, 0.0f, -1.0f, u0, v_bottom, u1, v_top);
     }
 
     // Left wall (-X edge of pit): faces +X (into pit)
@@ -389,11 +455,12 @@ emit_pit_box(float *v, float x0, float z0, float x1, float z1, float depth,
         float neighbor_y
             = GROUND_Y_OFFSET - (left_h < 0 ? -left_h : 0) * WALL_HEIGHT_UNIT;
         // Use same winding as regular right face (+X normal)
+        // U goes along Z axis
         v = emit_wall_face(v, x0, y1, z0, // bottom back
             x0, neighbor_y, z0, // top back
             x0, neighbor_y, z1, // top front
             x0, y1, z1, // bottom front
-            1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+            1.0f, 0.0f, 0.0f, v0_z, v_bottom, v1_z, v_top);
     }
 
     // Right wall (+X edge of pit): faces -X (into pit)
@@ -406,7 +473,7 @@ emit_pit_box(float *v, float x0, float z0, float x1, float z1, float depth,
             x1, neighbor_y, z1, // top front
             x1, neighbor_y, z0, // top back
             x1, y1, z0, // bottom back
-            -1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+            -1.0f, 0.0f, 0.0f, v1_z, v_bottom, v0_z, v_top);
     }
 
     return v;
@@ -589,6 +656,41 @@ pz_map_renderer_create(pz_renderer *renderer, pz_texture_manager *tex_manager,
     mr->water_buffer = PZ_INVALID_HANDLE;
     mr->water_vertex_count = 0;
 
+    // Debug line shader and pipeline
+    mr->debug_line_shader
+        = pz_renderer_load_shader(renderer, "shaders/debug_line_3d.vert",
+            "shaders/debug_line_3d.frag", "debug_line_3d");
+    if (mr->debug_line_shader == PZ_INVALID_HANDLE) {
+        pz_log(PZ_LOG_WARN, PZ_LOG_CAT_RENDER,
+            "Failed to load debug_line_3d shader (debug lines disabled)");
+    } else {
+        pz_vertex_attr debug_attrs[] = {
+            { .name = "a_position", .type = PZ_ATTR_FLOAT3, .offset = 0 },
+            { .name = "a_color",
+                .type = PZ_ATTR_FLOAT4,
+                .offset = 3 * sizeof(float) },
+        };
+
+        pz_pipeline_desc debug_desc = {
+            .shader = mr->debug_line_shader,
+            .vertex_layout = {
+                .attrs = debug_attrs,
+                .attr_count = 2,
+                .stride = 7 * sizeof(float),
+            },
+            .blend = PZ_BLEND_ALPHA,
+            .depth = PZ_DEPTH_READ,
+            .cull = PZ_CULL_NONE,
+            .primitive = PZ_PRIMITIVE_LINES,
+        };
+        mr->debug_line_pipeline
+            = pz_renderer_create_pipeline(renderer, &debug_desc);
+    }
+
+    mr->debug_line_buffer = PZ_INVALID_HANDLE;
+    mr->debug_line_vertex_count = 0;
+    mr->debug_texture_scale_enabled = false;
+
     pz_log(PZ_LOG_INFO, PZ_LOG_CAT_RENDER, "Map renderer created");
     return mr;
 }
@@ -643,6 +745,17 @@ pz_map_renderer_destroy(pz_map_renderer *mr)
         pz_renderer_destroy_shader(mr->renderer, mr->water_shader);
     }
 
+    // Debug line resources
+    if (mr->debug_line_buffer != PZ_INVALID_HANDLE) {
+        pz_renderer_destroy_buffer(mr->renderer, mr->debug_line_buffer);
+    }
+    if (mr->debug_line_pipeline != PZ_INVALID_HANDLE) {
+        pz_renderer_destroy_pipeline(mr->renderer, mr->debug_line_pipeline);
+    }
+    if (mr->debug_line_shader != PZ_INVALID_HANDLE) {
+        pz_renderer_destroy_shader(mr->renderer, mr->debug_line_shader);
+    }
+
     pz_free(mr);
 }
 
@@ -654,6 +767,14 @@ pz_map_renderer_set_map(pz_map_renderer *mr, const pz_map *map)
     }
 
     mr->map = map;
+
+    // Destroy old debug line buffer (will be regenerated on next draw if
+    // enabled)
+    if (mr->debug_line_buffer != PZ_INVALID_HANDLE) {
+        pz_renderer_destroy_buffer(mr->renderer, mr->debug_line_buffer);
+        mr->debug_line_buffer = PZ_INVALID_HANDLE;
+        mr->debug_line_vertex_count = 0;
+    }
 
     // Destroy old ground batches
     for (int i = 0; i < MAX_TILE_TEXTURES; i++) {
@@ -724,6 +845,25 @@ pz_map_renderer_set_map(pz_map_renderer *mr, const pz_map *map)
     float half_w = map->world_width / 2.0f;
     float half_h = map->world_height / 2.0f;
 
+    // Pre-compute texture scales for each tile type
+    int ground_scales[MAX_TILE_TEXTURES];
+    int wall_scales[MAX_TILE_TEXTURES];
+    for (int i = 0; i < MAX_TILE_TEXTURES; i++) {
+        ground_scales[i] = 1;
+        wall_scales[i] = 1;
+    }
+    for (int i = 0; i < map->tile_def_count && i < MAX_TILE_TEXTURES; i++) {
+        const pz_tile_def *def = &map->tile_defs[i];
+        const pz_tile_config *config = get_tile_config(mr, def->name);
+        if (config) {
+            ground_scales[i] = config->ground_texture_scale;
+            wall_scales[i] = config->wall_texture_scale;
+            pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_RENDER,
+                "Tile %d (%s): ground_scale=%d, wall_scale=%d", i, def->name,
+                ground_scales[i], wall_scales[i]);
+        }
+    }
+
     // Generate ground and wall vertices per tile type
     for (int y = 0; y < map->height; y++) {
         for (int x = 0; x < map->width; x++) {
@@ -744,22 +884,41 @@ pz_map_renderer_set_map(pz_map_renderer *mr, const pz_map *map)
                 if (h < 0) {
                     ground_y = GROUND_Y_OFFSET + h * WALL_HEIGHT_UNIT;
                 }
-                ground_ptrs[idx] = emit_ground_quad_at_height(
-                    ground_ptrs[idx], x0, z0, x1, z1, ground_y);
+                ground_ptrs[idx] = emit_ground_quad_at_height(ground_ptrs[idx],
+                    x0, z0, x1, z1, ground_y, x, y, ground_scales[idx]);
             }
 
             // Walls
             if (wall_ptrs[idx]) {
                 if (h > 0) {
                     float height = h * WALL_HEIGHT_UNIT;
-                    wall_ptrs[idx] = emit_wall_box(
-                        wall_ptrs[idx], x0, z0, x1, z1, height, x, y, map);
+                    wall_ptrs[idx] = emit_wall_box(wall_ptrs[idx], x0, z0, x1,
+                        z1, height, x, y, map, wall_scales[idx]);
                 } else if (h < 0) {
                     float depth = -h * WALL_HEIGHT_UNIT;
-                    wall_ptrs[idx] = emit_pit_box(
-                        wall_ptrs[idx], x0, z0, x1, z1, depth, x, y, map);
+                    wall_ptrs[idx] = emit_pit_box(wall_ptrs[idx], x0, z0, x1,
+                        z1, depth, x, y, map, wall_scales[idx]);
                 }
             }
+        }
+    }
+
+    // DEBUG: Print first few vertices of first ground batch
+    for (int i = 0; i < map->tile_def_count && i < MAX_TILE_TEXTURES; i++) {
+        if (ground_verts[i] && ground_counts[i] >= 2) {
+            float *v = ground_verts[i];
+            // Print first tile (6 verts = 30 floats) and second tile
+            pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_RENDER,
+                "Ground batch %d tile0 v0: pos=(%.2f,%.2f,%.2f) uv=(%.4f,%.4f)",
+                i, v[0], v[1], v[2], v[3], v[4]);
+            pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_RENDER,
+                "Ground batch %d tile0 v5: pos=(%.2f,%.2f,%.2f) uv=(%.4f,%.4f)",
+                i, v[25], v[26], v[27], v[28], v[29]);
+            // Second tile starts at index 30
+            pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_RENDER,
+                "Ground batch %d tile1 v0: pos=(%.2f,%.2f,%.2f) uv=(%.4f,%.4f)",
+                i, v[30], v[31], v[32], v[33], v[34]);
+            break; // Only first batch
         }
     }
 
@@ -1213,4 +1372,181 @@ const char *
 pz_map_hot_reload_get_path(const pz_map_hot_reload *hr)
 {
     return hr ? hr->path : NULL;
+}
+
+// ============================================================================
+// Debug Drawing
+// ============================================================================
+
+// Generate debug lines for texture scale boundaries
+static void
+generate_debug_lines(pz_map_renderer *mr)
+{
+    if (!mr || !mr->map || mr->debug_line_shader == PZ_INVALID_HANDLE) {
+        return;
+    }
+
+    // Destroy old buffer
+    if (mr->debug_line_buffer != PZ_INVALID_HANDLE) {
+        pz_renderer_destroy_buffer(mr->renderer, mr->debug_line_buffer);
+        mr->debug_line_buffer = PZ_INVALID_HANDLE;
+    }
+    mr->debug_line_vertex_count = 0;
+
+    const pz_map *map = mr->map;
+
+    // Get the maximum texture scale used in any tile
+    int max_scale = 1;
+    for (int i = 0; i < map->tile_def_count && i < MAX_TILE_TEXTURES; i++) {
+        const pz_tile_def *def = &map->tile_defs[i];
+        const pz_tile_config *config = get_tile_config(mr, def->name);
+        if (config) {
+            if (config->ground_texture_scale > max_scale) {
+                max_scale = config->ground_texture_scale;
+            }
+        }
+    }
+
+    if (max_scale <= 1) {
+        // No scaling, no debug lines needed
+        return;
+    }
+
+    // Calculate how many grid lines we need
+    float half_w = map->world_width / 2.0f;
+    float half_h = map->world_height / 2.0f;
+
+    // Lines every 'max_scale' tiles
+    int x_lines = (map->width / max_scale) + 1;
+    int y_lines = (map->height / max_scale) + 1;
+    int total_lines = x_lines + y_lines;
+    int total_vertices = total_lines * 2; // 2 verts per line
+
+    // Each vertex: x, y, z, r, g, b, a (7 floats)
+    float *verts = pz_alloc(total_vertices * 7 * sizeof(float));
+    float *v = verts;
+
+    // Debug line color - bright cyan
+    float r = 0.0f, g = 1.0f, b = 1.0f, a = 0.6f;
+
+    // Y position for lines (slightly above ground)
+    float line_y = GROUND_Y_OFFSET + 0.05f;
+
+    // Vertical lines (along Z axis)
+    for (int i = 0; i <= map->width / max_scale; i++) {
+        float x = (i * max_scale) * map->tile_size - half_w;
+        float z0 = -half_h;
+        float z1 = half_h;
+
+        // Start vertex
+        *v++ = x;
+        *v++ = line_y;
+        *v++ = z0;
+        *v++ = r;
+        *v++ = g;
+        *v++ = b;
+        *v++ = a;
+
+        // End vertex
+        *v++ = x;
+        *v++ = line_y;
+        *v++ = z1;
+        *v++ = r;
+        *v++ = g;
+        *v++ = b;
+        *v++ = a;
+    }
+
+    // Horizontal lines (along X axis)
+    for (int i = 0; i <= map->height / max_scale; i++) {
+        float z = (i * max_scale) * map->tile_size - half_h;
+        float x0 = -half_w;
+        float x1 = half_w;
+
+        // Start vertex
+        *v++ = x0;
+        *v++ = line_y;
+        *v++ = z;
+        *v++ = r;
+        *v++ = g;
+        *v++ = b;
+        *v++ = a;
+
+        // End vertex
+        *v++ = x1;
+        *v++ = line_y;
+        *v++ = z;
+        *v++ = r;
+        *v++ = g;
+        *v++ = b;
+        *v++ = a;
+    }
+
+    mr->debug_line_vertex_count = total_vertices;
+
+    pz_buffer_desc desc = {
+        .type = PZ_BUFFER_VERTEX,
+        .usage = PZ_BUFFER_STATIC,
+        .data = verts,
+        .size = total_vertices * 7 * sizeof(float),
+    };
+    mr->debug_line_buffer = pz_renderer_create_buffer(mr->renderer, &desc);
+
+    pz_free(verts);
+
+    pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_RENDER,
+        "Debug lines: %d vertices for scale=%d grid", total_vertices,
+        max_scale);
+}
+
+void
+pz_map_renderer_set_debug_texture_scale(pz_map_renderer *mr, bool enabled)
+{
+    if (!mr) {
+        return;
+    }
+    mr->debug_texture_scale_enabled = enabled;
+
+    if (enabled && mr->map && mr->debug_line_buffer == PZ_INVALID_HANDLE) {
+        generate_debug_lines(mr);
+    }
+}
+
+bool
+pz_map_renderer_get_debug_texture_scale(pz_map_renderer *mr)
+{
+    return mr ? mr->debug_texture_scale_enabled : false;
+}
+
+void
+pz_map_renderer_draw_debug(pz_map_renderer *mr, const pz_mat4 *view_projection)
+{
+    if (!mr || !mr->debug_texture_scale_enabled) {
+        return;
+    }
+
+    if (mr->debug_line_shader == PZ_INVALID_HANDLE
+        || mr->debug_line_pipeline == PZ_INVALID_HANDLE) {
+        return;
+    }
+
+    // Generate lines if needed
+    if (mr->debug_line_buffer == PZ_INVALID_HANDLE && mr->map) {
+        generate_debug_lines(mr);
+    }
+
+    if (mr->debug_line_buffer == PZ_INVALID_HANDLE
+        || mr->debug_line_vertex_count == 0) {
+        return;
+    }
+
+    pz_renderer_set_uniform_mat4(
+        mr->renderer, mr->debug_line_shader, "u_mvp", view_projection);
+
+    pz_draw_cmd cmd = {
+        .pipeline = mr->debug_line_pipeline,
+        .vertex_buffer = mr->debug_line_buffer,
+        .vertex_count = mr->debug_line_vertex_count,
+    };
+    pz_renderer_draw(mr->renderer, &cmd);
 }
