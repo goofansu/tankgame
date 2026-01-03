@@ -590,6 +590,11 @@ generate_light_geometry(pz_lighting *lighting, const pz_light *light,
                 angles[angle_count++] = diff_b + epsilon;
             }
         } else {
+            // Normalize angles to [0, 2π] to match the regular sweep angles
+            if (angle_a < 0)
+                angle_a += 2.0f * PZ_PI;
+            if (angle_b < 0)
+                angle_b += 2.0f * PZ_PI;
             angles[angle_count++] = angle_a - epsilon;
             angles[angle_count++] = angle_a;
             angles[angle_count++] = angle_a + epsilon;
@@ -705,6 +710,46 @@ generate_light_geometry(pz_lighting *lighting, const pz_light *light,
         prev_uv_x = uv_x;
         prev_uv_z = uv_z;
         has_prev = true;
+    }
+
+    // For point lights, close the fan by connecting last vertex to first
+    // (Spotlights don't need this as they have defined start/end angles)
+    if (light->type == PZ_LIGHT_POINT && unique_count >= 2
+        && vertex_count + 3 <= max_vertices) {
+        // Cast ray at angle 0 (first angle direction) to get first vertex
+        float first_angle = unique_angles[0];
+        pz_vec2 first_dir = { cosf(first_angle), sinf(first_angle) };
+        float first_t
+            = cast_ray(lighting, light->position, first_dir, light->radius);
+        float first_uv_x
+            = (center_x + first_dir.x * first_t) / lighting->world_width + 0.5f;
+        float first_uv_z
+            = (center_z + first_dir.y * first_t) / lighting->world_height
+            + 0.5f;
+
+        // Emit closing triangle: center, last, first
+        *v++ = uv_center_x;
+        *v++ = uv_center_z;
+        *v++ = light->color.x;
+        *v++ = light->color.y;
+        *v++ = light->color.z;
+        *v++ = light->intensity;
+
+        *v++ = prev_uv_x;
+        *v++ = prev_uv_z;
+        *v++ = light->color.x;
+        *v++ = light->color.y;
+        *v++ = light->color.z;
+        *v++ = light->intensity;
+
+        *v++ = first_uv_x;
+        *v++ = first_uv_z;
+        *v++ = light->color.x;
+        *v++ = light->color.y;
+        *v++ = light->color.z;
+        *v++ = light->intensity;
+
+        vertex_count += 3;
     }
 
     pz_free(unique_angles);

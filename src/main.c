@@ -562,7 +562,7 @@ app_frame(void)
                     pz_vec3 exp_color = { 1.0f, 0.3f + 0.5f * t, 0.1f * t };
                     pz_lighting_add_point_light(g_app.lighting,
                         g_app.explosion_lights[i].pos, exp_color,
-                        3.0f * intensity, 8.0f);
+                        3.0f * intensity, 6.0f);
                 } else {
                     pz_vec3 exp_color = { 0.7f, 0.8f, 1.0f };
                     pz_lighting_add_point_light(g_app.lighting,
