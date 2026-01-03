@@ -1,5 +1,8 @@
 /*
  * Tank Game - MIDI Music System
+ *
+ * Uses a global master time to keep all layers synchronized.
+ * All layers loop together using the maximum layer length as the loop point.
  */
 
 #include "engine/pz_music.h"
@@ -17,12 +20,10 @@
 typedef struct pz_music_layer {
     tml_message *midi;
     tml_message *current;
-    double time_ms;
     double length_ms;
     _Atomic float volume;
     _Atomic bool enabled;
     bool active;
-    bool loop;
     int midi_channel;
 } pz_music_layer;
 
@@ -32,8 +33,12 @@ struct pz_music {
     int layer_count;
     _Atomic float master_volume;
     _Atomic bool playing;
-    _Atomic double playback_time_ms;
     int sample_rate;
+
+    // Global master time - all layers sync to this
+    double master_time_ms;
+    double loop_length_ms;
+    bool looping;
 };
 
 static double
@@ -91,50 +96,56 @@ pz_music_dispatch_message(
     }
 }
 
+// Seek layer's current pointer to match master_time_ms
 static void
-pz_music_sync_layer(pz_music *music, pz_music_layer *layer, bool enabled)
-{
-    if (!layer->midi || !layer->current) {
-        if (layer->loop && layer->midi && layer->length_ms > 0.0) {
-            while (layer->time_ms >= layer->length_ms) {
-                layer->time_ms -= layer->length_ms;
-            }
-            layer->current = layer->midi;
-            tsf_channel_note_off_all(music->soundfont, layer->midi_channel);
-        } else {
-            return;
-        }
-    }
-
-    while (true) {
-        while (layer->current && layer->current->time <= layer->time_ms) {
-            pz_music_dispatch_message(music, layer, layer->current, enabled);
-            layer->current = layer->current->next;
-        }
-
-        if (!layer->current && layer->loop && layer->midi
-            && layer->length_ms > 0.0) {
-            while (layer->time_ms >= layer->length_ms) {
-                layer->time_ms -= layer->length_ms;
-            }
-            layer->current = layer->midi;
-            tsf_channel_note_off_all(music->soundfont, layer->midi_channel);
-            continue;
-        }
-        break;
-    }
-}
-
-static void
-pz_music_reset_layer(pz_music *music, pz_music_layer *layer)
+pz_music_seek_layer_to_time(
+    pz_music *music, pz_music_layer *layer, double time_ms)
 {
     if (!layer->midi) {
         return;
     }
-    layer->time_ms = 0.0;
+
+    // Find the position in the MIDI that corresponds to time_ms
     layer->current = layer->midi;
-    layer->active = atomic_load_explicit(&layer->enabled, memory_order_relaxed);
-    tsf_channel_note_off_all(music->soundfont, layer->midi_channel);
+    while (layer->current && layer->current->time <= time_ms) {
+        layer->current = layer->current->next;
+    }
+}
+
+// Process MIDI events for a layer up to target_time_ms
+static void
+pz_music_process_layer_to_time(pz_music *music, pz_music_layer *layer,
+    double from_time_ms, double to_time_ms, bool enabled)
+{
+    if (!layer->midi || !layer->current) {
+        return;
+    }
+
+    // Process all events from current position up to to_time_ms
+    while (layer->current && layer->current->time <= to_time_ms) {
+        // Only dispatch events that are after from_time_ms
+        if (layer->current->time >= from_time_ms) {
+            pz_music_dispatch_message(music, layer, layer->current, enabled);
+        }
+        layer->current = layer->current->next;
+    }
+}
+
+static void
+pz_music_reset_all_layers(pz_music *music)
+{
+    music->master_time_ms = 0.0;
+
+    for (int i = 0; i < music->layer_count; i++) {
+        pz_music_layer *layer = &music->layers[i];
+        if (!layer->midi) {
+            continue;
+        }
+        layer->current = layer->midi;
+        layer->active
+            = atomic_load_explicit(&layer->enabled, memory_order_relaxed);
+        tsf_channel_note_off_all(music->soundfont, layer->midi_channel);
+    }
 }
 
 pz_music *
@@ -173,6 +184,10 @@ pz_music_create(const pz_music_config *config)
         music->layer_count = PZ_MUSIC_MAX_LAYERS;
     }
 
+    // Track max length for loop point
+    double max_length_ms = 0.0;
+    bool any_looping = false;
+
     for (int i = 0; i < music->layer_count; i++) {
         pz_music_layer *layer = &music->layers[i];
         const pz_music_layer_config *layer_config = &config->layers[i];
@@ -185,11 +200,18 @@ pz_music_create(const pz_music_config *config)
         }
 
         layer->current = layer->midi;
-        layer->time_ms = 0.0;
         layer->length_ms = pz_music_find_length_ms(layer->midi);
         layer->midi_channel = layer_config->midi_channel;
-        layer->loop = layer_config->loop;
         layer->active = layer_config->enabled;
+
+        if (layer_config->loop) {
+            any_looping = true;
+        }
+
+        // Use maximum layer length as the global loop point
+        if (layer->length_ms > max_length_ms) {
+            max_length_ms = layer->length_ms;
+        }
 
         atomic_store_explicit(
             &layer->volume, layer_config->volume, memory_order_relaxed);
@@ -201,13 +223,21 @@ pz_music_create(const pz_music_config *config)
         tsf_channel_set_volume(music->soundfont, layer->midi_channel,
             atomic_load_explicit(&layer->volume, memory_order_relaxed));
         tsf_channel_set_pan(music->soundfont, layer->midi_channel, 0.5f);
+
+        pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_AUDIO,
+            "Layer %d: channel=%d length=%.1fms", i, layer->midi_channel,
+            layer->length_ms);
     }
 
-    atomic_store_explicit(&music->playing, false, memory_order_relaxed);
-    atomic_store_explicit(&music->playback_time_ms, 0.0, memory_order_relaxed);
+    music->master_time_ms = 0.0;
+    music->loop_length_ms = max_length_ms;
+    music->looping = any_looping;
 
-    pz_log(PZ_LOG_INFO, PZ_LOG_CAT_AUDIO, "Music system ready (%d layers)",
-        music->layer_count);
+    atomic_store_explicit(&music->playing, false, memory_order_relaxed);
+
+    pz_log(PZ_LOG_INFO, PZ_LOG_CAT_AUDIO,
+        "Music system ready (%d layers, loop=%.1fms)", music->layer_count,
+        music->loop_length_ms);
 
     return music;
 }
@@ -252,10 +282,7 @@ pz_music_stop(pz_music *music)
         return;
     }
     atomic_store_explicit(&music->playing, false, memory_order_relaxed);
-    atomic_store_explicit(&music->playback_time_ms, 0.0, memory_order_relaxed);
-    for (int i = 0; i < music->layer_count; i++) {
-        pz_music_reset_layer(music, &music->layers[i]);
-    }
+    pz_music_reset_all_layers(music);
 }
 
 void
@@ -350,7 +377,44 @@ pz_music_get_time_ms(const pz_music *music)
     if (!music) {
         return 0.0;
     }
-    return atomic_load_explicit(&music->playback_time_ms, memory_order_relaxed);
+    return music->master_time_ms;
+}
+
+double
+pz_music_get_loop_length_ms(const pz_music *music)
+{
+    if (!music) {
+        return 0.0;
+    }
+    return music->loop_length_ms;
+}
+
+int
+pz_music_get_layer_count(const pz_music *music)
+{
+    if (!music) {
+        return 0;
+    }
+    return music->layer_count;
+}
+
+bool
+pz_music_get_layer_info(
+    const pz_music *music, int layer, pz_music_layer_info *info)
+{
+    if (!music || !info || layer < 0 || layer >= music->layer_count) {
+        return false;
+    }
+
+    const pz_music_layer *l = &music->layers[layer];
+    info->enabled = atomic_load_explicit(&l->enabled, memory_order_relaxed);
+    info->active = l->active;
+    info->volume = atomic_load_explicit(&l->volume, memory_order_relaxed);
+    info->time_ms = music->master_time_ms; // All layers share master time
+    info->length_ms = l->length_ms;
+    info->midi_channel = l->midi_channel;
+
+    return true;
 }
 
 void
@@ -381,6 +445,7 @@ pz_music_render(
     int remaining = num_frames;
     int offset = 0;
 
+    // Update channel volumes
     for (int i = 0; i < music->layer_count; i++) {
         pz_music_layer *layer = &music->layers[i];
         if (!layer->midi) {
@@ -396,6 +461,7 @@ pz_music_render(
         tsf_channel_set_volume(music->soundfont, layer->midi_channel, volume);
     }
 
+    // Handle enable/disable state changes
     for (int i = 0; i < music->layer_count; i++) {
         pz_music_layer *layer = &music->layers[i];
         if (!layer->midi) {
@@ -409,10 +475,12 @@ pz_music_render(
         } else if (enabled && !layer->active) {
             layer->active = true;
         }
-        pz_music_sync_layer(music, layer, enabled);
     }
 
     while (remaining > 0) {
+        double from_time = music->master_time_ms;
+
+        // Find next MIDI event time across all layers
         double next_delta_ms = (double)remaining * ms_per_sample;
 
         for (int i = 0; i < music->layer_count; i++) {
@@ -420,9 +488,18 @@ pz_music_render(
             if (!layer->midi || !layer->current) {
                 continue;
             }
-            double delta = (double)layer->current->time - layer->time_ms;
+            double delta = (double)layer->current->time - music->master_time_ms;
             if (delta > 0.0 && delta < next_delta_ms) {
                 next_delta_ms = delta;
+            }
+        }
+
+        // Also consider loop boundary
+        if (music->looping && music->loop_length_ms > 0.0) {
+            double delta_to_loop
+                = music->loop_length_ms - music->master_time_ms;
+            if (delta_to_loop > 0.0 && delta_to_loop < next_delta_ms) {
+                next_delta_ms = delta_to_loop;
             }
         }
 
@@ -434,22 +511,20 @@ pz_music_render(
             frames_to_render = remaining;
         }
 
+        // Render audio
         tsf_render_float(music->soundfont,
             buffer + (size_t)offset * (size_t)num_channels, frames_to_render,
             0);
 
+        // Advance master time
         double advance_ms = (double)frames_to_render * ms_per_sample;
-        for (int i = 0; i < music->layer_count; i++) {
-            pz_music_layer *layer = &music->layers[i];
-            if (!layer->midi) {
-                continue;
-            }
-            layer->time_ms += advance_ms;
-        }
+        double to_time = from_time + advance_ms;
+        music->master_time_ms = to_time;
 
         offset += frames_to_render;
         remaining -= frames_to_render;
 
+        // Process MIDI events for all layers
         for (int i = 0; i < music->layer_count; i++) {
             pz_music_layer *layer = &music->layers[i];
             if (!layer->midi) {
@@ -457,13 +532,27 @@ pz_music_render(
             }
             bool enabled
                 = atomic_load_explicit(&layer->enabled, memory_order_relaxed);
-            pz_music_sync_layer(music, layer, enabled);
+            pz_music_process_layer_to_time(
+                music, layer, from_time, to_time, enabled && layer->active);
         }
-    }
 
-    if (music->layer_count > 0) {
-        atomic_store_explicit(&music->playback_time_ms,
-            music->layers[0].time_ms, memory_order_relaxed);
+        // Check for loop
+        if (music->looping && music->loop_length_ms > 0.0
+            && music->master_time_ms >= music->loop_length_ms) {
+            music->master_time_ms
+                = fmod(music->master_time_ms, music->loop_length_ms);
+
+            // Reset all layer pointers and kill notes
+            for (int i = 0; i < music->layer_count; i++) {
+                pz_music_layer *layer = &music->layers[i];
+                if (!layer->midi) {
+                    continue;
+                }
+                tsf_channel_note_off_all(music->soundfont, layer->midi_channel);
+                pz_music_seek_layer_to_time(
+                    music, layer, music->master_time_ms);
+            }
+        }
     }
 }
 

@@ -22,6 +22,7 @@
 #include "engine/pz_camera.h"
 #include "engine/pz_debug_overlay.h"
 #include "engine/pz_font.h"
+#include "engine/pz_music.h"
 #include "engine/render/pz_renderer.h"
 #include "engine/render/pz_texture.h"
 #include "game/pz_ai.h"
@@ -112,6 +113,7 @@ typedef struct app_state {
     const char *lightmap_debug_path;
     const char *map_path_arg;
     const char *campaign_path_arg;
+    bool show_debug_overlay;
 
     // Core systems (persistent across maps)
     pz_renderer *renderer;
@@ -412,6 +414,7 @@ parse_args(int argc, char *argv[])
     g_app.lightmap_debug_path = NULL;
     g_app.map_path_arg = NULL;
     g_app.campaign_path_arg = NULL;
+    g_app.show_debug_overlay = false;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--screenshot") == 0 && i + 1 < argc) {
@@ -426,6 +429,8 @@ parse_args(int argc, char *argv[])
             g_app.map_path_arg = argv[++i];
         } else if (strcmp(argv[i], "--campaign") == 0 && i + 1 < argc) {
             g_app.campaign_path_arg = argv[++i];
+        } else if (strcmp(argv[i], "--debug") == 0) {
+            g_app.show_debug_overlay = true;
         }
     }
 }
@@ -496,6 +501,8 @@ app_init(void)
     g_app.debug_overlay = pz_debug_overlay_create(g_app.renderer);
     if (!g_app.debug_overlay) {
         pz_log(PZ_LOG_WARN, PZ_LOG_CAT_CORE, "Failed to create debug overlay");
+    } else if (g_app.show_debug_overlay) {
+        pz_debug_overlay_set_visible(g_app.debug_overlay, true);
     }
 
     // Initialize font system
@@ -613,6 +620,120 @@ app_init(void)
     g_app.mouse_left_just_pressed = false;
     g_app.scroll_accumulator = 0.0f;
     g_app.key_f_just_pressed = false;
+}
+
+// Render music debug overlay (called when debug overlay is visible)
+static void
+render_music_debug_overlay(void)
+{
+    if (!pz_debug_overlay_is_visible(g_app.debug_overlay)) {
+        return;
+    }
+    if (!g_app.game_music) {
+        return;
+    }
+
+    pz_game_music_debug_info info;
+    if (!pz_game_music_get_debug_info(g_app.game_music, &info)) {
+        return;
+    }
+
+    // Position music debug panel on the right side of the screen
+    // Font is now 16x16 (2x scaled from 8x8)
+    int fb_width, fb_height;
+    pz_renderer_get_viewport(g_app.renderer, &fb_width, &fb_height);
+    int panel_x = fb_width - 380; // Wider panel for larger text
+    int panel_y = 16;
+    int line_height = 20; // 16px font + 4px spacing
+    int y = panel_y;
+
+    pz_vec4 white = { 1.0f, 1.0f, 1.0f, 1.0f };
+    pz_vec4 green = { 0.3f, 1.0f, 0.3f, 1.0f };
+    pz_vec4 yellow = { 1.0f, 1.0f, 0.3f, 1.0f };
+    pz_vec4 red = { 1.0f, 0.3f, 0.3f, 1.0f };
+    pz_vec4 cyan = { 0.3f, 1.0f, 1.0f, 1.0f };
+    pz_vec4 gray = { 0.6f, 0.6f, 0.6f, 1.0f };
+    (void)red;
+
+    // Header
+    pz_debug_overlay_text_color(
+        g_app.debug_overlay, panel_x, y, cyan, "-- Music Debug --");
+    y += line_height + 4;
+
+    // State
+    const char *state_str
+        = info.is_victory ? "VICTORY" : (info.playing ? "PLAYING" : "STOPPED");
+    pz_vec4 state_color = info.playing ? green : gray;
+    pz_debug_overlay_text_color(
+        g_app.debug_overlay, panel_x, y, state_color, "State: %s", state_str);
+    y += line_height;
+
+    // BPM and timing
+    pz_debug_overlay_text_color(
+        g_app.debug_overlay, panel_x, y, white, "BPM: %.1f", info.bpm);
+    y += line_height;
+
+    // Time with beat indicator
+    double beat_duration_ms = 60000.0 / info.bpm;
+    double beat_progress = info.beat_pos / beat_duration_ms;
+    int beat_num = (int)(info.time_ms / beat_duration_ms) % 4 + 1;
+    pz_vec4 beat_color = (beat_progress < 0.1) ? yellow : white;
+    pz_debug_overlay_text_color(g_app.debug_overlay, panel_x, y, beat_color,
+        "Time: %.1fs [%d]", info.time_ms / 1000.0, beat_num);
+    y += line_height;
+
+    // Loop length
+    pz_debug_overlay_text_color(g_app.debug_overlay, panel_x, y, white,
+        "Loop: %.1fs", info.loop_length_ms / 1000.0);
+    y += line_height;
+
+    // Master volume
+    pz_debug_overlay_text_color(g_app.debug_overlay, panel_x, y, white,
+        "Volume: %.0f%%", info.master_volume * 100.0f);
+    y += line_height + 4;
+
+    // Intensity layers
+    pz_debug_overlay_text_color(
+        g_app.debug_overlay, panel_x, y, cyan, "Intensity:");
+    y += line_height;
+
+    pz_vec4 i1_color = info.intensity1_active
+        ? green
+        : (info.intensity1_pending ? yellow : gray);
+    const char *i1_status = info.intensity1_active
+        ? "ON"
+        : (info.intensity1_pending ? "PENDING" : "OFF");
+    pz_debug_overlay_text_color(
+        g_app.debug_overlay, panel_x, y, i1_color, "  I1: %s", i1_status);
+    y += line_height;
+
+    pz_vec4 i2_color = info.intensity2_active
+        ? green
+        : (info.intensity2_pending ? yellow : gray);
+    const char *i2_status = info.intensity2_active
+        ? "ON"
+        : (info.intensity2_pending ? "PENDING" : "OFF");
+    pz_debug_overlay_text_color(
+        g_app.debug_overlay, panel_x, y, i2_color, "  I2: %s", i2_status);
+    y += line_height + 4;
+
+    // Layer details
+    pz_debug_overlay_text_color(g_app.debug_overlay, panel_x, y, cyan,
+        "Layers (%d):", info.layer_count);
+    y += line_height;
+
+    for (int i = 0; i < info.layer_count && i < 6; i++) {
+        pz_music_layer_info layer_info;
+        if (pz_game_music_get_layer_info(g_app.game_music, i, &layer_info)) {
+            pz_vec4 layer_color = layer_info.active ? green : gray;
+            char status
+                = layer_info.enabled ? (layer_info.active ? '+' : '~') : '-';
+            pz_debug_overlay_text_color(g_app.debug_overlay, panel_x, y,
+                layer_color, "[%c] ch%d v%.0f%%", status,
+                layer_info.midi_channel, layer_info.volume * 100.0f);
+            y += line_height;
+        }
+    }
 }
 
 static void
@@ -1132,9 +1253,6 @@ app_frame(void)
             g_app.session.particle_mgr, g_app.renderer, vp, cam_right, cam_up);
     }
 
-    pz_debug_overlay_render(g_app.debug_overlay);
-    pz_debug_overlay_end_frame(g_app.debug_overlay);
-
     // Render HUD
     if (g_app.font_mgr && g_app.font_russo) {
         pz_font_begin_frame(g_app.font_mgr);
@@ -1285,6 +1403,11 @@ app_frame(void)
 
         pz_font_end_frame(g_app.font_mgr);
     }
+
+    // Render debug overlay on top of everything
+    render_music_debug_overlay();
+    pz_debug_overlay_render(g_app.debug_overlay);
+    pz_debug_overlay_end_frame(g_app.debug_overlay);
 
     bool should_quit = false;
     g_app.frame_count++;

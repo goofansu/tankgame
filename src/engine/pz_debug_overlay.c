@@ -17,14 +17,17 @@
  */
 
 #define FRAME_TIME_HISTORY 120 // Number of frames to track for graph
-#define FONT_CHAR_WIDTH 8 // Pixels per character
-#define FONT_CHAR_HEIGHT 8 // Pixels per character
+#define FONT_CHAR_WIDTH 8 // Pixels per character in texture
+#define FONT_CHAR_HEIGHT 8 // Pixels per character in texture
+#define FONT_SCALE 2 // Scale factor for rendering (2x size)
+#define FONT_RENDER_WIDTH (FONT_CHAR_WIDTH * FONT_SCALE) // Rendered width
+#define FONT_RENDER_HEIGHT (FONT_CHAR_HEIGHT * FONT_SCALE) // Rendered height
 #define FONT_FIRST_CHAR 32 // ASCII start (space)
 #define FONT_LAST_CHAR 126 // ASCII end (~)
 #define FONT_CHARS_PER_ROW 16 // Characters per row in texture
 #define MAX_TEXT_CHARS 4096 // Maximum characters per frame
-#define GRAPH_WIDTH 120 // Graph width in pixels
-#define GRAPH_HEIGHT 60 // Graph height in pixels
+#define GRAPH_WIDTH 240 // Graph width in pixels (scaled)
+#define GRAPH_HEIGHT 120 // Graph height in pixels (scaled)
 
 /* ============================================================================
  * Embedded 8x8 Font Data (CP437-style)
@@ -445,8 +448,9 @@ render_text_internal(
     float tex_width = FONT_CHARS_PER_ROW * FONT_CHAR_WIDTH; // 128
     float tex_height = 6 * FONT_CHAR_HEIGHT; // 48
 
-    float char_w = FONT_CHAR_WIDTH;
-    float char_h = FONT_CHAR_HEIGHT;
+    // Use scaled dimensions for rendering
+    float render_w = FONT_RENDER_WIDTH;
+    float render_h = FONT_RENDER_HEIGHT;
 
     float cursor_x = (float)x;
     float cursor_y = (float)y;
@@ -456,12 +460,12 @@ render_text_internal(
 
         if (c == '\n') {
             cursor_x = (float)x;
-            cursor_y += char_h;
+            cursor_y += render_h;
             continue;
         }
 
         if (c < FONT_FIRST_CHAR || c > FONT_LAST_CHAR) {
-            cursor_x += char_w;
+            cursor_x += render_w;
             continue;
         }
 
@@ -469,15 +473,17 @@ render_text_internal(
         int row = char_index / FONT_CHARS_PER_ROW;
         int col = char_index % FONT_CHARS_PER_ROW;
 
-        float u0 = (col * char_w) / tex_width;
-        float v0 = (row * char_h) / tex_height;
-        float u1 = ((col + 1) * char_w) / tex_width;
-        float v1 = ((row + 1) * char_h) / tex_height;
+        // UV coordinates use original texture dimensions
+        float u0 = (col * FONT_CHAR_WIDTH) / tex_width;
+        float v0 = (row * FONT_CHAR_HEIGHT) / tex_height;
+        float u1 = ((col + 1) * FONT_CHAR_WIDTH) / tex_width;
+        float v1 = ((row + 1) * FONT_CHAR_HEIGHT) / tex_height;
 
-        add_text_quad(
-            overlay, cursor_x, cursor_y, char_w, char_h, u0, v0, u1, v1, color);
+        // Render at scaled size
+        add_text_quad(overlay, cursor_x, cursor_y, render_w, render_h, u0, v0,
+            u1, v1, color);
 
-        cursor_x += char_w;
+        cursor_x += render_w;
     }
 }
 
@@ -485,22 +491,15 @@ static void
 render_builtin_overlay(pz_debug_overlay *overlay)
 {
     // Background for the overlay panel
-    int panel_x = 8;
-    int panel_y = 8;
-    int panel_w = 200;
-    int panel_h = 90;
-
-    // Semi-transparent background (rendered as a solid quad using the font
-    // texture)
-    // We'll use a filled area in the font texture (or just skip this for now)
+    int panel_x = 16;
+    int panel_y = 16;
+    int line_height = FONT_RENDER_HEIGHT + 4; // Line height with spacing
 
     pz_vec4 white = { 1.0f, 1.0f, 1.0f, 1.0f };
     pz_vec4 green = { 0.3f, 1.0f, 0.3f, 1.0f };
     pz_vec4 yellow = { 1.0f, 1.0f, 0.3f, 1.0f };
     pz_vec4 red = { 1.0f, 0.3f, 0.3f, 1.0f };
     pz_vec4 cyan = { 0.3f, 1.0f, 1.0f, 1.0f };
-    (void)panel_w;
-    (void)panel_h;
     (void)white;
     (void)cyan;
 
@@ -517,11 +516,12 @@ render_builtin_overlay(pz_debug_overlay *overlay)
     render_text_internal(overlay, panel_x, panel_y, fps_color, buf);
 
     snprintf(buf, sizeof(buf), "Frame: %.2f ms", overlay->avg_frame_time_ms);
-    render_text_internal(overlay, panel_x, panel_y + 10, fps_color, buf);
+    render_text_internal(
+        overlay, panel_x, panel_y + line_height, fps_color, buf);
 
     // Frame time graph
     int graph_x = panel_x;
-    int graph_y = panel_y + 28;
+    int graph_y = panel_y + line_height * 2 + 8;
 
     // Draw graph background lines (16.67ms = 60fps, 33.33ms = 30fps)
     pz_vec4 grid_color = { 0.3f, 0.3f, 0.3f, 0.5f };
@@ -537,7 +537,7 @@ render_builtin_overlay(pz_debug_overlay *overlay)
     add_line(
         overlay, graph_x, y_30fps, graph_x + GRAPH_WIDTH, y_30fps, grid_color);
 
-    // Draw frame time graph (line strip as individual lines)
+    // Draw frame time graph (line strip as individual lines) - scale x by 2
     for (int i = 0; i < FRAME_TIME_HISTORY - 1; i++) {
         int idx0 = (overlay->frame_time_index + 1 + i) % FRAME_TIME_HISTORY;
         int idx1 = (overlay->frame_time_index + 2 + i) % FRAME_TIME_HISTORY;
@@ -549,9 +549,9 @@ render_builtin_overlay(pz_debug_overlay *overlay)
         t0 = pz_clampf(t0, 0.0f, 50.0f);
         t1 = pz_clampf(t1, 0.0f, 50.0f);
 
-        float x0 = graph_x + i;
+        float x0 = graph_x + i * 2;
         float y0 = graph_y + GRAPH_HEIGHT - (t0 / 50.0f) * GRAPH_HEIGHT;
-        float x1 = graph_x + i + 1;
+        float x1 = graph_x + (i + 1) * 2;
         float y1 = graph_y + GRAPH_HEIGHT - (t1 / 50.0f) * GRAPH_HEIGHT;
 
         // Color based on frame time

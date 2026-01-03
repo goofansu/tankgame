@@ -43,6 +43,21 @@ void pz_music_set_volume(pz_music *music, float volume);
 float pz_music_get_volume(const pz_music *music);
 
 double pz_music_get_time_ms(const pz_music *music);
+double pz_music_get_loop_length_ms(const pz_music *music);
+
+// Debug info for overlay
+typedef struct pz_music_layer_info {
+    bool enabled;
+    bool active;
+    float volume;
+    double time_ms;
+    double length_ms;
+    int midi_channel;
+} pz_music_layer_info;
+
+int pz_music_get_layer_count(const pz_music *music);
+bool pz_music_get_layer_info(
+    const pz_music *music, int layer, pz_music_layer_info *info);
 
 void pz_music_render(
     pz_music *music, float *buffer, int num_frames, int num_channels);

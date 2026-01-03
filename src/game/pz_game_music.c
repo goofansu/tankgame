@@ -350,3 +350,42 @@ pz_game_music_get_volume(const pz_game_music *gm)
     }
     return gm->master_volume;
 }
+
+bool
+pz_game_music_get_debug_info(
+    const pz_game_music *gm, pz_game_music_debug_info *info)
+{
+    if (!gm || !info) {
+        return false;
+    }
+
+    info->playing = (gm->state == MUSIC_STATE_PLAYING
+        || gm->state == MUSIC_STATE_FADING_OUT
+        || gm->state == MUSIC_STATE_VICTORY);
+    info->is_victory = (gm->state == MUSIC_STATE_VICTORY);
+    info->bpm = gm->bpm;
+    info->time_ms = gm->current_time_ms;
+    info->loop_length_ms
+        = gm->music ? pz_music_get_loop_length_ms(gm->music) : 0.0;
+    info->beat_pos = fmod(gm->current_time_ms, gm->beat_duration_ms);
+    info->master_volume = gm->master_volume;
+    info->intensity1_active = gm->current_intensity1;
+    info->intensity2_active = gm->current_intensity2;
+    info->intensity1_pending
+        = gm->has_pending_changes && gm->pending_intensity1;
+    info->intensity2_pending
+        = gm->has_pending_changes && gm->pending_intensity2;
+    info->layer_count = gm->music ? pz_music_get_layer_count(gm->music) : 0;
+
+    return true;
+}
+
+bool
+pz_game_music_get_layer_info(
+    const pz_game_music *gm, int layer, pz_music_layer_info *info)
+{
+    if (!gm || !gm->music || !info) {
+        return false;
+    }
+    return pz_music_get_layer_info(gm->music, layer, info);
+}
