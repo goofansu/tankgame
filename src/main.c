@@ -20,6 +20,7 @@
 #include "core/pz_str.h"
 #include "engine/pz_camera.h"
 #include "engine/pz_debug_overlay.h"
+#include "engine/pz_font.h"
 #include "engine/render/pz_renderer.h"
 #include "engine/render/pz_texture.h"
 #include "game/pz_ai.h"
@@ -79,6 +80,9 @@ typedef struct app_state {
     pz_tracks *tracks;
     pz_lighting *lighting;
     pz_debug_overlay *debug_overlay;
+    pz_font_manager *font_mgr;
+    pz_font *font_russo;
+    pz_font *font_caveat;
 
     pz_tank_manager *tank_mgr;
     pz_tank *player_tank;
@@ -231,6 +235,23 @@ app_init(void)
     g_app.debug_overlay = pz_debug_overlay_create(g_app.renderer);
     if (!g_app.debug_overlay) {
         pz_log(PZ_LOG_WARN, PZ_LOG_CAT_CORE, "Failed to create debug overlay");
+    }
+
+    // Initialize font system
+    g_app.font_mgr = pz_font_manager_create(g_app.renderer);
+    if (g_app.font_mgr) {
+        g_app.font_russo
+            = pz_font_load(g_app.font_mgr, "assets/fonts/RussoOne-Regular.ttf");
+        if (!g_app.font_russo) {
+            pz_log(
+                PZ_LOG_WARN, PZ_LOG_CAT_CORE, "Failed to load Russo One font");
+        }
+        g_app.font_caveat = pz_font_load(
+            g_app.font_mgr, "assets/fonts/CaveatBrush-Regular.ttf");
+        if (!g_app.font_caveat) {
+            pz_log(PZ_LOG_WARN, PZ_LOG_CAT_CORE,
+                "Failed to load Caveat Brush font");
+        }
     }
 
     g_app.tank_mgr = pz_tank_manager_create(g_app.renderer, NULL);
@@ -766,6 +787,35 @@ app_frame(void)
     pz_debug_overlay_render(g_app.debug_overlay);
     pz_debug_overlay_end_frame(g_app.debug_overlay);
 
+    // Render player health HUD
+    if (g_app.font_mgr && g_app.font_russo && g_app.player_tank) {
+        pz_font_begin_frame(g_app.font_mgr);
+
+        int vp_width, vp_height;
+        pz_renderer_get_viewport(g_app.renderer, &vp_width, &vp_height);
+
+        pz_text_style health_style
+            = PZ_TEXT_STYLE_DEFAULT(g_app.font_russo, 36);
+        health_style.align_h = PZ_FONT_ALIGN_RIGHT;
+        health_style.align_v = PZ_FONT_ALIGN_BOTTOM;
+
+        // Color based on health percentage
+        float health_pct
+            = (float)g_app.player_tank->health / g_app.player_tank->max_health;
+        if (health_pct > 0.6f) {
+            health_style.color = pz_vec4_new(0.2f, 1.0f, 0.2f, 1.0f); // Green
+        } else if (health_pct > 0.3f) {
+            health_style.color = pz_vec4_new(1.0f, 0.8f, 0.2f, 1.0f); // Yellow
+        } else {
+            health_style.color = pz_vec4_new(1.0f, 0.2f, 0.2f, 1.0f); // Red
+        }
+
+        pz_font_drawf(g_app.font_mgr, &health_style, (float)vp_width - 20.0f,
+            (float)vp_height - 20.0f, "HP: %d", g_app.player_tank->health);
+
+        pz_font_end_frame(g_app.font_mgr);
+    }
+
     bool should_quit = false;
     g_app.frame_count++;
     if (g_app.auto_screenshot && g_app.frame_count >= g_app.screenshot_frames) {
@@ -860,6 +910,7 @@ app_event(const sapp_event *event)
 static void
 app_cleanup(void)
 {
+    pz_font_manager_destroy(g_app.font_mgr);
     pz_debug_overlay_destroy(g_app.debug_overlay);
     pz_debug_cmd_shutdown();
 

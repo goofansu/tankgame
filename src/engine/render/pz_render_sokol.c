@@ -64,6 +64,7 @@ static const shader_desc_entry SHADER_DESC_TABLE[] = {
     { "laser", tankgame_laser_shader_desc },
     { "debug_text", tankgame_debug_text_shader_desc },
     { "debug_line", tankgame_debug_line_shader_desc },
+    { "sdf_text", tankgame_sdf_text_shader_desc },
 };
 
 typedef int (*pz_uniform_offset_fn)(const char *ub_name, const char *u_name);
@@ -97,6 +98,7 @@ static const char *SHADER_BLOCKS_LASER[]
     = { "laser_vs_params", "laser_fs_params" };
 static const char *SHADER_BLOCKS_DEBUG_TEXT[] = { "debug_text_vs_params" };
 static const char *SHADER_BLOCKS_DEBUG_LINE[] = { "debug_line_vs_params" };
+static const char *SHADER_BLOCKS_SDF_TEXT[] = { "sdf_text_vs_params" };
 
 static const shader_reflection SHADER_REFLECTION_TABLE[] = {
     { "test", tankgame_test_uniform_offset, tankgame_test_uniform_desc,
@@ -160,6 +162,11 @@ static const shader_reflection SHADER_REFLECTION_TABLE[] = {
         tankgame_debug_line_uniformblock_size, SHADER_BLOCKS_DEBUG_LINE,
         (int)(sizeof(SHADER_BLOCKS_DEBUG_LINE)
             / sizeof(SHADER_BLOCKS_DEBUG_LINE[0])) },
+    { "sdf_text", tankgame_sdf_text_uniform_offset,
+        tankgame_sdf_text_uniform_desc, tankgame_sdf_text_uniformblock_slot,
+        tankgame_sdf_text_uniformblock_size, SHADER_BLOCKS_SDF_TEXT,
+        (int)(sizeof(SHADER_BLOCKS_SDF_TEXT)
+            / sizeof(SHADER_BLOCKS_SDF_TEXT[0])) },
 };
 
 static const sg_shader_desc *

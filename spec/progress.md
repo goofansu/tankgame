@@ -67,6 +67,11 @@
 ## Bug Fixes
 - [x] Fixed pz_map_set_tile to auto-set height for WALL tiles (test_map fix)
 
+## UI/HUD System
+- [x] SDF font rendering system (pz_font.h/c) using stb_truetype
+- [x] Russo One and Caveat Brush fonts loaded
+- [x] Player health display (bottom-right, color-coded by health %)
+
 ---
 
 ## Enemy AI System
