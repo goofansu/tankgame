@@ -64,6 +64,13 @@ typedef struct {
 
 #define MAX_EXPLOSION_LIGHTS 16
 
+// Game states
+typedef enum {
+    GAME_STATE_PLAYING,
+    GAME_STATE_PLAYER_DEAD, // Player died, waiting for respawn
+    GAME_STATE_VICTORY, // All enemies defeated
+} game_state;
+
 typedef struct app_state {
     bool auto_screenshot;
     const char *screenshot_path;
@@ -98,6 +105,11 @@ typedef struct app_state {
     pz_sim *sim; // Fixed timestep simulation system
 
     explosion_light explosion_lights[MAX_EXPLOSION_LIGHTS];
+
+    // Game state
+    game_state state;
+    int initial_enemy_count;
+    float victory_timer; // Timer for restart prompt
 
     int frame_count;
     double last_hot_reload_check;
@@ -277,9 +289,13 @@ app_init(void)
                     (pz_enemy_level)es->level);
             }
         }
+        g_app.initial_enemy_count = enemy_count;
         pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME, "Spawned %d enemies from map",
             enemy_count);
     }
+
+    g_app.state = GAME_STATE_PLAYING;
+    g_app.victory_timer = 0.0f;
 
     g_app.projectile_mgr = pz_projectile_manager_create(g_app.renderer);
     g_app.particle_mgr = pz_particle_manager_create(g_app.renderer);
@@ -540,14 +556,25 @@ app_frame(void)
         }
     }
 
-    for (int i = 0; i < PZ_MAX_TANKS; i++) {
-        pz_tank *tank = &g_app.tank_mgr->tanks[i];
-        if ((tank->flags & PZ_TANK_FLAG_ACTIVE)
-            && (tank->flags & PZ_TANK_FLAG_DEAD)
-            && tank->respawn_timer > 2.9f) {
+    // Process tank death events
+    {
+        pz_tank_death_event death_events[PZ_MAX_DEATH_EVENTS];
+        int death_count = pz_tank_get_death_events(
+            g_app.tank_mgr, death_events, PZ_MAX_DEATH_EVENTS);
+
+        for (int i = 0; i < death_count; i++) {
+            pz_vec3 death_pos
+                = { death_events[i].pos.x, 0.6f, death_events[i].pos.y };
+
+            // Spawn explosion particles
+            pz_smoke_config explosion = PZ_SMOKE_TANK_EXPLOSION;
+            explosion.position = death_pos;
+            pz_particle_spawn_smoke(g_app.particle_mgr, &explosion);
+
+            // Add explosion light
             for (int j = 0; j < MAX_EXPLOSION_LIGHTS; j++) {
                 if (g_app.explosion_lights[j].timer <= 0.0f) {
-                    g_app.explosion_lights[j].pos = tank->pos;
+                    g_app.explosion_lights[j].pos = death_events[i].pos;
                     g_app.explosion_lights[j].is_tank = true;
                     g_app.explosion_lights[j].duration = 0.4f;
                     g_app.explosion_lights[j].timer
@@ -555,7 +582,23 @@ app_frame(void)
                     break;
                 }
             }
+
+            // Check win condition (all enemies defeated)
+            if (!death_events[i].is_player && g_app.state == GAME_STATE_PLAYING
+                && g_app.initial_enemy_count > 0) {
+                int enemies_remaining
+                    = pz_tank_count_enemies_alive(g_app.tank_mgr);
+                if (enemies_remaining == 0) {
+                    g_app.state = GAME_STATE_VICTORY;
+                    g_app.victory_timer = 0.0f;
+                    pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
+                        "Victory! All enemies defeated.");
+                }
+            }
         }
+
+        // Clear events for next frame
+        pz_tank_clear_death_events(g_app.tank_mgr);
     }
 
     // =========================================================================
@@ -787,8 +830,8 @@ app_frame(void)
     pz_debug_overlay_render(g_app.debug_overlay);
     pz_debug_overlay_end_frame(g_app.debug_overlay);
 
-    // Render player health HUD
-    if (g_app.font_mgr && g_app.font_russo && g_app.player_tank) {
+    // Render HUD
+    if (g_app.font_mgr && g_app.font_russo) {
         pz_font_begin_frame(g_app.font_mgr);
 
         // Get logical viewport size (framebuffer / dpi_scale)
@@ -810,8 +853,58 @@ app_frame(void)
         health_style.outline_width = 3.0f;
         health_style.outline_color = pz_vec4_new(0.0f, 0.0f, 0.0f, 1.0f);
 
-        pz_font_drawf(g_app.font_mgr, &health_style, vp_width - 20.0f,
-            vp_height - 20.0f, "HP: %d", g_app.player_tank->health);
+        // Player health (bottom-right)
+        if (g_app.player_tank) {
+            pz_font_drawf(g_app.font_mgr, &health_style, vp_width - 20.0f,
+                vp_height - 20.0f, "HP: %d", g_app.player_tank->health);
+        }
+
+        // Enemies remaining (top-right)
+        if (g_app.initial_enemy_count > 0) {
+            int enemies_alive = pz_tank_count_enemies_alive(g_app.tank_mgr);
+
+            pz_text_style enemy_style
+                = PZ_TEXT_STYLE_DEFAULT(g_app.font_russo, 28.0f);
+            enemy_style.align_h = PZ_FONT_ALIGN_RIGHT;
+            enemy_style.align_v = PZ_FONT_ALIGN_TOP;
+            enemy_style.color = pz_vec4_new(1.0f, 0.8f, 0.6f, 1.0f);
+            enemy_style.outline_width = 2.0f;
+            enemy_style.outline_color = pz_vec4_new(0.0f, 0.0f, 0.0f, 1.0f);
+
+            pz_font_drawf(g_app.font_mgr, &enemy_style, vp_width - 20.0f, 20.0f,
+                "Enemies: %d", enemies_alive);
+        }
+
+        // Victory message (centered)
+        if (g_app.state == GAME_STATE_VICTORY) {
+            g_app.victory_timer += frame_dt;
+
+            pz_text_style victory_style
+                = PZ_TEXT_STYLE_DEFAULT(g_app.font_russo, 64.0f);
+            victory_style.align_h = PZ_FONT_ALIGN_CENTER;
+            victory_style.align_v = PZ_FONT_ALIGN_CENTER;
+            victory_style.color = pz_vec4_new(1.0f, 0.9f, 0.3f, 1.0f);
+            victory_style.outline_width = 4.0f;
+            victory_style.outline_color = pz_vec4_new(0.2f, 0.15f, 0.0f, 1.0f);
+
+            pz_font_draw(g_app.font_mgr, &victory_style, vp_width * 0.5f,
+                vp_height * 0.4f, "VICTORY!");
+
+            // Show restart prompt after a short delay
+            if (g_app.victory_timer > 1.5f) {
+                pz_text_style restart_style
+                    = PZ_TEXT_STYLE_DEFAULT(g_app.font_russo, 28.0f);
+                restart_style.align_h = PZ_FONT_ALIGN_CENTER;
+                restart_style.align_v = PZ_FONT_ALIGN_CENTER;
+                restart_style.color = pz_vec4_new(0.9f, 0.9f, 0.9f, 1.0f);
+                restart_style.outline_width = 2.0f;
+                restart_style.outline_color
+                    = pz_vec4_new(0.0f, 0.0f, 0.0f, 1.0f);
+
+                pz_font_draw(g_app.font_mgr, &restart_style, vp_width * 0.5f,
+                    vp_height * 0.55f, "Press R to restart");
+            }
+        }
 
         pz_font_end_frame(g_app.font_mgr);
     }
@@ -868,6 +961,55 @@ app_event(const sapp_event *event)
                 }
             } else if (event->key_code == SAPP_KEYCODE_F) {
                 g_app.key_f_just_pressed = true;
+            } else if (event->key_code == SAPP_KEYCODE_R) {
+                // Restart game on R key (only in victory state or when dead)
+                if (g_app.state == GAME_STATE_VICTORY) {
+                    // Reset game state
+                    g_app.state = GAME_STATE_PLAYING;
+                    g_app.victory_timer = 0.0f;
+
+                    // Respawn player and reset loadout
+                    if (g_app.player_tank) {
+                        pz_tank_respawn(g_app.player_tank);
+                        pz_tank_reset_loadout(g_app.player_tank);
+                    }
+
+                    // Re-spawn all enemies from map
+                    if (g_app.game_map && g_app.ai_mgr) {
+                        // Clear existing AI controllers
+                        g_app.ai_mgr->controller_count = 0;
+
+                        // Remove all non-player tanks
+                        for (int i = 0; i < PZ_MAX_TANKS; i++) {
+                            pz_tank *tank = &g_app.tank_mgr->tanks[i];
+                            if ((tank->flags & PZ_TANK_FLAG_ACTIVE)
+                                && !(tank->flags & PZ_TANK_FLAG_PLAYER)) {
+                                tank->flags = 0; // Deactivate
+                                g_app.tank_mgr->tank_count--;
+                            }
+                        }
+
+                        // Spawn enemies again
+                        int enemy_count
+                            = pz_map_get_enemy_count(g_app.game_map);
+                        for (int i = 0; i < enemy_count; i++) {
+                            const pz_enemy_spawn *es
+                                = pz_map_get_enemy(g_app.game_map, i);
+                            if (es) {
+                                pz_ai_spawn_enemy(g_app.ai_mgr, es->pos,
+                                    es->angle, (pz_enemy_level)es->level);
+                            }
+                        }
+                    }
+
+                    // Clear projectiles and particles
+                    for (int i = 0; i < PZ_MAX_PROJECTILES; i++) {
+                        g_app.projectile_mgr->projectiles[i].active = false;
+                    }
+                    g_app.projectile_mgr->active_count = 0;
+
+                    pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME, "Game restarted");
+                }
             }
         }
         break;

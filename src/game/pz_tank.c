@@ -421,12 +421,16 @@ pz_tank_update_all(pz_tank_manager *mgr, const pz_map *map, float dt)
         if (!(tank->flags & PZ_TANK_FLAG_ACTIVE))
             continue;
 
-        // Handle dead tanks (respawn timer)
+        // Handle dead tanks (respawn timer for players only)
         if (tank->flags & PZ_TANK_FLAG_DEAD) {
-            tank->respawn_timer -= dt;
-            if (tank->respawn_timer <= 0.0f) {
-                pz_tank_respawn(tank);
+            // Only player tanks respawn
+            if (tank->flags & PZ_TANK_FLAG_PLAYER) {
+                tank->respawn_timer -= dt;
+                if (tank->respawn_timer <= 0.0f) {
+                    pz_tank_respawn(tank);
+                }
             }
+            // Non-player tanks stay dead (but remain active for cleanup)
             continue;
         }
 
@@ -490,6 +494,28 @@ pz_tank_damage(pz_tank *tank, int amount)
     }
 
     return false;
+}
+
+bool
+pz_tank_apply_damage(pz_tank_manager *mgr, pz_tank *tank, int amount)
+{
+    if (!mgr || !tank)
+        return false;
+
+    bool killed = pz_tank_damage(tank, amount);
+
+    if (killed) {
+        // Record death event
+        if (mgr->death_event_count < PZ_MAX_DEATH_EVENTS) {
+            pz_tank_death_event *event
+                = &mgr->death_events[mgr->death_event_count++];
+            event->tank_id = tank->id;
+            event->pos = tank->pos;
+            event->is_player = (tank->flags & PZ_TANK_FLAG_PLAYER) != 0;
+        }
+    }
+
+    return killed;
 }
 
 pz_tank *
@@ -613,6 +639,23 @@ pz_tank_get_current_weapon(const pz_tank *tank)
         return PZ_POWERUP_NONE;
 
     return tank->loadout[tank->loadout_index];
+}
+
+void
+pz_tank_reset_loadout(pz_tank *tank)
+{
+    if (!tank)
+        return;
+
+    // Reset to default weapon only
+    tank->loadout[0] = PZ_POWERUP_NONE;
+    tank->loadout_count = 1;
+    tank->loadout_index = 0;
+
+    update_turret_color(tank);
+
+    pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME, "Tank %d loadout reset to default",
+        tank->id);
 }
 
 /* ============================================================================
@@ -783,4 +826,48 @@ pz_tank_count_active(const pz_tank_manager *mgr)
         }
     }
     return count;
+}
+
+int
+pz_tank_count_enemies_alive(const pz_tank_manager *mgr)
+{
+    if (!mgr)
+        return 0;
+
+    int count = 0;
+    for (int i = 0; i < PZ_MAX_TANKS; i++) {
+        const pz_tank *tank = &mgr->tanks[i];
+        if ((tank->flags & PZ_TANK_FLAG_ACTIVE)
+            && !(tank->flags & PZ_TANK_FLAG_DEAD)
+            && !(tank->flags & PZ_TANK_FLAG_PLAYER)) {
+            count++;
+        }
+    }
+    return count;
+}
+
+int
+pz_tank_get_death_events(
+    const pz_tank_manager *mgr, pz_tank_death_event *events, int max_events)
+{
+    if (!mgr || !events || max_events <= 0)
+        return 0;
+
+    int count = mgr->death_event_count;
+    if (count > max_events)
+        count = max_events;
+
+    for (int i = 0; i < count; i++) {
+        events[i] = mgr->death_events[i];
+    }
+
+    return count;
+}
+
+void
+pz_tank_clear_death_events(pz_tank_manager *mgr)
+{
+    if (mgr) {
+        mgr->death_event_count = 0;
+    }
 }

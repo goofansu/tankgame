@@ -19,6 +19,16 @@
 // Maximum number of tanks
 #define PZ_MAX_TANKS 8
 
+// Maximum death events per frame
+#define PZ_MAX_DEATH_EVENTS 8
+
+// Death event - records when a tank dies
+typedef struct pz_tank_death_event {
+    int tank_id;
+    pz_vec2 pos;
+    bool is_player;
+} pz_tank_death_event;
+
 // Tank state flags
 typedef enum {
     PZ_TANK_FLAG_ACTIVE = (1 << 0),
@@ -77,6 +87,10 @@ typedef struct pz_tank_manager {
     pz_tank tanks[PZ_MAX_TANKS];
     int tank_count;
     int next_id;
+
+    // Death events for this frame (cleared each tick)
+    pz_tank_death_event death_events[PZ_MAX_DEATH_EVENTS];
+    int death_event_count;
 
     // Shared rendering resources
     pz_mesh *body_mesh;
@@ -149,7 +163,12 @@ void pz_tank_update_all(pz_tank_manager *mgr, const pz_map *map, float dt);
  */
 
 // Apply damage to a tank (returns true if tank was killed)
+// Use pz_tank_apply_damage for proper death event recording
 bool pz_tank_damage(pz_tank *tank, int amount);
+
+// Apply damage to a tank and record death event if killed
+// This is the preferred way to damage tanks
+bool pz_tank_apply_damage(pz_tank_manager *mgr, pz_tank *tank, int amount);
 
 // Check if a circle at pos with radius hits any tank (except exclude_id)
 // Returns the tank that was hit, or NULL
@@ -173,6 +192,9 @@ void pz_tank_cycle_weapon(pz_tank *tank, int scroll_delta);
 
 // Get currently selected weapon type
 int pz_tank_get_current_weapon(const pz_tank *tank);
+
+// Reset loadout to default weapon only
+void pz_tank_reset_loadout(pz_tank *tank);
 
 /* ============================================================================
  * Rendering
@@ -203,5 +225,16 @@ pz_vec2 pz_tank_get_fire_direction(const pz_tank *tank);
 
 // Get count of active (non-dead) tanks
 int pz_tank_count_active(const pz_tank_manager *mgr);
+
+// Get count of active enemy tanks (non-player, non-dead)
+int pz_tank_count_enemies_alive(const pz_tank_manager *mgr);
+
+// Get death events from this frame
+// Returns number of events, fills events array
+int pz_tank_get_death_events(
+    const pz_tank_manager *mgr, pz_tank_death_event *events, int max_events);
+
+// Clear death events (call at start of each frame)
+void pz_tank_clear_death_events(pz_tank_manager *mgr);
 
 #endif // PZ_TANK_H

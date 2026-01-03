@@ -256,8 +256,9 @@ pz_projectile_update(pz_projectile_manager *mgr, const pz_map *map,
                 tank_mgr, new_pos, PROJECTILE_RADIUS, exclude_id);
 
             if (hit_tank) {
-                // Apply damage
-                bool killed = pz_tank_damage(hit_tank, proj->damage);
+                // Apply damage and record death event if killed
+                bool killed
+                    = pz_tank_apply_damage(tank_mgr, hit_tank, proj->damage);
 
                 pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
                     "Projectile hit tank %d (damage=%d, killed=%d)",

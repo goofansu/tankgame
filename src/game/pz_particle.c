@@ -42,6 +42,18 @@ const pz_smoke_config PZ_SMOKE_TANK_HIT = {
     .velocity_spread = 1.5f,
 };
 
+const pz_smoke_config PZ_SMOKE_TANK_EXPLOSION = {
+    .position = { 0.0f, 0.0f, 0.0f },
+    .count = 20,
+    .spread = 1.5f,
+    .scale_min = 2.0f,
+    .scale_max = 4.0f,
+    .lifetime_min = 0.8f,
+    .lifetime_max = 1.5f,
+    .velocity_up = 3.5f,
+    .velocity_spread = 3.0f,
+};
+
 /* ============================================================================
  * Helper Functions
  * ============================================================================

@@ -78,14 +78,17 @@
 - [x] M7B.1: Enemy types and spawn data (Level 1/2/3 enemies)
 - [x] M7B.2: Level 1 enemy AI (stationary, aim + fire at player)
 - [x] M7B.2+: Level 2 enemy AI (uses cover, peeks to fire, retreats)
-- [ ] M7B.3: Enemy death (no respawn)
+- [x] M7B.3: Enemy death (no respawn)
 - [ ] M7B.4: Campaign map 1 (1x Level 1 enemy)
-- [ ] M7B.5: Win condition (all enemies defeated)
+- [x] M7B.5: Win condition (all enemies defeated)
+
+## Phase 6 Completion
+- [x] M6.5: Tank death and respawn (player respawns, enemies stay dead)
 
 ## Next Up
-- [ ] M6.5: Tank death and respawn
-- [ ] M7B.3: Enemy death (no respawn)
-- [ ] M7B.5: Win condition (all enemies defeated)
+- [ ] M7B.4: Campaign map 1 (1x Level 1 enemy)
+- [ ] Phase 5: Physics and Collision (M5.1-M5.4)
+- [ ] Phase 8: Audio Foundation
 
 ## Plan Changes
 - Networking phases (13-15) deferred

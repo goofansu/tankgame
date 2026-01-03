@@ -82,6 +82,9 @@ extern const pz_smoke_config PZ_SMOKE_BULLET_IMPACT;
 // Default smoke configuration for tank hits
 extern const pz_smoke_config PZ_SMOKE_TANK_HIT;
 
+// Default smoke configuration for tank explosions (death)
+extern const pz_smoke_config PZ_SMOKE_TANK_EXPLOSION;
+
 /* ============================================================================
  * API
  * ============================================================================
