@@ -870,11 +870,10 @@ pz_map_renderer_set_map(pz_map_renderer *mr, const pz_map *map)
             float *water_verts = pz_alloc(num_verts * 5 * sizeof(float));
             float *water_ptr = water_verts;
 
-            // Water surface Y position: at the water_level height
-            // water_level = 0 means water surface at ground level
-            // The surface renders above submerged pit tiles
+            // Water surface Y position: at the water_level height, offset down
+            // to create a visible rim/inset effect around the water
             float water_y
-                = GROUND_Y_OFFSET + map->water_level * WALL_HEIGHT_UNIT;
+                = GROUND_Y_OFFSET + map->water_level * WALL_HEIGHT_UNIT + WATER_Y_OFFSET;
 
             for (int y = 0; y < map->height; y++) {
                 for (int x = 0; x < map->width; x++) {
