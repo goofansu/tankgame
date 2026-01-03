@@ -39,6 +39,16 @@ pz_renderer_create(const pz_renderer_config *config)
     case PZ_BACKEND_GL33:
         r->vtable = pz_render_backend_gl33_vtable();
         break;
+    case PZ_BACKEND_SOKOL:
+#ifdef PZ_ENABLE_SOKOL
+        r->vtable = pz_render_backend_sokol_vtable();
+        break;
+#else
+        pz_log(PZ_LOG_ERROR, PZ_LOG_CAT_RENDER,
+            "Sokol backend not enabled in this build");
+        pz_free(r);
+        return NULL;
+#endif
     default:
         pz_log(PZ_LOG_ERROR, PZ_LOG_CAT_RENDER, "Unknown backend type: %d",
             config->backend);
@@ -422,6 +432,10 @@ pz_renderer_save_screenshot(pz_renderer *r, const char *path)
 // Forward declaration - implemented in pz_render_gl33.c
 extern uint8_t *pz_render_gl33_read_render_target(pz_renderer *r,
     pz_render_target_handle handle, int *out_width, int *out_height);
+#ifdef PZ_ENABLE_SOKOL
+extern uint8_t *pz_render_sokol_read_render_target(pz_renderer *r,
+    pz_render_target_handle handle, int *out_width, int *out_height);
+#endif
 
 bool
 pz_renderer_save_render_target(
@@ -430,9 +444,12 @@ pz_renderer_save_render_target(
     int width, height;
     uint8_t *pixels = NULL;
 
-    // Only GL33 backend supports reading render targets
     if (r->backend_type == PZ_BACKEND_GL33) {
         pixels = pz_render_gl33_read_render_target(r, handle, &width, &height);
+#ifdef PZ_ENABLE_SOKOL
+    } else if (r->backend_type == PZ_BACKEND_SOKOL) {
+        pixels = pz_render_sokol_read_render_target(r, handle, &width, &height);
+#endif
     }
 
     if (!pixels) {

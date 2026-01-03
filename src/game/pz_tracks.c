@@ -94,7 +94,7 @@ pz_tracks_create(pz_renderer *renderer, pz_texture_manager *tex_manager,
         .width = config->texture_size,
         .height = config->texture_size,
         .color_format = PZ_TEXTURE_RGBA8, // Use RGBA for simplicity
-        .has_depth = false,
+        .has_depth = true,
     };
     tracks->render_target
         = pz_renderer_create_render_target(renderer, &rt_desc);
@@ -138,6 +138,7 @@ pz_tracks_create(pz_renderer *renderer, pz_texture_manager *tex_manager,
         .depth = PZ_DEPTH_NONE, // No depth test for 2D texture rendering
         .cull = PZ_CULL_NONE,
         .primitive = PZ_PRIMITIVE_TRIANGLES,
+        .sample_count = 1,
     };
     tracks->track_pipeline = pz_renderer_create_pipeline(renderer, &pipe_desc);
 

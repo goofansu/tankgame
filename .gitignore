@@ -32,5 +32,9 @@ tankgame.wasm
 # Generated
 *.log
 
+# Third-party build artifacts
+third_party/fips/
+third_party/fips-build/
+
 # Screenshots (debug output)
 screenshots/

@@ -36,6 +36,7 @@ typedef uint32_t pz_render_target_handle;
 typedef enum pz_renderer_backend {
     PZ_BACKEND_NULL = 0, // No-op backend for testing
     PZ_BACKEND_GL33, // OpenGL 3.3 Core Profile
+    PZ_BACKEND_SOKOL, // sokol_gfx backend
 } pz_renderer_backend;
 
 typedef enum pz_texture_format {
@@ -158,6 +159,7 @@ typedef struct pz_pipeline_desc {
     pz_depth_mode depth;
     pz_cull_mode cull;
     pz_primitive primitive;
+    int sample_count; // 0 uses renderer default
 } pz_pipeline_desc;
 
 typedef struct pz_render_target_desc {
@@ -191,7 +193,7 @@ typedef struct pz_renderer pz_renderer;
 
 typedef struct pz_renderer_config {
     pz_renderer_backend backend;
-    void *window_handle; // SDL_Window* or similar
+    void *window_handle; // Backend-specific native handle or NULL
     int viewport_width;
     int viewport_height;
 } pz_renderer_config;

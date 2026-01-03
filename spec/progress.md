@@ -70,6 +70,7 @@
 ---
 
 ## Next Up
+- [x] M2.S: sokol gfx/app migration (in progress)
 - [ ] M6.5: Tank death and respawn
 - [ ] M7B.1: Enemy types and spawn data (Level 1/2/3 enemies)
 - [ ] M7B.2: Stationary enemy AI (aim + fire at player)

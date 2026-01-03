@@ -117,5 +117,6 @@ struct pz_renderer {
 // Backend registration functions
 const pz_render_backend_vtable *pz_render_backend_null_vtable(void);
 const pz_render_backend_vtable *pz_render_backend_gl33_vtable(void);
+const pz_render_backend_vtable *pz_render_backend_sokol_vtable(void);
 
 #endif // PZ_RENDER_BACKEND_H

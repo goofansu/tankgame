@@ -259,7 +259,7 @@ pz_lighting_create(pz_renderer *renderer, const pz_lighting_config *config)
         .width = config->texture_size,
         .height = config->texture_size,
         .color_format = PZ_TEXTURE_RGBA8,
-        .has_depth = false,
+        .has_depth = true,
     };
     lighting->render_target
         = pz_renderer_create_render_target(renderer, &rt_desc);
@@ -305,6 +305,7 @@ pz_lighting_create(pz_renderer *renderer, const pz_lighting_config *config)
         .depth = PZ_DEPTH_NONE,
         .cull = PZ_CULL_NONE,
         .primitive = PZ_PRIMITIVE_TRIANGLES,
+        .sample_count = 1,
     };
     lighting->light_pipeline
         = pz_renderer_create_pipeline(renderer, &pipe_desc);
@@ -738,33 +739,54 @@ pz_lighting_render(pz_lighting *lighting)
         return;
     }
 
-    // Draw each light separately so we can set per-light uniforms
+    typedef struct light_draw {
+        pz_light *light;
+        int vertex_offset;
+        int vertex_count;
+    } light_draw;
+
+    light_draw draws[PZ_MAX_LIGHTS];
+    int draw_count = 0;
+    int max_verts = (int)(total_buffer_size / LIGHT_VERTEX_SIZE);
+    int write_offset = 0;
+    float *write_ptr = light_vertices;
+
     for (int i = 0; i < lighting->light_count; i++) {
         if (!lighting->lights[i].active) {
             continue;
         }
 
         pz_light *light = &lighting->lights[i];
+        int remaining = max_verts - write_offset;
+        if (remaining <= 0) {
+            break;
+        }
 
-        // Generate geometry for this light
-        int max_verts = total_buffer_size / LIGHT_VERTEX_SIZE;
-        int verts = generate_light_geometry(
-            lighting, light, light_vertices, max_verts);
+        int verts
+            = generate_light_geometry(lighting, light, write_ptr, remaining);
 
         if (verts > 0) {
-            // Upload vertices
-            pz_renderer_update_buffer(lighting->renderer,
-                lighting->vertex_buffer, 0, light_vertices,
-                verts * LIGHT_VERTEX_SIZE);
+            draws[draw_count++] = (light_draw) {
+                .light = light,
+                .vertex_offset = write_offset,
+                .vertex_count = verts,
+            };
+            write_ptr += verts * LIGHT_VERTEX_FLOATS;
+            write_offset += verts;
+        }
+    }
 
-            // Set per-light uniforms for distance-based falloff in shader
+    if (draw_count > 0) {
+        pz_renderer_update_buffer(lighting->renderer, lighting->vertex_buffer,
+            0, light_vertices, (size_t)write_offset * LIGHT_VERTEX_SIZE);
+
+        for (int i = 0; i < draw_count; i++) {
+            pz_light *light = draws[i].light;
             float light_center_uv_x
                 = light->position.x / lighting->world_width + 0.5f;
             float light_center_uv_y
                 = light->position.y / lighting->world_height + 0.5f;
 
-            // Pass world dimensions so shader can convert UV delta to world
-            // distance for proper circular falloff
             pz_renderer_set_uniform_vec2(lighting->renderer,
                 lighting->light_shader, "u_light_center_uv",
                 (pz_vec2) { light_center_uv_x, light_center_uv_y });
@@ -774,11 +796,11 @@ pz_lighting_render(pz_lighting *lighting)
                 lighting->light_shader, "u_world_size",
                 (pz_vec2) { lighting->world_width, lighting->world_height });
 
-            // Draw this light's geometry
             pz_draw_cmd cmd = {
                 .pipeline = lighting->light_pipeline,
                 .vertex_buffer = lighting->vertex_buffer,
-                .vertex_count = verts,
+                .vertex_count = (size_t)draws[i].vertex_count,
+                .vertex_offset = (size_t)draws[i].vertex_offset,
             };
             pz_renderer_draw(lighting->renderer, &cmd);
         }
