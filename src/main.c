@@ -18,9 +18,11 @@
 #include "core/pz_platform.h"
 #include "core/pz_sim.h"
 #include "core/pz_str.h"
+#include "engine/pz_audio.h"
 #include "engine/pz_camera.h"
 #include "engine/pz_debug_overlay.h"
 #include "engine/pz_font.h"
+#include "engine/pz_music.h"
 #include "engine/render/pz_renderer.h"
 #include "engine/render/pz_texture.h"
 #include "game/pz_ai.h"
@@ -121,6 +123,8 @@ typedef struct app_state {
     pz_font *font_russo;
     pz_font *font_caveat;
     pz_sim *sim;
+    pz_audio *audio;
+    pz_music *music;
 
     // Laser rendering (persistent)
     pz_shader_handle laser_shader;
@@ -164,6 +168,8 @@ static const float LASER_MAX_DIST = 50.0f;
 // Forward declarations
 static void map_session_unload(map_session *session);
 static bool map_session_load(map_session *session, const char *map_path);
+static void audio_music_callback(
+    float *buffer, int num_frames, int num_channels, void *userdata);
 
 // ============================================================================
 // Map Session Management
@@ -434,6 +440,50 @@ app_init(void)
 
     pz_log_init();
     pz_time_init();
+
+    g_app.audio = pz_audio_init();
+    if (g_app.audio) {
+        pz_music_config music_config = {
+            .soundfont_path = "assets/sounds/soundfont.sf2",
+            .layer_count = 3,
+            .master_volume = 0.6f,
+            .layers = {
+                {
+                    .midi_path = "assets/music/march_drums.mid",
+                    .midi_channel = 9,
+                    .volume = 1.0f,
+                    .enabled = true,
+                    .loop = true,
+                },
+                {
+                    .midi_path = "assets/music/march_bass.mid",
+                    .midi_channel = 0,
+                    .volume = 0.8f,
+                    .enabled = true,
+                    .loop = true,
+                },
+                {
+                    .midi_path = "assets/music/march_melody.mid",
+                    .midi_channel = 1,
+                    .volume = 1.0f,
+                    .enabled = true,
+                    .loop = true,
+                },
+            },
+        };
+
+        g_app.music = pz_music_create(&music_config);
+        if (g_app.music) {
+            pz_audio_set_callback(
+                g_app.audio, audio_music_callback, g_app.music);
+            pz_music_play(g_app.music);
+        } else {
+            pz_audio_shutdown(g_app.audio);
+            g_app.audio = NULL;
+        }
+    } else {
+        g_app.music = NULL;
+    }
 
     // Initialize core systems (persistent across maps)
     pz_renderer_config renderer_config = {
@@ -865,6 +915,9 @@ app_frame(void)
     }
 
     pz_particle_update(g_app.session.particle_mgr, frame_dt);
+    if (g_app.music) {
+        pz_music_update(g_app.music, frame_dt);
+    }
 
     double now = pz_time_now();
     if (now - g_app.last_hot_reload_check > 0.5) {
@@ -1304,6 +1357,21 @@ app_event(const sapp_event *event)
                 }
             } else if (event->key_code == SAPP_KEYCODE_F) {
                 g_app.key_f_just_pressed = true;
+            } else if (event->key_code == SAPP_KEYCODE_1) {
+                if (g_app.music) {
+                    bool enabled = pz_music_get_layer_enabled(g_app.music, 0);
+                    pz_music_set_layer_enabled(g_app.music, 0, !enabled);
+                }
+            } else if (event->key_code == SAPP_KEYCODE_2) {
+                if (g_app.music) {
+                    bool enabled = pz_music_get_layer_enabled(g_app.music, 1);
+                    pz_music_set_layer_enabled(g_app.music, 1, !enabled);
+                }
+            } else if (event->key_code == SAPP_KEYCODE_3) {
+                if (g_app.music) {
+                    bool enabled = pz_music_get_layer_enabled(g_app.music, 2);
+                    pz_music_set_layer_enabled(g_app.music, 2, !enabled);
+                }
             } else if (event->key_code == SAPP_KEYCODE_SPACE) {
                 // SPACE advances to next level (only in level complete state)
                 if (g_app.state == GAME_STATE_LEVEL_COMPLETE
@@ -1444,10 +1512,23 @@ app_cleanup(void)
     pz_texture_manager_destroy(g_app.tex_manager);
     pz_renderer_destroy(g_app.renderer);
 
+    if (g_app.audio) {
+        pz_audio_set_callback(g_app.audio, NULL, NULL);
+        pz_audio_shutdown(g_app.audio);
+    }
+    pz_music_destroy(g_app.music);
+
     pz_log_shutdown();
     pz_mem_dump_leaks();
 
     printf("Tank Game - Exiting.\n");
+}
+
+static void
+audio_music_callback(
+    float *buffer, int num_frames, int num_channels, void *userdata)
+{
+    pz_music_render((pz_music *)userdata, buffer, num_frames, num_channels);
 }
 
 sapp_desc

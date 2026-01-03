@@ -1,0 +1,6 @@
+* Player tank should have a different color
+* destroyable objects on the map
+* MIDI synth with dynamic audio similar to wii sports
+* spatial audio panning/attenuation (M8.2)
+* gameplay SFX hookup (M8.3)
+* replace fallback texture with orange checkerboard

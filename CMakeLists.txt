@@ -48,9 +48,11 @@ set(ENGINE_SOURCES
     src/engine/render/pz_render_gl33.c
     src/engine/render/pz_render_sokol.c
     src/engine/render/pz_texture.c
+    src/engine/pz_audio.c
     src/engine/pz_camera.c
     src/engine/pz_debug_overlay.c
     src/engine/pz_font.c
+    src/engine/pz_music.c
     src/engine/pz_sokol.m
     # src/engine/pz_engine.c
     # src/engine/pz_window.c
@@ -63,6 +65,7 @@ set(THIRD_PARTY_SOURCES
     third_party/stb_image_impl.c
     third_party/stb_image_write_impl.c
     third_party/stb_truetype_impl.c
+    third_party/tsf_impl.c
 )
 
 set(GAME_SOURCES
@@ -162,7 +165,10 @@ if(APPLE)
         "-framework Cocoa"
         "-framework IOKit"
         "-framework CoreVideo"
+        "-framework AudioToolbox"
     )
+elseif(UNIX)
+    target_link_libraries(tankgame PRIVATE asound)
 endif()
 
 # Testing (M0.4)

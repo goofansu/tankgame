@@ -95,9 +95,12 @@
 - [x] State overlays (Level Complete, Game Over, Campaign Complete)
 - [x] Main campaign with night_arena → day_arena
 
+## Phase 8: Audio Foundation
+- [x] M8.1: sokol_audio + MIDI music layers
+
 ## Next Up
 - [ ] Phase 5: Physics and Collision (M5.1-M5.4)
-- [ ] Phase 8: Audio Foundation
+- [ ] Phase 8: Audio Foundation (M8.2-M8.3)
 
 ## Plan Changes
 - Networking phases (13-15) deferred
