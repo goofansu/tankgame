@@ -60,7 +60,7 @@ const pz_tank_manager_config PZ_TANK_DEFAULT_CONFIG = {
     .max_speed = 5.0f,
     .body_turn_speed = 5.0f,
     .turret_turn_speed = 8.0f,
-    .collision_radius = 0.7f,
+    .collision_radius = 0.9f,
 };
 
 /* ============================================================================
@@ -327,7 +327,7 @@ pz_tank_update(pz_tank_manager *mgr, pz_tank *tank, const pz_tank_input *input,
     // Update position
     pz_vec2 new_pos = pz_vec2_add(tank->pos, pz_vec2_scale(tank->vel, dt));
 
-    // Wall collision (separate axis)
+    // Wall collision (separate axis) with more aggressive checking
     if (map) {
         float r = mgr->collision_radius;
 
@@ -336,20 +336,26 @@ pz_tank_update(pz_tank_manager *mgr, pz_tank *tank, const pz_tank_input *input,
         float test_x = new_pos.x;
         float test_y = tank->pos.y;
 
-        // Right edge
+        // Right edge - check multiple points
         if (pz_map_is_solid(map, (pz_vec2) { test_x + r, test_y })
-            || pz_map_is_solid(map, (pz_vec2) { test_x + r, test_y + r * 0.7f })
+            || pz_map_is_solid(map, (pz_vec2) { test_x + r, test_y + r * 0.8f })
+            || pz_map_is_solid(map, (pz_vec2) { test_x + r, test_y - r * 0.8f })
+            || pz_map_is_solid(map, (pz_vec2) { test_x + r, test_y + r * 0.4f })
             || pz_map_is_solid(
-                map, (pz_vec2) { test_x + r, test_y - r * 0.7f })) {
+                map, (pz_vec2) { test_x + r, test_y - r * 0.4f })) {
             blocked_x = true;
         }
-        // Left edge
+        // Left edge - check multiple points
         if (!blocked_x
             && (pz_map_is_solid(map, (pz_vec2) { test_x - r, test_y })
                 || pz_map_is_solid(
-                    map, (pz_vec2) { test_x - r, test_y + r * 0.7f })
+                    map, (pz_vec2) { test_x - r, test_y + r * 0.8f })
                 || pz_map_is_solid(
-                    map, (pz_vec2) { test_x - r, test_y - r * 0.7f }))) {
+                    map, (pz_vec2) { test_x - r, test_y - r * 0.8f })
+                || pz_map_is_solid(
+                    map, (pz_vec2) { test_x - r, test_y + r * 0.4f })
+                || pz_map_is_solid(
+                    map, (pz_vec2) { test_x - r, test_y - r * 0.4f }))) {
             blocked_x = true;
         }
 
@@ -358,20 +364,26 @@ pz_tank_update(pz_tank_manager *mgr, pz_tank *tank, const pz_tank_input *input,
         test_x = tank->pos.x;
         test_y = new_pos.y;
 
-        // Top edge (+Y)
+        // Top edge (+Y) - check multiple points
         if (pz_map_is_solid(map, (pz_vec2) { test_x, test_y + r })
-            || pz_map_is_solid(map, (pz_vec2) { test_x + r * 0.7f, test_y + r })
+            || pz_map_is_solid(map, (pz_vec2) { test_x + r * 0.8f, test_y + r })
+            || pz_map_is_solid(map, (pz_vec2) { test_x - r * 0.8f, test_y + r })
+            || pz_map_is_solid(map, (pz_vec2) { test_x + r * 0.4f, test_y + r })
             || pz_map_is_solid(
-                map, (pz_vec2) { test_x - r * 0.7f, test_y + r })) {
+                map, (pz_vec2) { test_x - r * 0.4f, test_y + r })) {
             blocked_y = true;
         }
-        // Bottom edge (-Y)
+        // Bottom edge (-Y) - check multiple points
         if (!blocked_y
             && (pz_map_is_solid(map, (pz_vec2) { test_x, test_y - r })
                 || pz_map_is_solid(
-                    map, (pz_vec2) { test_x + r * 0.7f, test_y - r })
+                    map, (pz_vec2) { test_x + r * 0.8f, test_y - r })
                 || pz_map_is_solid(
-                    map, (pz_vec2) { test_x - r * 0.7f, test_y - r }))) {
+                    map, (pz_vec2) { test_x - r * 0.8f, test_y - r })
+                || pz_map_is_solid(
+                    map, (pz_vec2) { test_x + r * 0.4f, test_y - r })
+                || pz_map_is_solid(
+                    map, (pz_vec2) { test_x - r * 0.4f, test_y - r }))) {
             blocked_y = true;
         }
 

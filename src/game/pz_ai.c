@@ -220,10 +220,11 @@ is_position_valid(const pz_map *map, pz_vec2 pos, float radius)
         return true;
     }
 
-    // Check center and cardinal points around the tank
+    // Check center and multiple points around the tank for robust collision
     if (pz_map_is_solid(map, pos)) {
         return false;
     }
+    // Cardinal directions
     if (pz_map_is_solid(map, (pz_vec2) { pos.x + radius, pos.y })) {
         return false;
     }
@@ -234,6 +235,20 @@ is_position_valid(const pz_map *map, pz_vec2 pos, float radius)
         return false;
     }
     if (pz_map_is_solid(map, (pz_vec2) { pos.x, pos.y - radius })) {
+        return false;
+    }
+    // Diagonal directions (corners)
+    float diag = radius * 0.707f; // radius / sqrt(2)
+    if (pz_map_is_solid(map, (pz_vec2) { pos.x + diag, pos.y + diag })) {
+        return false;
+    }
+    if (pz_map_is_solid(map, (pz_vec2) { pos.x + diag, pos.y - diag })) {
+        return false;
+    }
+    if (pz_map_is_solid(map, (pz_vec2) { pos.x - diag, pos.y + diag })) {
+        return false;
+    }
+    if (pz_map_is_solid(map, (pz_vec2) { pos.x - diag, pos.y - diag })) {
         return false;
     }
 
@@ -251,7 +266,7 @@ find_cover_position(const pz_map *map, pz_vec2 ai_pos, pz_vec2 player_pos,
         return false;
     }
 
-    const float tank_radius = 0.7f;
+    const float tank_radius = 0.9f;
     const float standoff = 1.2f; // Distance from wall
 
     // Direction to player
@@ -566,7 +581,7 @@ static bool
 find_flank_position(
     const pz_map *map, pz_vec2 ai_pos, pz_vec2 player_pos, pz_vec2 *flank_pos)
 {
-    const float tank_radius = 0.7f;
+    const float tank_radius = 0.9f;
     const float flank_distance = 8.0f; // How far to the side
     const float approach_distance = 6.0f; // How close to get
 
@@ -617,13 +632,13 @@ update_level3_ai(pz_ai_controller *ctrl, pz_tank *tank,
     pz_tank_manager *tank_mgr, const pz_map *map, pz_vec2 player_pos,
     pz_projectile_manager *proj_mgr, float dt)
 {
-    const float move_speed = 4.5f; // Faster than Level 2
+    const float move_speed = 6.0f; // Fast and aggressive
     const float arrive_threshold = 0.5f;
-    const float engage_distance = 10.0f; // Distance to start shooting
-    const float chase_distance = 15.0f; // Distance to start chasing
-    const float too_close_distance = 4.0f; // Back off if too close
-    const float evade_duration = 0.4f;
-    const float health_retreat_threshold = 0.3f; // Retreat when below 30% HP
+    const float engage_distance = 12.0f; // Distance to start shooting
+    const float chase_distance = 20.0f; // Distance to start chasing
+    const float too_close_distance = 3.0f; // Back off if too close
+    const float evade_duration = 0.3f;
+    const float health_retreat_threshold = 0.2f; // Retreat when below 20% HP
 
     // Update timers
     if (ctrl->evade_timer > 0.0f) {
@@ -656,9 +671,9 @@ update_level3_ai(pz_ai_controller *ctrl, pz_tank *tank,
 
     switch (ctrl->state) {
     case PZ_AI_STATE_IDLE:
-        // Start chasing the player
+        // Start chasing the player immediately
         ctrl->state = PZ_AI_STATE_CHASING;
-        ctrl->aggression_timer = 2.0f + (float)(rand() % 200) / 100.0f;
+        ctrl->aggression_timer = 1.0f + (float)(rand() % 100) / 100.0f;
         break;
 
     case PZ_AI_STATE_EVADING:
@@ -680,7 +695,7 @@ update_level3_ai(pz_ai_controller *ctrl, pz_tank *tank,
         break;
 
     case PZ_AI_STATE_CHASING: {
-        // Move toward player
+        // Move toward player aggressively
         pz_vec2 to_player = pz_vec2_sub(player_pos, tank->pos);
 
         if (dist_to_player > 0.1f) {
@@ -690,28 +705,28 @@ update_level3_ai(pz_ai_controller *ctrl, pz_tank *tank,
         // Transition to engaging when close enough
         if (dist_to_player < engage_distance && ctrl->can_see_player) {
             ctrl->state = PZ_AI_STATE_ENGAGING;
-            ctrl->state_timer = 3.0f + (float)(rand() % 200) / 100.0f;
+            ctrl->state_timer = 4.0f + (float)(rand() % 200) / 100.0f;
         }
 
-        // Try to flank occasionally
+        // Try to flank frequently
         if (ctrl->aggression_timer <= 0.0f && dist_to_player < chase_distance) {
             if (find_flank_position(
                     map, tank->pos, player_pos, &ctrl->flank_target)) {
                 ctrl->state = PZ_AI_STATE_FLANKING;
-                ctrl->aggression_timer = 4.0f;
-            } else {
                 ctrl->aggression_timer = 2.0f;
+            } else {
+                ctrl->aggression_timer = 1.0f;
             }
         }
 
-        // Retreat if low health
+        // Only retreat if very low health
         if (health_ratio < health_retreat_threshold) {
             ctrl->state = PZ_AI_STATE_SEEKING_COVER;
             ctrl->has_cover = false;
         }
 
-        ctrl->wants_to_fire
-            = ctrl->can_see_player && dist_to_player < engage_distance;
+        // Fire while chasing if we can see the player
+        ctrl->wants_to_fire = ctrl->can_see_player;
         break;
     }
 
