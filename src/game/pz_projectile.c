@@ -306,7 +306,8 @@ pz_projectile_update(pz_projectile_manager *mgr, const pz_map *map,
             continue;
 
         // Check for wall collision (only if not in bounce cooldown)
-        if (map && pz_map_is_solid(map, new_pos)
+        // Use blocks_bullets - pits (water) don't block bullets, only walls do
+        if (map && pz_map_blocks_bullets(map, new_pos)
             && proj->bounce_cooldown <= 0.0f) {
             // Hit a wall - bounce or destroy
             if (proj->bounces_remaining > 0) {
@@ -354,7 +355,7 @@ pz_projectile_update(pz_projectile_manager *mgr, const pz_map *map,
                     "Projectile destroyed (no bounces left)");
                 continue;
             }
-        } else if (map && pz_map_is_solid(map, new_pos)
+        } else if (map && pz_map_blocks_bullets(map, new_pos)
             && proj->bounce_cooldown > 0.0f) {
             // Still in cooldown but hitting wall - don't move into it
             new_pos = proj->pos;

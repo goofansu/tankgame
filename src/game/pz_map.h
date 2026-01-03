@@ -84,6 +84,7 @@ typedef struct pz_map {
     // Tiles at or below this height are submerged
     int water_level;
     bool has_water;
+    pz_vec3 water_color; // Base water color (RGB 0-1)
 
     // Spawn points (for player)
     pz_spawn_point spawns[PZ_MAP_MAX_SPAWNS];

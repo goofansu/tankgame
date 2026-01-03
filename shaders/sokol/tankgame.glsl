@@ -150,6 +150,144 @@ void main() {
 
 @program ground ground_vs ground_fs
 
+// =============================================================================
+// Water shader - animated water with caustic lines
+// =============================================================================
+
+@vs water_vs
+layout(location=0) in vec3 a_position;
+layout(location=1) in vec2 a_texcoord;
+
+layout(std140, binding=0) uniform water_vs_params {
+    mat4 u_mvp;
+};
+
+layout(location=0) out vec2 v_texcoord;
+layout(location=1) out vec3 v_world_pos;
+
+void main() {
+    gl_Position = u_mvp * vec4(a_position, 1.0);
+    v_texcoord = a_texcoord;
+    v_world_pos = a_position;
+}
+@end
+
+@fs water_fs
+layout(binding=0) uniform texture2D u_water_light_texture;
+layout(binding=0) uniform sampler u_water_light_texture_smp;
+
+layout(std140, binding=1) uniform water_fs_params {
+    float u_time;
+    int u_use_lighting;
+    vec2 u_light_scale;
+    vec2 u_light_offset;
+    vec3 u_water_color;
+    vec3 u_water_dark;
+    vec3 u_water_highlight;
+};
+
+layout(location=0) in vec2 v_texcoord;
+layout(location=1) in vec3 v_world_pos;
+layout(location=0) out vec4 frag_color;
+
+#define SCALE 4.0
+
+float calculateSurface(float x, float z, float t) {
+    float y = 0.0;
+    y += (sin(x * 1.0 / SCALE + t * 0.5) + sin(x * 2.3 / SCALE + t * 0.75) + sin(x * 3.3 / SCALE + t * 0.2)) / 3.0 * 0.3;
+    y += (sin(z * 0.2 / SCALE + t * 0.9) + sin(z * 1.8 / SCALE + t * 0.9) + sin(z * 2.8 / SCALE + t * 0.4)) / 3.0 * 0.3;
+    return y;
+}
+
+vec2 hash2(vec2 p) {
+    return fract(sin(vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)))) * 43758.5453);
+}
+
+float voronoi(vec2 p) {
+    vec2 n = floor(p);
+    vec2 f = fract(p);
+    float md = 8.0;
+    for (int j = -1; j <= 1; j++) {
+        for (int i = -1; i <= 1; i++) {
+            vec2 g = vec2(float(i), float(j));
+            vec2 o = hash2(n + g);
+            vec2 r = g + o - f;
+            float d = dot(r, r);
+            if (d < md) md = d;
+        }
+    }
+    return sqrt(md);
+}
+
+float voronoiEdge(vec2 p) {
+    vec2 n = floor(p);
+    vec2 f = fract(p);
+    float md = 8.0;
+    float md2 = 8.0;
+    for (int j = -1; j <= 1; j++) {
+        for (int i = -1; i <= 1; i++) {
+            vec2 g = vec2(float(i), float(j));
+            vec2 o = hash2(n + g);
+            vec2 r = g + o - f;
+            float d = dot(r, r);
+            if (d < md) { md2 = md; md = d; }
+            else if (d < md2) md2 = d;
+        }
+    }
+    return sqrt(md2) - sqrt(md);
+}
+
+void main() {
+    vec2 uv = v_world_pos.xz * 0.5 + vec2(u_time * -0.03);
+    
+    uv.y += 0.01 * (sin(uv.x * 3.5 + u_time * 0.35) + sin(uv.x * 4.8 + u_time * 1.05) + sin(uv.x * 7.3 + u_time * 0.45)) / 3.0;
+    uv.x += 0.08 * (sin(uv.y * 4.0 + u_time * 0.5) + sin(uv.y * 6.8 + u_time * 0.75) + sin(uv.y * 11.3 + u_time * 0.2)) / 3.0;
+    uv.y += 0.08 * (sin(uv.x * 4.2 + u_time * 0.64) + sin(uv.x * 6.3 + u_time * 1.65) + sin(uv.x * 8.2 + u_time * 0.45)) / 3.0;
+    
+    float voronoiVal = voronoi(uv * 2.0);
+    float edge = voronoiEdge(uv * 2.0);
+    
+    float causticLine = smoothstep(0.02, 0.08, edge);
+    float highlight = 1.0 - causticLine;
+    
+    float wave = calculateSurface(v_world_pos.x, v_world_pos.z, u_time);
+    float waveShade = 0.5 + wave * 0.5;
+    
+    vec3 color = u_water_color;
+    color = mix(color, u_water_highlight, highlight * 0.6);
+    color = mix(color, u_water_dark, (1.0 - causticLine) * 0.3);
+    color *= (0.85 + waveShade * 0.15);
+    
+    if (u_use_lighting != 0) {
+        vec2 light_uv = v_world_pos.xz * u_light_scale + u_light_offset;
+        vec2 texel_size = vec2(1.0 / 256.0);
+        vec3 dynamic_light = vec3(0.0);
+        float total_weight = 0.0;
+        for (int y = -2; y <= 2; y++) {
+            for (int x = -2; x <= 2; x++) {
+                vec2 offset = vec2(float(x), float(y)) * texel_size;
+                float weight = 1.0 / (1.0 + float(abs(x) + abs(y)));
+                dynamic_light += texture(sampler2D(u_water_light_texture, u_water_light_texture_smp), light_uv + offset).rgb * weight;
+                total_weight += weight;
+            }
+        }
+        dynamic_light /= total_weight;
+        
+        // Use luminance of dynamic light to brighten/darken water
+        // This preserves the water's hue while still responding to lighting
+        float lightIntensity = dot(dynamic_light, vec3(0.299, 0.587, 0.114));
+        color *= (0.3 + lightIntensity * 0.9); // Base ambient + light contribution
+    } else {
+        // Day mode (no dynamic lighting) - apply bright ambient
+        color *= 1.0;
+    }
+    
+    frag_color = vec4(color, 1.0);
+}
+@end
+
+@program water water_vs water_fs
+
 @vs wall_vs
 layout(location=0) in vec3 a_position;
 layout(location=1) in vec3 a_normal;

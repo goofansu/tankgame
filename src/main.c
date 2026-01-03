@@ -138,6 +138,7 @@ typedef struct app_state {
     int frame_count;
     double last_hot_reload_check;
     double last_frame_time;
+    float total_time; // Cumulative time for animations
 
     // Input state
     float mouse_x;
@@ -573,6 +574,7 @@ app_frame(void)
         frame_dt = 0.1f;
     if (frame_dt < 0.0001f)
         frame_dt = 0.0001f;
+    g_app.total_time += frame_dt;
 
     // Determine number of simulation ticks to run this frame
     int sim_ticks = pz_sim_accumulate(g_app.sim, frame_dt);
@@ -967,6 +969,9 @@ app_frame(void)
         render_params.sun_direction = map_light->sun_direction;
         render_params.sun_color = map_light->sun_color;
     }
+
+    // Time for water animation
+    render_params.time = g_app.total_time;
 
     pz_map_renderer_draw(g_app.session.renderer, vp, &render_params);
 

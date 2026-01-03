@@ -47,6 +47,10 @@ struct pz_map_renderer {
     pz_shader_handle wall_shader;
     pz_pipeline_handle wall_pipeline;
 
+    // Water shader and pipeline
+    pz_shader_handle water_shader;
+    pz_pipeline_handle water_pipeline;
+
     // Ground batches (one per tile type with geometry)
     ground_batch ground_batches[MAX_TILE_TEXTURES];
     int ground_batch_count;
@@ -54,6 +58,10 @@ struct pz_map_renderer {
     // Wall vertex buffer (all walls combined)
     pz_buffer_handle wall_buffer;
     int wall_vertex_count;
+
+    // Water vertex buffer
+    pz_buffer_handle water_buffer;
+    int water_vertex_count;
 
     // Current map
     const pz_map *map;
@@ -67,10 +75,58 @@ struct pz_map_renderer {
 #define GROUND_Y_OFFSET -0.01f
 // Ground shrink amount - shrink tiles slightly to avoid z-fighting
 #define GROUND_SHRINK 0.001f
+// Water plane Y offset - water surface is at this Y level relative to ground
+#define WATER_Y_OFFSET -0.5f
 
-// Create vertices for a single tile quad on ground plane
+// Create vertices for a single tile quad on water plane
 static float *
-emit_ground_quad(float *v, float x0, float z0, float x1, float z1)
+emit_water_quad(float *v, float x0, float z0, float x1, float z1, float y)
+{
+    // Triangle 1 (CCW when viewed from above +Y)
+    *v++ = x0;
+    *v++ = y;
+    *v++ = z0;
+    *v++ = 0.0f;
+    *v++ = 1.0f;
+
+    *v++ = x0;
+    *v++ = y;
+    *v++ = z1;
+    *v++ = 0.0f;
+    *v++ = 0.0f;
+
+    *v++ = x1;
+    *v++ = y;
+    *v++ = z1;
+    *v++ = 1.0f;
+    *v++ = 0.0f;
+
+    // Triangle 2
+    *v++ = x0;
+    *v++ = y;
+    *v++ = z0;
+    *v++ = 0.0f;
+    *v++ = 1.0f;
+
+    *v++ = x1;
+    *v++ = y;
+    *v++ = z1;
+    *v++ = 1.0f;
+    *v++ = 0.0f;
+
+    *v++ = x1;
+    *v++ = y;
+    *v++ = z0;
+    *v++ = 1.0f;
+    *v++ = 1.0f;
+
+    return v;
+}
+
+// Create vertices for a single tile quad on ground plane (at custom Y height)
+static float *
+emit_ground_quad_at_height(
+    float *v, float x0, float z0, float x1, float z1, float y)
 {
     x0 += GROUND_SHRINK;
     z0 += GROUND_SHRINK;
@@ -79,43 +135,50 @@ emit_ground_quad(float *v, float x0, float z0, float x1, float z1)
 
     // Triangle 1 (CCW when viewed from above +Y)
     *v++ = x0;
-    *v++ = GROUND_Y_OFFSET;
+    *v++ = y;
     *v++ = z0;
     *v++ = 0.0f;
     *v++ = 1.0f;
 
     *v++ = x0;
-    *v++ = GROUND_Y_OFFSET;
+    *v++ = y;
     *v++ = z1;
     *v++ = 0.0f;
     *v++ = 0.0f;
 
     *v++ = x1;
-    *v++ = GROUND_Y_OFFSET;
+    *v++ = y;
     *v++ = z1;
     *v++ = 1.0f;
     *v++ = 0.0f;
 
     // Triangle 2
     *v++ = x0;
-    *v++ = GROUND_Y_OFFSET;
+    *v++ = y;
     *v++ = z0;
     *v++ = 0.0f;
     *v++ = 1.0f;
 
     *v++ = x1;
-    *v++ = GROUND_Y_OFFSET;
+    *v++ = y;
     *v++ = z1;
     *v++ = 1.0f;
     *v++ = 0.0f;
 
     *v++ = x1;
-    *v++ = GROUND_Y_OFFSET;
+    *v++ = y;
     *v++ = z0;
     *v++ = 1.0f;
     *v++ = 1.0f;
 
     return v;
+}
+
+// Create vertices for a single tile quad on ground plane
+static float *
+emit_ground_quad(float *v, float x0, float z0, float x1, float z1)
+{
+    return emit_ground_quad_at_height(v, x0, z0, x1, z1, GROUND_Y_OFFSET);
 }
 
 // ============================================================================
@@ -259,6 +322,122 @@ count_wall_faces(int tile_x, int tile_y, float height, const pz_map *map)
 }
 
 // ============================================================================
+// Pit Mesh Generation (negative height = below ground level)
+// ============================================================================
+
+// Emit a pit box - walls going DOWN from ground level (inverted normals)
+// depth is a positive value representing how deep the pit goes
+static float *
+emit_pit_box(float *v, float x0, float z0, float x1, float z1, float depth,
+    int tile_x, int tile_y, const pz_map *map)
+{
+    float y0 = GROUND_Y_OFFSET; // Top of pit (ground level)
+    float y1 = GROUND_Y_OFFSET - depth; // Bottom of pit
+
+    int8_t h = pz_map_get_height(map, tile_x, tile_y); // negative
+
+    // Check neighbors - we need walls where adjacent tile is higher (less
+    // negative)
+    int8_t left_h = pz_map_in_bounds(map, tile_x - 1, tile_y)
+        ? pz_map_get_height(map, tile_x - 1, tile_y)
+        : 0;
+    int8_t right_h = pz_map_in_bounds(map, tile_x + 1, tile_y)
+        ? pz_map_get_height(map, tile_x + 1, tile_y)
+        : 0;
+    int8_t front_h = pz_map_in_bounds(map, tile_x, tile_y + 1)
+        ? pz_map_get_height(map, tile_x, tile_y + 1)
+        : 0;
+    int8_t back_h = pz_map_in_bounds(map, tile_x, tile_y - 1)
+        ? pz_map_get_height(map, tile_x, tile_y - 1)
+        : 0;
+
+    // Wall faces are viewed from ABOVE looking into the pit
+    // Normals point toward the viewer (out of the pit)
+
+    // Back face (-Z edge): visible from -Z side (standing on ground looking +Z
+    // into pit) Normal should point -Z
+    if (back_h > h) {
+        float neighbor_y
+            = GROUND_Y_OFFSET - (back_h < 0 ? -back_h : 0) * WALL_HEIGHT_UNIT;
+        v = emit_wall_face(v, x0, y1, z0, // bottom left
+            x0, neighbor_y, z0, // top left
+            x1, neighbor_y, z0, // top right
+            x1, y1, z0, // bottom right
+            0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+    }
+
+    // Front face (+Z edge): visible from +Z side (standing on ground looking -Z
+    // into pit) Normal should point +Z
+    if (front_h > h) {
+        float neighbor_y
+            = GROUND_Y_OFFSET - (front_h < 0 ? -front_h : 0) * WALL_HEIGHT_UNIT;
+        v = emit_wall_face(v, x1, y1, z1, // bottom right
+            x1, neighbor_y, z1, // top right
+            x0, neighbor_y, z1, // top left
+            x0, y1, z1, // bottom left
+            0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+    }
+
+    // Left face (-X edge): visible from -X side (standing on ground looking +X
+    // into pit) Normal should point -X
+    if (left_h > h) {
+        float neighbor_y
+            = GROUND_Y_OFFSET - (left_h < 0 ? -left_h : 0) * WALL_HEIGHT_UNIT;
+        v = emit_wall_face(v, x0, y1, z1, // bottom front
+            x0, neighbor_y, z1, // top front
+            x0, neighbor_y, z0, // top back
+            x0, y1, z0, // bottom back
+            -1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+    }
+
+    // Right face (+X edge): visible from +X side (standing on ground looking -X
+    // into pit) Normal should point +X
+    if (right_h > h) {
+        float neighbor_y
+            = GROUND_Y_OFFSET - (right_h < 0 ? -right_h : 0) * WALL_HEIGHT_UNIT;
+        v = emit_wall_face(v, x1, y1, z0, // bottom back
+            x1, neighbor_y, z0, // top back
+            x1, neighbor_y, z1, // top front
+            x1, y1, z1, // bottom front
+            1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+    }
+
+    return v;
+}
+
+// Count pit wall faces for a given pit tile
+static int
+count_pit_faces(int tile_x, int tile_y, const pz_map *map)
+{
+    int count = 0;
+    int8_t h = pz_map_get_height(map, tile_x, tile_y);
+
+    int8_t left_h = pz_map_in_bounds(map, tile_x - 1, tile_y)
+        ? pz_map_get_height(map, tile_x - 1, tile_y)
+        : 0;
+    int8_t right_h = pz_map_in_bounds(map, tile_x + 1, tile_y)
+        ? pz_map_get_height(map, tile_x + 1, tile_y)
+        : 0;
+    int8_t front_h = pz_map_in_bounds(map, tile_x, tile_y + 1)
+        ? pz_map_get_height(map, tile_x, tile_y + 1)
+        : 0;
+    int8_t back_h = pz_map_in_bounds(map, tile_x, tile_y - 1)
+        ? pz_map_get_height(map, tile_x, tile_y - 1)
+        : 0;
+
+    if (back_h > h)
+        count++;
+    if (front_h > h)
+        count++;
+    if (left_h > h)
+        count++;
+    if (right_h > h)
+        count++;
+
+    return count;
+}
+
+// ============================================================================
 // Texture Loading
 // ============================================================================
 
@@ -389,6 +568,30 @@ pz_map_renderer_create(pz_renderer *renderer, pz_texture_manager *tex_manager)
     };
     mr->wall_pipeline = pz_renderer_create_pipeline(renderer, &wall_desc);
 
+    // Water shader
+    mr->water_shader = pz_renderer_load_shader(
+        renderer, "shaders/water.vert", "shaders/water.frag", "water");
+    if (mr->water_shader == PZ_INVALID_HANDLE) {
+        pz_log(PZ_LOG_ERROR, PZ_LOG_CAT_RENDER, "Failed to load water shader");
+        pz_map_renderer_destroy(mr);
+        return NULL;
+    }
+
+    // Water pipeline (same vertex layout as ground)
+    pz_pipeline_desc water_desc = {
+        .shader = mr->water_shader,
+        .vertex_layout = {
+            .attrs = ground_attrs,
+            .attr_count = 2,
+            .stride = 5 * sizeof(float),
+        },
+        .blend = PZ_BLEND_NONE,
+        .depth = PZ_DEPTH_READ_WRITE,
+        .cull = PZ_CULL_BACK,
+        .primitive = PZ_PRIMITIVE_TRIANGLES,
+    };
+    mr->water_pipeline = pz_renderer_create_pipeline(renderer, &water_desc);
+
     // Initialize batch handles
     for (int i = 0; i < MAX_TILE_TEXTURES; i++) {
         mr->ground_batches[i].buffer = PZ_INVALID_HANDLE;
@@ -399,6 +602,9 @@ pz_map_renderer_create(pz_renderer *renderer, pz_texture_manager *tex_manager)
 
     mr->wall_buffer = PZ_INVALID_HANDLE;
     mr->wall_vertex_count = 0;
+
+    mr->water_buffer = PZ_INVALID_HANDLE;
+    mr->water_vertex_count = 0;
 
     pz_log(PZ_LOG_INFO, PZ_LOG_CAT_RENDER, "Map renderer created");
     return mr;
@@ -424,12 +630,20 @@ pz_map_renderer_destroy(pz_map_renderer *mr)
         pz_renderer_destroy_buffer(mr->renderer, mr->wall_buffer);
     }
 
+    // Destroy water buffer
+    if (mr->water_buffer != PZ_INVALID_HANDLE) {
+        pz_renderer_destroy_buffer(mr->renderer, mr->water_buffer);
+    }
+
     // Pipelines
     if (mr->ground_pipeline != PZ_INVALID_HANDLE) {
         pz_renderer_destroy_pipeline(mr->renderer, mr->ground_pipeline);
     }
     if (mr->wall_pipeline != PZ_INVALID_HANDLE) {
         pz_renderer_destroy_pipeline(mr->renderer, mr->wall_pipeline);
+    }
+    if (mr->water_pipeline != PZ_INVALID_HANDLE) {
+        pz_renderer_destroy_pipeline(mr->renderer, mr->water_pipeline);
     }
 
     // Shaders
@@ -438,6 +652,9 @@ pz_map_renderer_destroy(pz_map_renderer *mr)
     }
     if (mr->wall_shader != PZ_INVALID_HANDLE) {
         pz_renderer_destroy_shader(mr->renderer, mr->wall_shader);
+    }
+    if (mr->water_shader != PZ_INVALID_HANDLE) {
+        pz_renderer_destroy_shader(mr->renderer, mr->water_shader);
     }
 
     pz_free(mr);
@@ -494,7 +711,7 @@ pz_map_renderer_set_map(pz_map_renderer *mr, const pz_map *map)
     float half_w = map->world_width / 2.0f;
     float half_h = map->world_height / 2.0f;
 
-    // Generate ground vertices
+    // Generate ground vertices (lowered for pits)
     for (int y = 0; y < map->height; y++) {
         for (int x = 0; x < map->width; x++) {
             uint8_t idx = pz_map_get_tile_index(map, x, y);
@@ -507,8 +724,18 @@ pz_map_renderer_set_map(pz_map_renderer *mr, const pz_map *map)
             float z0 = y * map->tile_size - half_h;
             float z1 = (y + 1) * map->tile_size - half_h;
 
-            vertex_ptrs[idx]
-                = emit_ground_quad(vertex_ptrs[idx], x0, z0, x1, z1);
+            // Calculate Y position based on height
+            // Positive heights are walls (ground at 0)
+            // Negative heights are pits (ground lowered)
+            int8_t h = pz_map_get_height(map, x, y);
+            float ground_y = GROUND_Y_OFFSET;
+            if (h < 0) {
+                // Lower ground for pits
+                ground_y = GROUND_Y_OFFSET + h * WALL_HEIGHT_UNIT;
+            }
+
+            vertex_ptrs[idx] = emit_ground_quad_at_height(
+                vertex_ptrs[idx], x0, z0, x1, z1, ground_y);
         }
     }
 
@@ -534,31 +761,36 @@ pz_map_renderer_set_map(pz_map_renderer *mr, const pz_map *map)
         }
     }
 
-    // Generate wall mesh
+    // Generate wall mesh (includes both positive walls and pit walls)
     if (mr->wall_buffer != PZ_INVALID_HANDLE) {
         pz_renderer_destroy_buffer(mr->renderer, mr->wall_buffer);
         mr->wall_buffer = PZ_INVALID_HANDLE;
     }
     mr->wall_vertex_count = 0;
 
-    // Count wall faces (only for height > 0)
+    // Count wall faces (height > 0) and pit faces (height < 0)
     int total_wall_faces = 0;
+    int total_pit_faces = 0;
     for (int y = 0; y < map->height; y++) {
         for (int x = 0; x < map->width; x++) {
             int8_t h = pz_map_get_height(map, x, y);
             if (h > 0) {
                 float height = h * WALL_HEIGHT_UNIT;
                 total_wall_faces += count_wall_faces(x, y, height, map);
+            } else if (h < 0) {
+                total_pit_faces += count_pit_faces(x, y, map);
             }
         }
     }
 
-    if (total_wall_faces > 0) {
-        int total_verts = total_wall_faces * 6;
+    int total_faces = total_wall_faces + total_pit_faces;
+    if (total_faces > 0) {
+        int total_verts = total_faces * 6;
         float *wall_verts
             = pz_alloc(total_verts * WALL_VERTEX_SIZE * sizeof(float));
         float *wall_ptr = wall_verts;
 
+        // Generate positive walls
         for (int y = 0; y < map->height; y++) {
             for (int x = 0; x < map->width; x++) {
                 int8_t h = pz_map_get_height(map, x, y);
@@ -572,6 +804,24 @@ pz_map_renderer_set_map(pz_map_renderer *mr, const pz_map *map)
 
                     wall_ptr = emit_wall_box(
                         wall_ptr, x0, z0, x1, z1, height, x, y, map);
+                }
+            }
+        }
+
+        // Generate pit walls
+        for (int y = 0; y < map->height; y++) {
+            for (int x = 0; x < map->width; x++) {
+                int8_t h = pz_map_get_height(map, x, y);
+                if (h < 0) {
+                    float depth = -h * WALL_HEIGHT_UNIT;
+
+                    float x0 = x * map->tile_size - half_w;
+                    float x1 = (x + 1) * map->tile_size - half_w;
+                    float z0 = y * map->tile_size - half_h;
+                    float z1 = (y + 1) * map->tile_size - half_h;
+
+                    wall_ptr = emit_pit_box(
+                        wall_ptr, x0, z0, x1, z1, depth, x, y, map);
                 }
             }
         }
@@ -591,9 +841,69 @@ pz_map_renderer_set_map(pz_map_renderer *mr, const pz_map *map)
         pz_free(wall_verts);
     }
 
+    // Generate water mesh (for tiles at or below water_level)
+    if (mr->water_buffer != PZ_INVALID_HANDLE) {
+        pz_renderer_destroy_buffer(mr->renderer, mr->water_buffer);
+        mr->water_buffer = PZ_INVALID_HANDLE;
+    }
+    mr->water_vertex_count = 0;
+
+    if (map->has_water) {
+        // Count water tiles (tiles BELOW water level - submerged areas)
+        // Only tiles strictly below water_level get water rendered
+        int water_tile_count = 0;
+        for (int y = 0; y < map->height; y++) {
+            for (int x = 0; x < map->width; x++) {
+                int8_t h = pz_map_get_height(map, x, y);
+                if (h < map->water_level) {
+                    water_tile_count++;
+                }
+            }
+        }
+
+        if (water_tile_count > 0) {
+            int num_verts = water_tile_count * 6;
+            float *water_verts = pz_alloc(num_verts * 5 * sizeof(float));
+            float *water_ptr = water_verts;
+
+            // Water surface Y position: at the water_level height
+            // water_level = 0 means water surface at ground level
+            // The surface renders above submerged pit tiles
+            float water_y
+                = GROUND_Y_OFFSET + map->water_level * WALL_HEIGHT_UNIT;
+
+            for (int y = 0; y < map->height; y++) {
+                for (int x = 0; x < map->width; x++) {
+                    int8_t h = pz_map_get_height(map, x, y);
+                    if (h < map->water_level) {
+                        float x0 = x * map->tile_size - half_w;
+                        float x1 = (x + 1) * map->tile_size - half_w;
+                        float z0 = y * map->tile_size - half_h;
+                        float z1 = (y + 1) * map->tile_size - half_h;
+
+                        water_ptr = emit_water_quad(
+                            water_ptr, x0, z0, x1, z1, water_y);
+                    }
+                }
+            }
+
+            mr->water_vertex_count = num_verts;
+
+            pz_buffer_desc desc = {
+                .type = PZ_BUFFER_VERTEX,
+                .usage = PZ_BUFFER_STATIC,
+                .data = water_verts,
+                .size = num_verts * 5 * sizeof(float),
+            };
+            mr->water_buffer = pz_renderer_create_buffer(mr->renderer, &desc);
+
+            pz_free(water_verts);
+        }
+    }
+
     pz_log(PZ_LOG_INFO, PZ_LOG_CAT_RENDER,
-        "Map mesh generated: %d ground batches, %d wall verts",
-        mr->ground_batch_count, mr->wall_vertex_count);
+        "Map mesh generated: %d ground batches, %d wall verts, %d water verts",
+        mr->ground_batch_count, mr->wall_vertex_count, mr->water_vertex_count);
 }
 
 void
@@ -753,12 +1063,68 @@ pz_map_renderer_draw_walls(pz_map_renderer *mr, const pz_mat4 *view_projection,
     pz_renderer_draw(mr->renderer, &cmd);
 }
 
+static void
+pz_map_renderer_draw_water(pz_map_renderer *mr, const pz_mat4 *view_projection,
+    const pz_map_render_params *params)
+{
+    if (!mr || !mr->map || mr->water_vertex_count == 0) {
+        return;
+    }
+
+    pz_renderer_set_uniform_mat4(
+        mr->renderer, mr->water_shader, "u_mvp", view_projection);
+
+    // Time for animation
+    float time = params ? params->time : 0.0f;
+    pz_renderer_set_uniform_float(
+        mr->renderer, mr->water_shader, "u_time", time);
+
+    // Water colors - calculate dark and highlight from base color
+    pz_vec3 base_color = mr->map->water_color;
+    pz_vec3 dark_color = pz_color_darken(base_color, 0.6f);
+    pz_vec3 highlight_color = pz_color_lighten(base_color, 0.5f);
+
+    pz_renderer_set_uniform_vec3(
+        mr->renderer, mr->water_shader, "u_water_color", base_color);
+    pz_renderer_set_uniform_vec3(
+        mr->renderer, mr->water_shader, "u_water_dark", dark_color);
+    pz_renderer_set_uniform_vec3(
+        mr->renderer, mr->water_shader, "u_water_highlight", highlight_color);
+
+    // Light map
+    if (params && params->light_texture != PZ_INVALID_HANDLE
+        && params->light_texture != 0) {
+        pz_renderer_bind_texture(mr->renderer, 0, params->light_texture);
+        pz_renderer_set_uniform_int(
+            mr->renderer, mr->water_shader, "u_water_light_texture", 0);
+        pz_renderer_set_uniform_int(
+            mr->renderer, mr->water_shader, "u_use_lighting", 1);
+        pz_renderer_set_uniform_vec2(mr->renderer, mr->water_shader,
+            "u_light_scale",
+            (pz_vec2) { params->light_scale_x, params->light_scale_z });
+        pz_renderer_set_uniform_vec2(mr->renderer, mr->water_shader,
+            "u_light_offset",
+            (pz_vec2) { params->light_offset_x, params->light_offset_z });
+    } else {
+        pz_renderer_set_uniform_int(
+            mr->renderer, mr->water_shader, "u_use_lighting", 0);
+    }
+
+    pz_draw_cmd cmd = {
+        .pipeline = mr->water_pipeline,
+        .vertex_buffer = mr->water_buffer,
+        .vertex_count = mr->water_vertex_count,
+    };
+    pz_renderer_draw(mr->renderer, &cmd);
+}
+
 void
 pz_map_renderer_draw(pz_map_renderer *mr, const pz_mat4 *view_projection,
     const pz_map_render_params *params)
 {
     pz_map_renderer_draw_walls(mr, view_projection, params);
     pz_map_renderer_draw_ground(mr, view_projection, params);
+    pz_map_renderer_draw_water(mr, view_projection, params);
 }
 
 void

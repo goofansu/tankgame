@@ -227,6 +227,65 @@ pz_vec3_lerp(pz_vec3 a, pz_vec3 b, float t)
         pz_lerpf(a.z, b.z, t) };
 }
 
+static inline pz_vec3
+pz_vec3_mul(pz_vec3 a, pz_vec3 b)
+{
+    return (pz_vec3) { a.x * b.x, a.y * b.y, a.z * b.z };
+}
+
+// ============================================================================
+// Color utilities (colors stored as vec3 with RGB in 0-1 range)
+// ============================================================================
+
+// Darken a color by a factor (0 = black, 1 = unchanged)
+static inline pz_vec3
+pz_color_darken(pz_vec3 color, float factor)
+{
+    return pz_vec3_scale(color, pz_clampf(factor, 0.0f, 1.0f));
+}
+
+// Lighten a color toward white by a factor (0 = unchanged, 1 = white)
+static inline pz_vec3
+pz_color_lighten(pz_vec3 color, float factor)
+{
+    factor = pz_clampf(factor, 0.0f, 1.0f);
+    return (pz_vec3) {
+        color.x + (1.0f - color.x) * factor,
+        color.y + (1.0f - color.y) * factor,
+        color.z + (1.0f - color.z) * factor,
+    };
+}
+
+// Mix two colors
+static inline pz_vec3
+pz_color_mix(pz_vec3 a, pz_vec3 b, float t)
+{
+    return pz_vec3_lerp(a, b, pz_clampf(t, 0.0f, 1.0f));
+}
+
+// Convert hex color (0xRRGGBB) to vec3
+static inline pz_vec3
+pz_color_from_hex(unsigned int hex)
+{
+    return (pz_vec3) {
+        ((hex >> 16) & 0xFF) / 255.0f,
+        ((hex >> 8) & 0xFF) / 255.0f,
+        (hex & 0xFF) / 255.0f,
+    };
+}
+
+// Adjust saturation (0 = grayscale, 1 = unchanged, >1 = more saturated)
+static inline pz_vec3
+pz_color_saturate(pz_vec3 color, float factor)
+{
+    float gray = 0.299f * color.x + 0.587f * color.y + 0.114f * color.z;
+    return (pz_vec3) {
+        gray + (color.x - gray) * factor,
+        gray + (color.y - gray) * factor,
+        gray + (color.z - gray) * factor,
+    };
+}
+
 // ============================================================================
 // vec4 - 4D vector / homogeneous coordinates
 // ============================================================================

@@ -41,6 +41,9 @@ typedef struct pz_map_render_params {
     bool has_sun;
     pz_vec3 sun_direction;
     pz_vec3 sun_color;
+
+    // Animation time (for water)
+    float time;
 } pz_map_render_params;
 
 // Render the map ground layer

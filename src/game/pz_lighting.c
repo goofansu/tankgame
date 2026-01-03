@@ -400,9 +400,9 @@ pz_lighting_add_map_occluders(pz_lighting *lighting, const pz_map *map)
 
     for (int y = 0; y < map->height; y++) {
         for (int x = 0; x < map->width; x++) {
-            uint8_t h = pz_map_get_height(map, x, y);
+            int8_t h = pz_map_get_height(map, x, y);
             if (h > 0) {
-                // Wall tile - add as occluder
+                // Wall tile - add as occluder (pits h < 0 don't block light)
                 float cx = x * map->tile_size + tile_half - half_w;
                 float cz = y * map->tile_size + tile_half - half_h;
 

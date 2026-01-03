@@ -50,6 +50,7 @@ pz_map_create(int width, int height, float tile_size)
     map->world_height = height * tile_size;
     map->water_level = -100; // No water by default (far below any tile)
     map->has_water = false;
+    map->water_color = (pz_vec3) { 0.2f, 0.4f, 0.6f }; // Default blue
 
     // Allocate cells
     int num_cells = width * height;
@@ -832,8 +833,6 @@ pz_map_load(const char *path)
                 strncpy(tags[tag_count].params, tparams, 127);
                 tag_count++;
             }
-        } else if (strncmp(p, "water_level ", 12) == 0) {
-            // Will be set after map creation
         } else if (strcmp(p, "grid") == 0) {
             break;
         }
@@ -1061,6 +1060,11 @@ pz_map_load(const char *path)
         } else if (strncmp(p, "water_level ", 12) == 0) {
             map->water_level = atoi(p + 12);
             map->has_water = true;
+        } else if (strncmp(p, "water_color ", 12) == 0) {
+            float r, g, b;
+            if (sscanf(p + 12, "%f %f %f", &r, &g, &b) == 3) {
+                map->water_color = (pz_vec3) { r, g, b };
+            }
         }
     } while (1);
 
@@ -1120,6 +1124,11 @@ pz_map_save(const pz_map *map, const char *path)
     if (map->has_water) {
         written
             = snprintf(p, remaining, "\nwater_level %d\n", map->water_level);
+        p += written;
+        remaining -= written;
+
+        written = snprintf(p, remaining, "water_color %.2f %.2f %.2f\n",
+            map->water_color.x, map->water_color.y, map->water_color.z);
         p += written;
         remaining -= written;
     }
