@@ -27,14 +27,16 @@ tankgame/
 │   │   └── pz_platform.c/h # Platform abstraction
 │   ├── engine/         # Core engine systems
 │   │   ├── pz_engine.c/h   # Main engine context
-│   │   ├── pz_window.c/h   # SDL window management
+│   │   ├── pz_sokol.m      # sokol_app glue (macOS)
 │   │   ├── pz_input.c/h    # Input handling
 │   │   ├── render/         # Renderer API + backends
 │   │   │   ├── pz_renderer.c/h       # Backend-agnostic API
 │   │   │   ├── pz_render_backend.c/h # Backend selection/vtable
-│   │   │   ├── pz_render_gl.c/h      # OpenGL 3.3 backend
+│   │   │   ├── pz_render_sokol.c/h   # Sokol gfx backend
+│   │   │   ├── pz_render_gl33.c/h    # OpenGL 3.3 backend (fallback)
 │   │   │   ├── pz_render_null.c/h    # No-op backend (tests)
 │   │   │   ├── pz_shader.c/h         # Shader descriptors
+│   │   │   ├── pz_sokol_shaders.h    # Generated sokol-shdc header
 │   │   │   ├── pz_texture.c/h        # Texture descriptors
 │   │   │   └── pz_mesh.c/h           # Mesh data
 │   │   ├── pz_audio.c/h    # Audio playback
@@ -189,14 +191,19 @@ void       pz_engine_run(pz_engine* engine, pz_game* game);
 
 ### Renderer Abstraction
 - Backend-agnostic `pz_renderer` API used everywhere outside render backends
-- Backends are selected at init (OpenGL 3.3 first; future GLES/Vulkan)
+- Backends are selected at init (Sokol gfx primary; GL 3.3 fallback)
 - Opaque handles in headers, no GL types leak across modules
 
-### Backend Capabilities (OpenGL 3.3 Core First)
-- Vertex Array Objects
+### Backend Capabilities (Sokol gfx)
+- GL 3.3 / Metal backend selection via sokol_gfx
 - Framebuffer Objects (for track accumulation)
 - Basic shaders (no geometry shaders, no compute)
 - 2D texture arrays for atlas
+
+### Shader Pipeline (sokol-shdc)
+- Shader sources live in `shaders/sokol/`
+- `sokol-shdc` generates `pz_sokol_shaders.h` with reflection
+- Renderer binds uniform blocks using reflection offsets
 
 ### Render Pipeline
 
@@ -323,9 +330,11 @@ set(CMAKE_C_STANDARD 17)
 
 if(EMSCRIPTEN)
     set(CMAKE_EXECUTABLE_SUFFIX ".html")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -s USE_SDL=2 -s USE_WEBGL2=1 -s FULL_ES3=1")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -s USE_WEBGL2=1 -s FULL_ES3=1")
 endif()
 
-find_package(SDL2 REQUIRED)
+# Sokol is vendored in third_party/sokol
+# sokol-shdc is vendored in third_party/sokol-tools-bin
+# tools/build_sokol_shaders.sh regenerates shader headers
 # ... etc
 ```

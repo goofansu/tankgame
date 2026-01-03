@@ -59,7 +59,7 @@ Example progress.md:
 # Progress
 
 - [x] M0.1: repo structure
-- [x] M0.2: SDL2 integrated  
+- [x] M0.2: Sokol app/gfx integrated  
 - [ ] M0.3: working on OpenGL context
 ```
 

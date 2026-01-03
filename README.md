@@ -1,6 +1,6 @@
 # Tank Game
 
-A multiplayer tank combat game built in C17 with SDL2 and OpenGL 3.3 with the help of Pi and Claude Opus.
+A multiplayer tank combat game built in C17 with Sokol (sokol_app + sokol_gfx) with the help of Pi and Claude Opus.
 
 Terrible and work in progress.
 
@@ -9,11 +9,12 @@ Terrible and work in progress.
 ### Prerequisites
 - CMake 3.16+
 - C17 compiler (clang or gcc)
-- SDL2
+- Git (for submodules)
 
 ### macOS
 ```bash
-brew install cmake sdl2
+brew install cmake
+git submodule update --init --recursive
 ```
 
 ### Build
@@ -23,6 +24,12 @@ make run      # Build and run
 make clean    # Clean build directory
 make debug    # Build with debug config
 make release  # Build with release config
+```
+
+### Shader generation
+Sokol shaders are defined in `shaders/sokol/` and compiled with sokol-shdc.
+```bash
+tools/build_sokol_shaders.sh
 ```
 
 ## Project Structure
@@ -38,7 +45,7 @@ tankgame/
 │   │   └── modes/      # Game mode logic
 │   ├── editor/         # In-game editor
 │   └── net/            # Networking
-├── shaders/            # GLSL shaders
+├── shaders/            # GLSL shaders (sokol-shdc inputs in shaders/sokol/)
 ├── assets/             # Game assets
 ├── tests/              # Test suite
 └── spec/               # Design documents

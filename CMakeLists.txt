@@ -111,6 +111,41 @@ target_include_directories(tankgame PRIVATE
     ${CMAKE_SOURCE_DIR}/third_party/sokol
 )
 
+# Shader compilation with sokol-shdc
+set(SHADER_INPUT ${CMAKE_SOURCE_DIR}/shaders/sokol/tankgame.glsl)
+set(SHADER_OUTPUT ${CMAKE_SOURCE_DIR}/src/engine/render/pz_sokol_shaders.h)
+
+# Find sokol-shdc binary based on platform
+if(APPLE)
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")
+        set(SOKOL_SHDC_BIN ${CMAKE_SOURCE_DIR}/third_party/sokol-tools-bin/bin/osx_arm64/sokol-shdc)
+    else()
+        set(SOKOL_SHDC_BIN ${CMAKE_SOURCE_DIR}/third_party/sokol-tools-bin/bin/osx/sokol-shdc)
+    endif()
+elseif(UNIX)
+    set(SOKOL_SHDC_BIN ${CMAKE_SOURCE_DIR}/third_party/sokol-tools-bin/bin/linux/sokol-shdc)
+elseif(WIN32)
+    set(SOKOL_SHDC_BIN ${CMAKE_SOURCE_DIR}/third_party/sokol-tools-bin/bin/win32/sokol-shdc.exe)
+endif()
+
+if(EXISTS ${SOKOL_SHDC_BIN})
+    add_custom_command(
+        OUTPUT ${SHADER_OUTPUT}
+        COMMAND ${SOKOL_SHDC_BIN}
+            --input ${SHADER_INPUT}
+            --output ${SHADER_OUTPUT}
+            --slang glsl410:metal_macos
+            --reflection
+        DEPENDS ${SHADER_INPUT}
+        COMMENT "Compiling shaders with sokol-shdc"
+        VERBATIM
+    )
+    add_custom_target(shaders DEPENDS ${SHADER_OUTPUT})
+    add_dependencies(tankgame shaders)
+else()
+    message(WARNING "sokol-shdc not found at ${SOKOL_SHDC_BIN}, shaders won't be auto-compiled")
+endif()
+
 # Dependencies
 target_compile_definitions(tankgame PRIVATE SOKOL_GLCORE PZ_ENABLE_SOKOL)
 

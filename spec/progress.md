@@ -2,7 +2,7 @@
 
 ## Phase 0: Project Setup
 - [x] M0.1: repo structure, CMake, builds on macOS
-- [x] M0.2: SDL2 integrated, window opens/closes
+- [x] M0.2: Sokol app/gfx integrated, window opens/closes
 - [x] M0.3: OpenGL 3.3 context, cornflower blue clear
 - [x] M0.4: test framework, smoke tests pass
 
@@ -70,7 +70,7 @@
 ---
 
 ## Next Up
-- [x] M2.S: sokol gfx/app migration (in progress)
+- [x] M2.S: sokol gfx/app migration (done)
 - [ ] M6.5: Tank death and respawn
 - [ ] M7B.1: Enemy types and spawn data (Level 1/2/3 enemies)
 - [ ] M7B.2: Stationary enemy AI (aim + fire at player)

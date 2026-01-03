@@ -24,17 +24,17 @@ This document breaks the project into small, verifiable milestones. Each milesto
 **Validation:** `make build` succeeds, `make run` produces output
 
 ### M0.2: Dependencies
-- [ ] Integrate SDL2 (via find_package or FetchContent)
-- [ ] Verify SDL2 links and initializes
+- [ ] Integrate Sokol (sokol_app + sokol_gfx) via submodule
+- [ ] Verify Sokol links and initializes
 - [ ] Create window, handle quit event
 
 **Validation:** Window opens, closes cleanly on Cmd+Q
 
-### M0.3: OpenGL Context (Core Profile)
-- [ ] Initialize OpenGL 3.3 core context via SDL (macOS-friendly)
+### M0.3: Graphics Context (Sokol)
+- [ ] Initialize sokol_gfx and backend (GL 3.3 / Metal)
 - [ ] Clear screen to a color
-- [ ] Basic GL error checking helper
-- [ ] Keep shaders in GLSL 330 to avoid ES-only features
+- [ ] Basic error logging helper
+- [ ] Keep shaders in GLSL 330 / GLES 3.0 subset, compile via sokol-shdc
 
 **Validation:** Window shows solid color (e.g., cornflower blue)
 
@@ -117,7 +117,7 @@ This document breaks the project into small, verifiable milestones. Each milesto
 - [ ] Implement OpenGL 3.3 backend behind the API
 - [ ] Add a null renderer for tests/headless runs
 - [ ] Ensure no GL types leak outside renderer headers
-- [ ] Load shader source from file
+- [ ] Load shader source from file or generated headers (sokol-shdc)
 - [ ] Compile vertex + fragment shader
 - [ ] Link program, error reporting
 - [ ] Uniform setters (float, vec2, vec3, vec4, mat4)
@@ -424,7 +424,7 @@ This document breaks the project into small, verifiable milestones. Each milesto
 *The game has sound*
 
 ### M8.1: Audio System Setup
-- [ ] Initialize miniaudio (or SDL_mixer)
+- [ ] Initialize miniaudio
 - [ ] Load WAV/OGG files
 - [ ] Play sound once
 
