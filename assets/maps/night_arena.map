@@ -40,5 +40,5 @@ ambient_color 0.12 0.12 0.15
 ambient_darkness 0.85
 
 # Water settings
-water_level 0
+water_level -1
 water_color 0.15 0.25 0.4

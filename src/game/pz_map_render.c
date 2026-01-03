@@ -325,13 +325,13 @@ count_wall_faces(int tile_x, int tile_y, float height, const pz_map *map)
 // Pit Mesh Generation (negative height = below ground level)
 // ============================================================================
 
-// Emit a pit box - walls going DOWN from ground level (inverted normals)
+// Emit a pit box - walls going DOWN from ground level
 // depth is a positive value representing how deep the pit goes
+// Pit walls face INWARD (toward center of pit) so they're visible from above
 static float *
 emit_pit_box(float *v, float x0, float z0, float x1, float z1, float depth,
     int tile_x, int tile_y, const pz_map *map)
 {
-    float y0 = GROUND_Y_OFFSET; // Top of pit (ground level)
     float y1 = GROUND_Y_OFFSET - depth; // Bottom of pit
 
     int8_t h = pz_map_get_height(map, tile_x, tile_y); // negative
@@ -351,55 +351,59 @@ emit_pit_box(float *v, float x0, float z0, float x1, float z1, float depth,
         ? pz_map_get_height(map, tile_x, tile_y - 1)
         : 0;
 
-    // Wall faces are viewed from ABOVE looking into the pit
-    // Normals point toward the viewer (out of the pit)
+    // Pit walls face INWARD so they're visible when looking down into the pit
+    // This is opposite to regular walls which face outward
 
-    // Back face (-Z edge): visible from -Z side (standing on ground looking +Z
-    // into pit) Normal should point -Z
+    // Back wall (-Z edge of pit): faces +Z (into pit)
+    // Visible when looking from +Z side into the pit
     if (back_h > h) {
         float neighbor_y
             = GROUND_Y_OFFSET - (back_h < 0 ? -back_h : 0) * WALL_HEIGHT_UNIT;
-        v = emit_wall_face(v, x0, y1, z0, // bottom left
-            x0, neighbor_y, z0, // top left
+        // Use same winding as regular front face (+Z normal)
+        v = emit_wall_face(v, x1, y1, z0, // bottom right
             x1, neighbor_y, z0, // top right
-            x1, y1, z0, // bottom right
-            0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
-    }
-
-    // Front face (+Z edge): visible from +Z side (standing on ground looking -Z
-    // into pit) Normal should point +Z
-    if (front_h > h) {
-        float neighbor_y
-            = GROUND_Y_OFFSET - (front_h < 0 ? -front_h : 0) * WALL_HEIGHT_UNIT;
-        v = emit_wall_face(v, x1, y1, z1, // bottom right
-            x1, neighbor_y, z1, // top right
-            x0, neighbor_y, z1, // top left
-            x0, y1, z1, // bottom left
+            x0, neighbor_y, z0, // top left
+            x0, y1, z0, // bottom left
             0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
     }
 
-    // Left face (-X edge): visible from -X side (standing on ground looking +X
-    // into pit) Normal should point -X
+    // Front wall (+Z edge of pit): faces -Z (into pit)
+    // Visible when looking from -Z side into the pit
+    if (front_h > h) {
+        float neighbor_y
+            = GROUND_Y_OFFSET - (front_h < 0 ? -front_h : 0) * WALL_HEIGHT_UNIT;
+        // Use same winding as regular back face (-Z normal)
+        v = emit_wall_face(v, x0, y1, z1, // bottom left
+            x0, neighbor_y, z1, // top left
+            x1, neighbor_y, z1, // top right
+            x1, y1, z1, // bottom right
+            0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+    }
+
+    // Left wall (-X edge of pit): faces +X (into pit)
+    // Visible when looking from +X side into the pit
     if (left_h > h) {
         float neighbor_y
             = GROUND_Y_OFFSET - (left_h < 0 ? -left_h : 0) * WALL_HEIGHT_UNIT;
-        v = emit_wall_face(v, x0, y1, z1, // bottom front
-            x0, neighbor_y, z1, // top front
+        // Use same winding as regular right face (+X normal)
+        v = emit_wall_face(v, x0, y1, z0, // bottom back
             x0, neighbor_y, z0, // top back
-            x0, y1, z0, // bottom back
-            -1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+            x0, neighbor_y, z1, // top front
+            x0, y1, z1, // bottom front
+            1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f);
     }
 
-    // Right face (+X edge): visible from +X side (standing on ground looking -X
-    // into pit) Normal should point +X
+    // Right wall (+X edge of pit): faces -X (into pit)
+    // Visible when looking from -X side into the pit
     if (right_h > h) {
         float neighbor_y
             = GROUND_Y_OFFSET - (right_h < 0 ? -right_h : 0) * WALL_HEIGHT_UNIT;
-        v = emit_wall_face(v, x1, y1, z0, // bottom back
-            x1, neighbor_y, z0, // top back
+        // Use same winding as regular left face (-X normal)
+        v = emit_wall_face(v, x1, y1, z1, // bottom front
             x1, neighbor_y, z1, // top front
-            x1, y1, z1, // bottom front
-            1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+            x1, neighbor_y, z0, // top back
+            x1, y1, z0, // bottom back
+            -1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f);
     }
 
     return v;
