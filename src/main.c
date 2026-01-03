@@ -29,6 +29,7 @@
 #include "game/pz_background.h"
 #include "game/pz_campaign.h"
 #include "game/pz_game_music.h"
+#include "game/pz_game_sfx.h"
 #include "game/pz_lighting.h"
 #include "game/pz_map.h"
 #include "game/pz_map_render.h"
@@ -128,6 +129,7 @@ typedef struct app_state {
     pz_sim *sim;
     pz_audio *audio;
     pz_game_music *game_music;
+    pz_game_sfx *game_sfx;
 
     // Laser rendering (persistent)
     pz_shader_handle laser_shader;
@@ -171,7 +173,7 @@ static const float LASER_MAX_DIST = 50.0f;
 // Forward declarations
 static void map_session_unload(map_session *session);
 static bool map_session_load(map_session *session, const char *map_path);
-static void audio_music_callback(
+static void audio_callback(
     float *buffer, int num_frames, int num_channels, void *userdata);
 
 // ============================================================================
@@ -502,16 +504,19 @@ app_init(void)
 
     g_app.audio = pz_audio_init();
     if (g_app.audio) {
+        int sample_rate = pz_audio_get_sample_rate(g_app.audio);
         g_app.game_music = pz_game_music_create("assets/sounds/soundfont.sf2");
-        if (g_app.game_music) {
-            pz_audio_set_callback(
-                g_app.audio, audio_music_callback, g_app.game_music);
+        g_app.game_sfx = pz_game_sfx_create(sample_rate);
+
+        if (g_app.game_music || g_app.game_sfx) {
+            pz_audio_set_callback(g_app.audio, audio_callback, NULL);
         } else {
             pz_audio_shutdown(g_app.audio);
             g_app.audio = NULL;
         }
     } else {
         g_app.game_music = NULL;
+        g_app.game_sfx = NULL;
     }
 
     // Initialize core systems (persistent across maps)
@@ -910,6 +915,9 @@ app_frame(void)
 
                 g_app.session.player_tank->fire_cooldown
                     = weapon->fire_cooldown;
+
+                // Play gunfire sound
+                pz_game_sfx_play_gunfire(g_app.game_sfx);
             }
         }
 
@@ -921,7 +929,13 @@ app_frame(void)
             && !(g_app.session.player_tank->flags & PZ_TANK_FLAG_DEAD)) {
             pz_ai_update(g_app.session.ai_mgr, g_app.session.player_tank->pos,
                 g_app.session.projectile_mgr, dt);
-            pz_ai_fire(g_app.session.ai_mgr, g_app.session.projectile_mgr);
+            int ai_shots = pz_ai_fire(
+                g_app.session.ai_mgr, g_app.session.projectile_mgr);
+
+            // Play gunfire sounds for AI shots
+            for (int shot = 0; shot < ai_shots; shot++) {
+                pz_game_sfx_play_gunfire(g_app.game_sfx);
+            }
 
             // Track marks for enemy tanks
             if (g_app.session.tracks) {
@@ -968,9 +982,25 @@ app_frame(void)
             pz_smoke_config smoke = PZ_SMOKE_BULLET_IMPACT;
             smoke.position = hit_pos;
 
-            if (hits[i].type == PZ_HIT_TANK) {
+            if (hits[i].type == PZ_HIT_TANK
+                || hits[i].type == PZ_HIT_TANK_NON_FATAL) {
                 smoke = PZ_SMOKE_TANK_HIT;
                 smoke.position = hit_pos;
+            }
+
+            // Play bullet-hits-bullet sound
+            if (hits[i].type == PZ_HIT_PROJECTILE) {
+                pz_game_sfx_play_bullet_hit(g_app.game_sfx);
+            }
+
+            // Play tank hit sound (non-fatal hit)
+            if (hits[i].type == PZ_HIT_TANK_NON_FATAL) {
+                pz_game_sfx_play_tank_hit(g_app.game_sfx);
+            }
+
+            // Play ricochet sound (bullet bounces off wall)
+            if (hits[i].type == PZ_HIT_WALL_RICOCHET) {
+                pz_game_sfx_play_ricochet(g_app.game_sfx);
             }
 
             pz_particle_spawn_smoke(g_app.session.particle_mgr, &smoke);
@@ -1021,11 +1051,23 @@ app_frame(void)
                 int enemies_remaining
                     = pz_tank_count_enemies_alive(g_app.session.tank_mgr);
                 if (enemies_remaining == 0) {
+                    // Last enemy - play big explosion
+                    pz_game_sfx_play_tank_explosion(g_app.game_sfx, true);
                     g_app.state = GAME_STATE_LEVEL_COMPLETE;
                     g_app.state_timer = 0.0f;
                     pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
                         "Victory! All enemies defeated.");
+                } else {
+                    // Regular enemy explosion
+                    pz_game_sfx_play_tank_explosion(g_app.game_sfx, false);
                 }
+            } else if (!death_events[i].is_player) {
+                // Enemy died but we're not in playing state (or no enemies to
+                // track)
+                pz_game_sfx_play_tank_explosion(g_app.game_sfx, false);
+            } else {
+                // Player died
+                pz_game_sfx_play_tank_explosion(g_app.game_sfx, false);
             }
 
             // Handle player death (lives system)
@@ -1060,6 +1102,10 @@ app_frame(void)
     }
 
     pz_particle_update(g_app.session.particle_mgr, frame_dt);
+
+    // Update engine sounds for all tanks
+    pz_game_sfx_update_engines(g_app.game_sfx, g_app.session.tank_mgr);
+
     if (g_app.game_music && g_app.session.tank_mgr) {
         int enemies_alive = pz_tank_count_enemies_alive(g_app.session.tank_mgr);
         bool has_level3 = pz_ai_has_level3_alive(g_app.session.ai_mgr);
@@ -1663,6 +1709,7 @@ app_cleanup(void)
         pz_audio_set_callback(g_app.audio, NULL, NULL);
         pz_audio_shutdown(g_app.audio);
     }
+    pz_game_sfx_destroy(g_app.game_sfx);
     pz_game_music_destroy(g_app.game_music);
 
     pz_log_shutdown();
@@ -1672,11 +1719,15 @@ app_cleanup(void)
 }
 
 static void
-audio_music_callback(
-    float *buffer, int num_frames, int num_channels, void *userdata)
+audio_callback(float *buffer, int num_frames, int num_channels, void *userdata)
 {
-    pz_game_music_render(
-        (pz_game_music *)userdata, buffer, num_frames, num_channels);
+    (void)userdata;
+
+    // Render music first (fills buffer)
+    pz_game_music_render(g_app.game_music, buffer, num_frames, num_channels);
+
+    // Render SFX on top (adds to buffer)
+    pz_game_sfx_render(g_app.game_sfx, buffer, num_frames, num_channels);
 }
 
 sapp_desc

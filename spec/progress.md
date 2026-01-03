@@ -97,6 +97,8 @@
 
 ## Phase 8: Audio Foundation
 - [x] M8.1: sokol_audio + MIDI music layers
+- [x] M8.2: Sound effects system (WAV loading, mixing, looping)
+- [x] M8.3: Game SFX integration (engine sounds, gunfire, explosions)
 
 ## Next Up
 - [ ] Phase 5: Physics and Collision (M5.1-M5.4)

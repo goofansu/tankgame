@@ -242,7 +242,9 @@ pz_projectile_update(pz_projectile_manager *mgr, const pz_map *map,
                         "Projectile hit tank %d (damage=%d, killed=%d)",
                         hit_tank->id, proj->damage, killed);
 
-                    record_hit(mgr, PZ_HIT_TANK, target_pos);
+                    record_hit(mgr,
+                        killed ? PZ_HIT_TANK : PZ_HIT_TANK_NON_FATAL,
+                        target_pos);
 
                     proj->active = false;
                     mgr->active_count--;
@@ -311,6 +313,9 @@ pz_projectile_update(pz_projectile_manager *mgr, const pz_map *map,
                             "%.1f), %d left",
                             ray.point.x, ray.point.y, ray.normal.x,
                             ray.normal.y, proj->bounces_remaining);
+
+                        // Record ricochet event for sound
+                        record_hit(mgr, PZ_HIT_WALL_RICOCHET, ray.point);
 
                         // Continue the loop to process remaining movement
                         continue;

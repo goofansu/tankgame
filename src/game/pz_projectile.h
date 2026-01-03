@@ -27,9 +27,11 @@ typedef struct pz_tank_manager pz_tank_manager;
 // Collision event types for particle spawning
 typedef enum pz_projectile_hit_type {
     PZ_HIT_NONE = 0,
-    PZ_HIT_TANK, // Hit a tank
+    PZ_HIT_TANK, // Hit a tank (killed it)
+    PZ_HIT_TANK_NON_FATAL, // Hit a tank but didn't kill it
     PZ_HIT_PROJECTILE, // Hit another projectile
     PZ_HIT_WALL, // Destroyed on wall (no bounces left)
+    PZ_HIT_WALL_RICOCHET, // Bounced off a wall
 } pz_projectile_hit_type;
 
 // Collision event for particle spawning

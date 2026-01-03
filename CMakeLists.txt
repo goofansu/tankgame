@@ -49,6 +49,7 @@ set(ENGINE_SOURCES
     src/engine/render/pz_render_sokol.c
     src/engine/render/pz_texture.c
     src/engine/pz_audio.c
+    src/engine/pz_sfx.c
     src/engine/pz_camera.c
     src/engine/pz_debug_overlay.c
     src/engine/pz_font.c
@@ -78,6 +79,7 @@ set(GAME_SOURCES
     src/game/pz_particle.c
     src/game/pz_background.c
     src/game/pz_game_music.c
+    src/game/pz_game_sfx.c
     src/game/pz_powerup.c
     src/game/pz_projectile.c
     src/game/pz_tank.c
