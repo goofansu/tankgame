@@ -1,0 +1,49 @@
+# Tank Game Map
+version 2
+name Canyon Crossing
+size 24 14
+tile_size 2.0
+music march
+
+# Tile definitions - desert canyon theme
+tile . wood_oak_brown
+tile # wood_rustic_dark
+tile * carpet_beige
+tile : mud_dry
+tile ~ wood_pine_light
+
+# Object tags
+tag P1 spawn angle=0.0 team=0
+tag P2 spawn angle=3.14 team=0
+tag E1 enemy angle=3.14 level=1
+tag E2 enemy angle=1.57 level=2
+tag E3 enemy angle=-1.57 level=2
+
+grid
+3# 3# 3# 3# 3# 3# 3# 3# 3# 3# 3# 3# 3# 3# 3# 3# 3# 3# 3# 3# 3# 3# 3# 3#
+3# 0.|P1 0. 0* 0* 4# 4# -2: -3: -3: -3: -3: -3: -3: -2: 4# 4# 0* 0* 0. 0. 0. 0.|P2 3#
+3# 0. 0. 0* 0. 4# 4# -2: -4: -4: -4: -4: -4: -4: -2: 4# 4# 0. 0* 0. 0. 0. 0. 3#
+3# 0. 2# 2# 0. 0. 0. -1: -2: -2: -2: -2: -2: -2: -1: 0. 0. 0. 2# 2# 0. 0. 0. 3#
+3# 0. 2# 2# 0. 0. 0~ 0~ 0~ 0~ 0~ 0~ 0~ 0~ 0~ 0~ 0. 0. 2# 2# 0. 0. 0. 3#
+3# 0. 0. 0. 0. 0.|E1 0~ 0~ 0~ 0~ 0~ 0~ 0~ 0~ 0~ 0~ 0. 0. 0. 0. 0. 0. 0.|E2 3#
+3# 0. 0: 0: 0. 0. 0~ 0~ 0~ 0~ 0~ 0~ 0~ 0~ 0~ 0~ 0. 0. 0: 0: 0. 0. 0. 3#
+3# 0. 0: 0: 0. 0. 0~ 0~ 0~ 0~ 0~ 0~ 0~ 0~ 0~ 0~ 0. 0. 0: 0: 0. 0. 0. 3#
+3# 0.|E3 0. 0. 0. 0~ 0~ 0~ 0~ 0~ 0~ 0~ 0~ 0~ 0~ 0. 0. 0. 0. 0. 0. 0. 0. 3#
+3# 0. 2# 2# 0. 0. 0. -1: -2: -2: -2: -2: -2: -2: -1: 0. 0. 0. 2# 2# 0. 0. 0. 3#
+3# 0. 2# 2# 0. 4# 4# -2: -4: -4: -4: -4: -4: -4: -2: 4# 4# 0. 2# 2# 0. 0. 0. 3#
+3# 0. 0. 0* 0. 4# 4# -2: -3: -3: -3: -3: -3: -3: -2: 4# 4# 0. 0* 0. 0. 0. 0. 3#
+3# 0. 0. 0* 0* 0. 0. -1: -1: -1: -1: -1: -1: -1: -1: 0. 0. 0* 0* 0. 0. 0. 0. 3#
+3# 3# 3# 3# 3# 3# 3# 3# 3# 3# 3# 3# 3# 3# 3# 3# 3# 3# 3# 3# 3# 3# 3# 3#
+
+# Lighting - Warm desert sun
+sun_direction 0.5 -0.7 0.3
+sun_color 1.0 0.9 0.75
+ambient_color 0.5 0.45 0.4
+ambient_darkness 0.1
+
+# Background - Desert sky (pale blue to sandy horizon)
+background_gradient vertical 0.55 0.7 0.9 0.85 0.75 0.6
+
+# Water settings
+water_level -2
+water_color 0.2 0.4 0.5

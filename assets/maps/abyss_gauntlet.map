@@ -1,0 +1,53 @@
+# Tank Game Map
+version 2
+name Abyss Gauntlet
+size 24 14
+tile_size 2.0
+music march
+
+# Tile definitions - nightmare final level
+tile . wood_rustic_dark
+tile # wood_walnut
+tile * mud_churned
+tile : mud_dry
+tile ~ carpet_gray
+tile ^ wood_oak_amber
+
+# Object tags
+tag P1 spawn angle=0.0 team=0
+tag P2 spawn angle=1.57 team=0
+tag E1 enemy angle=3.14 level=3
+tag E2 enemy angle=1.57 level=3
+tag E3 enemy angle=-1.57 level=3
+tag E4 enemy angle=0.0 level=3
+tag E5 enemy angle=-0.785 level=3
+tag E6 enemy angle=2.356 level=2
+tag W1 powerup type=machine_gun respawn=15
+tag W2 powerup type=ricochet respawn=15
+
+grid
+5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5#
+5# 0.|P1 0^ 0^ -1* -2* -3* -4* -4* -4* -4* -4* -4* -4* -4* -3* -2* -1* 0^ 0^ 0. 0. 0. 5#
+5# 0. 0^ 0^ -1* -2* -3* -4* -5* -5* -5* -5* -5* -5* -4* -3* -2* -1* 0^ 0^ 0. 0. 0. 5#
+5# 0. 0. 0. 0~ 0~ 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0~ 0~ 0. 0. 0. 0.|E1 0. 5#
+5# 0. 3# 3# 0~ 0~ 0. 2# 2# 0.|W1 0.|E6 0. 2# 2# 0. 0~ 0~ 3# 3# 0. 0. 0. 0. 5#
+5# 0. 3# 3# 0. 0. 0. 2# 2# 0. 0. 2# 2# 0. 2# 2# 0. 0. 0. 3# 3# 0. 0.|E2 5#
+5# 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 2# 2# 0. 0.|E4 0. 0. 0. 0. 0. 0. 0. 0. 5#
+5# 0. 0. 0. 0. 0. 0. 0. 0.|E5 0. 0. 2# 2# 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 5#
+5# 0. 3# 3# 0. 0. 0. 2# 2# 0. 0. 2# 2# 0. 2# 2# 0. 0. 0. 3# 3# 0. 0.|E3 5#
+5# 0. 3# 3# 0~ 0~ 0. 2# 2# 0.|W2 0. 0. 0. 2# 2# 0. 0~ 0~ 3# 3# 0. 0. 0. 5#
+5# 0. 0. 0. 0~ 0~ 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0~ 0~ 0. 0. 0. 0. 0. 5#
+5# 0. 0^ 0^ -1* -2* -3* -4* -5* -5* -5* -5* -5* -5* -4* -3* -2* -1* 0^ 0^ 0. 0.|P2 0. 5#
+5# 0. 0^ 0^ -1* -2* -3* -4* -4* -4* -4* -4* -4* -4* -4* -3* -2* -1* 0^ 0^ 0. 0. 0. 5#
+5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5# 5#
+
+# Lighting - Ominous darkness with faint light
+ambient_color 0.1 0.08 0.12
+ambient_darkness 0.88
+
+# Background - Abyss (near black to dark purple)
+background_gradient vertical 0.03 0.02 0.05 0.1 0.05 0.12
+
+# Deep abyss
+water_level -3
+water_color 0.1 0.05 0.15

@@ -1,0 +1,53 @@
+# Tank Game Map
+version 2
+name Storm Citadel
+size 24 14
+tile_size 2.0
+music march
+
+# Tile definitions - fortress in storm
+tile . wood_walnut
+tile # wood_rustic_dark
+tile * carpet_gray
+tile : mud_churned
+tile ~ wood_oak_amber
+
+# Object tags
+tag P1 spawn angle=0.785 team=0
+tag P2 spawn angle=-0.785 team=0
+tag E1 enemy angle=3.14 level=2
+tag E2 enemy angle=1.57 level=3
+tag E3 enemy angle=-1.57 level=3
+tag E4 enemy angle=0.0 level=3
+tag E5 enemy angle=-2.356 level=2
+tag W1 powerup type=machine_gun respawn=20
+tag W2 powerup type=ricochet respawn=20
+
+grid
+4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4#
+4# 0.|P1 0. 0. 0. 0~ 0~ 3# 3# 3# 0. 0. 0. 3# 3# 3# 0~ 0~ 0. 0. 0. 0. 0.|P2 4#
+4# 0. 0. 0. 0. 0~ 0~ 3# -1: -1: 0. 0. 0. -1: -1: 3# 0~ 0~ 0. 0. 0. 0. 0. 4#
+4# 0. 2# 2# 0. 0. 0. 0. -2: -2: 0. 2# 0. -2: -2: 0. 0. 0. 0. 2# 2# 0. 0. 4#
+4# 0. 2# 2# 0* 0* 0. 0. -3: -3: 0. 2# 0. -3: -3: 0. 0. 0* 0* 2# 2# 0. 0.|E1 4#
+4# 0. 0. 0. 0*|W1 0* 0. 0. 0. 0.|E2 0. 0. 0. 0. 0. 0* 0* 0. 0. 0. 0. 0. 0. 4#
+4# 0. 0: 0: 0. 0. 0. 2# 2# 0. 0. 0. 0. 0. 2# 2# 0. 0. 0. 0: 0: 0.|E5 0. 4#
+4# 0. 0: 0: 0. 0. 0. 2# 2# 0. 0.|E4 0. 0. 2# 2#|W2 0. 0. 0: 0: 0. 0. 0. 0. 4#
+4# 0. 0. 0. 0* 0* 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0* 0* 0. 0. 0.|E3 0. 4#
+4# 0. 2# 2# 0* 0* 0. 0. -3: -3: 0. 2# 0. -3: -3: 0. 0. 0* 0* 2# 2# 0. 0. 4#
+4# 0. 2# 2# 0. 0. 0. 0. -2: -2: 0. 2# 0. -2: -2: 0. 0. 0. 0. 2# 2# 0. 0. 4#
+4# 0. 0. 0. 0. 0~ 0~ 3# -1: -1: 0. 0. 0. -1: -1: 3# 0~ 0~ 0. 0. 0. 0. 0. 4#
+4# 0. 0. 0. 0. 0~ 0~ 3# 3# 3# 0. 0. 0. 3# 3# 3# 0~ 0~ 0. 0. 0. 0. 0. 4#
+4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4#
+
+# Lighting - Stormy overcast
+sun_direction 0.2 -0.9 0.2
+sun_color 0.7 0.7 0.75
+ambient_color 0.35 0.35 0.4
+ambient_darkness 0.4
+
+# Background - Storm clouds (dark gray to purple)
+background_gradient vertical 0.25 0.25 0.3 0.35 0.3 0.4
+
+# Dark water in pits
+water_level -2
+water_color 0.2 0.25 0.35

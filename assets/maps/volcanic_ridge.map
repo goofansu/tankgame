@@ -1,0 +1,50 @@
+# Tank Game Map
+version 2
+name Volcanic Ridge
+size 24 14
+tile_size 2.0
+music march
+
+# Tile definitions - volcanic/lava theme
+tile . wood_rustic_dark
+tile # wood_walnut
+tile * mud_churned
+tile : mud_dry
+tile ~ carpet_gray
+
+# Object tags
+tag P1 spawn angle=0.785 team=0
+tag P2 spawn angle=-2.356 team=0
+tag E1 enemy angle=3.14 level=2
+tag E2 enemy angle=-0.785 level=2
+tag E3 enemy angle=1.57 level=3
+tag W1 powerup type=ricochet respawn=20
+
+grid
+4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4#
+4# 0.|P1 0. 0. 0* 5# 5# 0. 0. 0. 0. 0. 0. 0. 0. 5# 5# 0* 0. 0. 0. 0. 0. 4#
+4# 0. 0. 0* 0* 5# 5# 0. -1: -2: -2: -2: -2: -1: 0. 5# 5# 0* 0* 0. 0. 0. 0. 4#
+4# 0. 3# 3# 0. 0. 0. 0. -2: -3: -3: -3: -3: -2: 0. 0. 0. 0. 3# 3# 0. 0. 0. 4#
+4# 0. 3# 3# 0~ 0~ 0. 0. -2: -4: -4: -4: -4: -2: 0. 0. 0~ 0~ 3# 3# 0. 0. 0.|E1 4#
+4# 0. 0. 0. 0~|W1 0~ 0. -1: -2: -2: -2: -2: -1: 0. 0. 0~ 0~ 0. 0. 0. 0. 0. 0. 4#
+4# 0. 0. 0. 0. 0. 0. 0. 0. 0.|E3 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 4#
+4# 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 4#
+4# 0. 0. 0. 0~ 0~ 0. 0. -1: -2: -2: -2: -2: -1: 0. 0. 0~ 0~ 0. 0. 0. 0.|E2 0. 4#
+4# 0. 3# 3# 0~ 0~ 0. 0. -2: -4: -4: -4: -4: -2: 0. 0. 0~ 0~ 3# 3# 0. 0. 0. 4#
+4# 0. 3# 3# 0. 0. 0. 0. -2: -3: -3: -3: -3: -2: 0. 0. 0. 0. 3# 3# 0. 0. 0. 4#
+4# 0. 0. 0* 0* 5# 5# 0. -1: -2: -2: -2: -2: -1: 0. 5# 5# 0* 0* 0. 0. 0. 0. 4#
+4# 0. 0. 0. 0* 5# 5# 0. 0. 0. 0. 0. 0. 0. 0. 5# 5# 0* 0. 0. 0. 0. 0.|P2 4#
+4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4# 4#
+
+# Lighting - Fiery volcanic glow
+sun_direction 0.3 -0.6 0.4
+sun_color 1.0 0.7 0.4
+ambient_color 0.4 0.25 0.2
+ambient_darkness 0.35
+
+# Background - Volcanic (dark orange to smoky red)
+background_gradient vertical 0.3 0.15 0.1 0.5 0.2 0.15
+
+# Deep lava pit
+water_level -2
+water_color 0.8 0.3 0.1
