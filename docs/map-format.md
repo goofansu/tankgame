@@ -73,13 +73,16 @@ Define reusable objects, place them in grid cells:
 ```
 tag P1 spawn angle=0.785 team=0
 tag E1 enemy angle=3.14 level=3
+tag W1 powerup type=machine_gun respawn=15
+tag W2 powerup type=ricochet respawn=20
 
 grid
-2# 0.|P1 0.|E1 2#
+2# 0.|P1 0.|E1 0.|W1 2#
 ```
 
 **Spawn params:** `angle`, `team`, `team_spawn`
 **Enemy params:** `angle`, `level` (1-3)
+**Powerup params:** `type` (machine_gun, ricochet), `respawn` (seconds, default 15)
 
 ## Water Level
 

@@ -59,13 +59,6 @@ typedef struct pz_powerup_manager {
     float time;
 } pz_powerup_manager;
 
-// Powerup spawn configuration (from map)
-typedef struct pz_powerup_spawn {
-    pz_vec2 pos;
-    pz_powerup_type type;
-    float respawn_time;
-} pz_powerup_spawn;
-
 /* ============================================================================
  * Weapon Properties (used by tank/projectile systems)
  * ============================================================================
@@ -119,6 +112,10 @@ int pz_powerup_count(const pz_powerup_manager *mgr);
 
 // Get powerup type name
 const char *pz_powerup_type_name(pz_powerup_type type);
+
+// Get powerup type from name string
+// Returns PZ_POWERUP_NONE if not found
+pz_powerup_type pz_powerup_type_from_name(const char *name);
 
 // Get powerup flicker intensity (0-1) for light effects
 float pz_powerup_get_flicker(const pz_powerup_manager *mgr, int index);

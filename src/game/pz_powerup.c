@@ -392,6 +392,21 @@ pz_powerup_type_name(pz_powerup_type type)
     }
 }
 
+pz_powerup_type
+pz_powerup_type_from_name(const char *name)
+{
+    if (!name) {
+        return PZ_POWERUP_NONE;
+    }
+    if (strcmp(name, "machine_gun") == 0) {
+        return PZ_POWERUP_MACHINE_GUN;
+    }
+    if (strcmp(name, "ricochet") == 0) {
+        return PZ_POWERUP_RICOCHET;
+    }
+    return PZ_POWERUP_NONE;
+}
+
 float
 pz_powerup_get_flicker(const pz_powerup_manager *mgr, int index)
 {

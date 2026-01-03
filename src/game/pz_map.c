@@ -529,6 +529,21 @@ pz_map_get_enemy_count(const pz_map *map)
     return map ? map->enemy_count : 0;
 }
 
+const pz_powerup_spawn *
+pz_map_get_powerup(const pz_map *map, int index)
+{
+    if (!map || index < 0 || index >= map->powerup_count) {
+        return NULL;
+    }
+    return &map->powerups[index];
+}
+
+int
+pz_map_get_powerup_count(const pz_map *map)
+{
+    return map ? map->powerup_count : 0;
+}
+
 const pz_map_lighting *
 pz_map_get_lighting(const pz_map *map)
 {
@@ -777,10 +792,51 @@ parse_enemy_tag(const char *params, pz_enemy_spawn *enemy)
     return true;
 }
 
+// Parse powerup tag: "powerup type=<name> respawn=<f>"
+static bool
+parse_powerup_tag(const char *params, pz_powerup_spawn *powerup)
+{
+    powerup->type_name[0] = '\0';
+    powerup->respawn_time = 15.0f; // Default respawn time
+
+    const char *p = params;
+    while (*p) {
+        while (*p && (isspace((unsigned char)*p) || *p == ',')) {
+            p++;
+        }
+        if (!*p)
+            break;
+
+        if (strncmp(p, "type=", 5) == 0) {
+            // Extract type name
+            const char *start = p + 5;
+            const char *end = start;
+            while (*end && !isspace((unsigned char)*end) && *end != ',') {
+                end++;
+            }
+            size_t len = end - start;
+            if (len >= sizeof(powerup->type_name)) {
+                len = sizeof(powerup->type_name) - 1;
+            }
+            strncpy(powerup->type_name, start, len);
+            powerup->type_name[len] = '\0';
+            p = end;
+            continue;
+        } else if (strncmp(p, "respawn=", 8) == 0) {
+            powerup->respawn_time = (float)atof(p + 8);
+        }
+
+        while (*p && !isspace((unsigned char)*p) && *p != ',') {
+            p++;
+        }
+    }
+    return powerup->type_name[0] != '\0';
+}
+
 // Tag storage for v2 format
 typedef struct tag_def {
     char name[32];
-    char type[16]; // "spawn" or "enemy"
+    char type[16]; // "spawn", "enemy", or "powerup"
     char params[128];
 } tag_def;
 
@@ -1030,6 +1086,12 @@ pz_map_load(const char *path)
                 pz_enemy_spawn *es = &map->enemies[map->enemy_count++];
                 es->pos = pos;
                 parse_enemy_tag(tag->params, es);
+            }
+        } else if (strcmp(tag->type, "powerup") == 0) {
+            if (map->powerup_count < PZ_MAP_MAX_POWERUPS) {
+                pz_powerup_spawn *ps = &map->powerups[map->powerup_count++];
+                ps->pos = pos;
+                parse_powerup_tag(tag->params, ps);
             }
         }
     }

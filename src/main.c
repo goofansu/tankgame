@@ -328,6 +328,22 @@ map_session_load(map_session *session, const char *map_path)
     }
     session->initial_enemy_count = enemy_count;
 
+    // Spawn powerups from map data
+    int powerup_count = pz_map_get_powerup_count(session->map);
+    for (int i = 0; i < powerup_count; i++) {
+        const pz_powerup_spawn *ps = pz_map_get_powerup(session->map, i);
+        if (ps) {
+            pz_powerup_type type = pz_powerup_type_from_name(ps->type_name);
+            if (type != PZ_POWERUP_NONE) {
+                pz_powerup_add(
+                    session->powerup_mgr, ps->pos, type, ps->respawn_time);
+            } else {
+                pz_log(PZ_LOG_WARN, PZ_LOG_CAT_GAME, "Unknown powerup type: %s",
+                    ps->type_name);
+            }
+        }
+    }
+
     // Clear explosion lights
     memset(session->explosion_lights, 0, sizeof(session->explosion_lights));
 
@@ -386,6 +402,28 @@ map_session_reset(map_session *session)
             if (es) {
                 pz_ai_spawn_enemy(session->ai_mgr, es->pos, es->angle,
                     (pz_enemy_level)es->level);
+            }
+        }
+    }
+
+    // Reset powerups (clear and respawn from map)
+    if (session->powerup_mgr) {
+        // Clear all powerups
+        for (int i = 0; i < PZ_MAX_POWERUPS; i++) {
+            session->powerup_mgr->powerups[i].active = false;
+        }
+        session->powerup_mgr->active_count = 0;
+
+        // Respawn from map
+        int powerup_count = pz_map_get_powerup_count(session->map);
+        for (int i = 0; i < powerup_count; i++) {
+            const pz_powerup_spawn *ps = pz_map_get_powerup(session->map, i);
+            if (ps) {
+                pz_powerup_type type = pz_powerup_type_from_name(ps->type_name);
+                if (type != PZ_POWERUP_NONE) {
+                    pz_powerup_add(
+                        session->powerup_mgr, ps->pos, type, ps->respawn_time);
+                }
             }
         }
     }
