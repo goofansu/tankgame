@@ -3,5 +3,5 @@ name water_caustic
 ground_texture assets/textures/water_caustic.png
 speed_multiplier 0.0
 friction 1.0
-ground_texture_scale 6
-wall_texture_scale 6
+ground_texture_scale 10
+wall_texture_scale 10

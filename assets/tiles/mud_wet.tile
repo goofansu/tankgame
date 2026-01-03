@@ -3,5 +3,5 @@ name mud_wet
 ground_texture assets/textures/mud_wet.png
 speed_multiplier 0.5
 friction 1.0
-ground_texture_scale 6
-wall_texture_scale 6
+ground_texture_scale 10
+wall_texture_scale 10
