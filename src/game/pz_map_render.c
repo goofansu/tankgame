@@ -87,6 +87,19 @@ struct pz_map_renderer {
 // Water plane Y offset - water surface is at this Y level relative to ground
 #define WATER_Y_OFFSET -0.5f
 
+static void
+compute_tile_uv(int tile_x, int tile_y, int map_height, int scale, float *u0,
+    float *v0, float *u1, float *v1)
+{
+    (void)map_height;
+    float inv_scale = 1.0f / (float)scale;
+
+    *u0 = (float)tile_x * inv_scale;
+    *u1 = (float)(tile_x + 1) * inv_scale;
+    *v0 = (float)tile_y * inv_scale;
+    *v1 = (float)(tile_y + 1) * inv_scale;
+}
+
 // Create vertices for a single tile quad on water plane
 static float *
 emit_water_quad(float *v, float x0, float z0, float x1, float z1, float y)
@@ -137,61 +150,50 @@ emit_water_quad(float *v, float x0, float z0, float x1, float z1, float y)
 // scale: texture scale (how many tiles the texture spans, e.g., 6 = 6x6)
 static float *
 emit_ground_quad_at_height(float *v, float x0, float z0, float x1, float z1,
-    float y, int tile_x, int tile_y, int scale)
+    float y, int tile_x, int tile_y, int map_height, int scale)
 {
     // World-space UVs: tile position divided by scale
     // This ensures adjacent tiles seamlessly continue the texture
-    float inv_scale = 1.0f / (float)scale;
-    float u0 = (float)tile_x * inv_scale;
-    float v0 = (float)tile_y * inv_scale;
-    float u1 = (float)(tile_x + 1) * inv_scale;
-    float v1 = (float)(tile_y + 1) * inv_scale;
-    // Flip U so the texture reads correctly from the default camera POV.
-    u0 = 1.0f - u0;
-    u1 = 1.0f - u1;
-
-
-
-    // After flip: u0 = 1 - tile_x/scale, u1 = 1 - (tile_x+1)/scale
-    // For tile_x=0, scale=6: u0=1.0, u1=0.833... (correct)
+    float u0, v0, u1, v1;
+    compute_tile_uv(tile_x, tile_y, map_height, scale, &u0, &v0, &u1, &v1);
 
     // Triangle 1 (CCW when viewed from above +Y)
     *v++ = x0;
     *v++ = y;
     *v++ = z0;
     *v++ = u0;
-    *v++ = v1;
+    *v++ = v0;
 
     *v++ = x0;
     *v++ = y;
     *v++ = z1;
     *v++ = u0;
-    *v++ = v0;
+    *v++ = v1;
 
     *v++ = x1;
     *v++ = y;
     *v++ = z1;
     *v++ = u1;
-    *v++ = v0;
+    *v++ = v1;
 
     // Triangle 2
     *v++ = x0;
     *v++ = y;
     *v++ = z0;
     *v++ = u0;
-    *v++ = v1;
+    *v++ = v0;
 
     *v++ = x1;
     *v++ = y;
     *v++ = z1;
     *v++ = u1;
-    *v++ = v0;
+    *v++ = v1;
 
     *v++ = x1;
     *v++ = y;
     *v++ = z0;
     *v++ = u1;
-    *v++ = v1;
+    *v++ = v0;
 
     return v;
 }
@@ -199,10 +201,10 @@ emit_ground_quad_at_height(float *v, float x0, float z0, float x1, float z1,
 // Create vertices for a single tile quad on ground plane (default height)
 static float *
 emit_ground_quad(float *v, float x0, float z0, float x1, float z1, int tile_x,
-    int tile_y, int scale)
+    int tile_y, int map_height, int scale)
 {
     return emit_ground_quad_at_height(
-        v, x0, z0, x1, z1, GROUND_Y_OFFSET, tile_x, tile_y, scale);
+        v, x0, z0, x1, z1, GROUND_Y_OFFSET, tile_x, tile_y, map_height, scale);
 }
 
 // ============================================================================
@@ -294,13 +296,9 @@ emit_wall_box(float *v, float x0, float z0, float x1, float z1, float height,
 
     // World-space UVs for wall top (same as ground)
     float inv_scale = 1.0f / (float)scale;
-    float u0 = (float)tile_x * inv_scale;
-    float v0_uv = (float)tile_y * inv_scale;
-    float u1 = (float)(tile_x + 1) * inv_scale;
-    float v1_uv = (float)(tile_y + 1) * inv_scale;
-    // Flip U to match ground orientation from the default camera POV.
-    u0 = 1.0f - u0;
-    u1 = 1.0f - u1;
+    float u0, v0_uv, u1, v1_uv;
+    compute_tile_uv(
+        tile_x, tile_y, map->height, scale, &u0, &v0_uv, &u1, &v1_uv);
 
     // Top face (always visible) - uses world-space UVs
     v = emit_wall_face(v, x0, y1, z0, x0, y1, z1, x1, y1, z1, x1, y1, z0, 0.0f,
@@ -395,13 +393,11 @@ emit_pit_box(float *v, float x0, float z0, float x1, float z1, float depth,
     float inv_scale = 1.0f / (float)scale;
     float u0 = (float)tile_x * inv_scale;
     float u1 = (float)(tile_x + 1) * inv_scale;
-    // Flip U to match ground orientation
-    u0 = 1.0f - u0;
-    u1 = 1.0f - u1;
 
     // V coords for Z-aligned walls (back/front) - use tile_y
-    float v0_z = (float)tile_y * inv_scale;
-    float v1_z = (float)(tile_y + 1) * inv_scale;
+    float v0_z = 0.0f;
+    float v1_z = 0.0f;
+    compute_tile_uv(tile_x, tile_y, map->height, scale, &u0, &v0_z, &u1, &v1_z);
 
     // V coords based on wall height (for vertical extent)
     // Scale V by height so texture tiles correctly
@@ -873,8 +869,9 @@ pz_map_renderer_set_map(pz_map_renderer *mr, const pz_map *map)
                 if (h < 0) {
                     ground_y = GROUND_Y_OFFSET + h * WALL_HEIGHT_UNIT;
                 }
-                ground_ptrs[idx] = emit_ground_quad_at_height(ground_ptrs[idx],
-                    x0, z0, x1, z1, ground_y, x, y, ground_scales[idx]);
+                ground_ptrs[idx]
+                    = emit_ground_quad_at_height(ground_ptrs[idx], x0, z0, x1,
+                        z1, ground_y, x, y, map->height, ground_scales[idx]);
             }
 
             // Walls

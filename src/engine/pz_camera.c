@@ -284,13 +284,12 @@ pz_camera_setup_game_view(
     float pitch_rad = pitch_degrees * (PZ_PI / 180.0f);
 
     // Calculate camera offset from target
-    // Camera is behind and above the target (in -Z direction when looking
-    // towards +Z)
+    // Camera is above and in front of the target (looks toward -Z)
     float horizontal_dist = height * tanf(pitch_rad);
 
     cam->position = (pz_vec3) {
         look_at_point.x, look_at_point.y + height,
-        look_at_point.z - horizontal_dist, // Camera is behind target
+        look_at_point.z + horizontal_dist, // Camera is in front of target
     };
 
     pz_camera_update(cam);

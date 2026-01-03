@@ -455,7 +455,7 @@ pz_vec2
 pz_map_tile_to_world(const pz_map *map, int tile_x, int tile_y)
 {
     // Center of the map is at world origin (0,0)
-    // Tile (0,0) is at bottom-left
+    // Tile (0,0) is at top-left in world space
     float half_w = map->world_width / 2.0f;
     float half_h = map->world_height / 2.0f;
 
@@ -578,7 +578,7 @@ pz_map_print(const pz_map *map)
     printf("Spawns: %d, Enemies: %d\n", map->spawn_count, map->enemy_count);
 
     printf("\nGrid (height + tile):\n");
-    for (int y = map->height - 1; y >= 0; y--) {
+    for (int y = 0; y < map->height; y++) {
         printf("  ");
         for (int x = 0; x < map->width; x++) {
             pz_map_cell cell = pz_map_get_cell(map, x, y);
@@ -1238,10 +1238,10 @@ pz_map_load(const char *path)
         pz_map_add_tile_def(map, tile_symbols[i], tile_names[i]);
     }
 
-    // Parse grid rows
+    // Parse grid rows (file rows are top-down, y=0 is top)
     for (int row = 0; row < height; row++) {
         const char *p = grid_rows[row];
-        int y = height - 1 - row; // File is top-down
+        int y = row;
         int x = 0;
 
         while (*p && x < width) {
@@ -1551,8 +1551,8 @@ pz_map_save(const pz_map *map, const char *path)
         }
     }
 
-    // Write grid rows (top to bottom in file = high Y to low Y)
-    for (int y = map->height - 1; y >= 0; y--) {
+    // Write grid rows (top to bottom in file = low Y to high Y)
+    for (int y = 0; y < map->height; y++) {
         for (int x = 0; x < map->width; x++) {
             pz_map_cell cell = pz_map_get_cell(map, x, y);
             const pz_tile_def *def

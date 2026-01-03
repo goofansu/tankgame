@@ -809,13 +809,13 @@ app_frame(void)
     // Gather input (once per frame)
     pz_tank_input player_input = { 0 };
     if (g_app.key_down[SAPP_KEYCODE_W] || g_app.key_down[SAPP_KEYCODE_UP])
-        player_input.move_dir.y += 1.0f;
-    if (g_app.key_down[SAPP_KEYCODE_S] || g_app.key_down[SAPP_KEYCODE_DOWN])
         player_input.move_dir.y -= 1.0f;
+    if (g_app.key_down[SAPP_KEYCODE_S] || g_app.key_down[SAPP_KEYCODE_DOWN])
+        player_input.move_dir.y += 1.0f;
     if (g_app.key_down[SAPP_KEYCODE_A] || g_app.key_down[SAPP_KEYCODE_LEFT])
-        player_input.move_dir.x += 1.0f;
-    if (g_app.key_down[SAPP_KEYCODE_D] || g_app.key_down[SAPP_KEYCODE_RIGHT])
         player_input.move_dir.x -= 1.0f;
+    if (g_app.key_down[SAPP_KEYCODE_D] || g_app.key_down[SAPP_KEYCODE_RIGHT])
+        player_input.move_dir.x += 1.0f;
 
     if (g_app.session.player_tank
         && !(g_app.session.player_tank->flags & PZ_TANK_FLAG_DEAD)) {
