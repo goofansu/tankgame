@@ -5,6 +5,7 @@
 #include "pz_ai.h"
 
 #include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "../core/pz_log.h"
@@ -33,7 +34,7 @@ static const pz_enemy_stats ENEMY_STATS[] = {
         .aim_speed = 1.0f,
         .body_color = { 0.6f, 0.25f, 0.25f, 1.0f } }, // Dark red
 
-    // Level 2: Intermediate enemy
+    // Level 2: Intermediate enemy (uses cover)
     { .health = 15,
         .max_bounces = 1,
         .fire_cooldown = 0.8f,
@@ -150,6 +151,18 @@ pz_ai_spawn_enemy(
     ctrl->reaction_delay = 0.0f;
     ctrl->last_seen_time = 0.0f;
 
+    // Initialize cover behavior for level 2+
+    ctrl->state = PZ_AI_STATE_IDLE;
+    ctrl->cover_pos = pos;
+    ctrl->peek_pos = pos;
+    ctrl->move_target = pos;
+    ctrl->state_timer = 0.0f;
+    ctrl->cover_search_timer = 0.0f;
+    ctrl->has_cover = false;
+    ctrl->shots_fired = 0;
+    ctrl->max_shots_per_peek
+        = 2 + (level - 1); // Level 2 = 2 shots, Level 3 = 3
+
     pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
         "Spawned Level %d enemy at (%.1f, %.1f), tank_id=%d", level, pos.x,
         pos.y, tank->id);
@@ -158,7 +171,7 @@ pz_ai_spawn_enemy(
 }
 
 /* ============================================================================
- * AI Update
+ * AI Helpers
  * ============================================================================
  */
 
@@ -199,6 +212,276 @@ check_line_of_sight(const pz_map *map, pz_vec2 from, pz_vec2 to)
     return !hit_wall;
 }
 
+// Check if a position is valid (not inside a wall)
+static bool
+is_position_valid(const pz_map *map, pz_vec2 pos, float radius)
+{
+    if (!map) {
+        return true;
+    }
+
+    // Check center and cardinal points around the tank
+    if (pz_map_is_solid(map, pos)) {
+        return false;
+    }
+    if (pz_map_is_solid(map, (pz_vec2) { pos.x + radius, pos.y })) {
+        return false;
+    }
+    if (pz_map_is_solid(map, (pz_vec2) { pos.x - radius, pos.y })) {
+        return false;
+    }
+    if (pz_map_is_solid(map, (pz_vec2) { pos.x, pos.y + radius })) {
+        return false;
+    }
+    if (pz_map_is_solid(map, (pz_vec2) { pos.x, pos.y - radius })) {
+        return false;
+    }
+
+    return true;
+}
+
+// Find a cover position relative to the player
+// Returns true if cover was found, sets cover_pos and peek_pos
+// The AI will hide behind cover, then move out to peek and fire
+static bool
+find_cover_position(const pz_map *map, pz_vec2 ai_pos, pz_vec2 player_pos,
+    pz_vec2 *cover_pos, pz_vec2 *peek_pos)
+{
+    if (!map) {
+        return false;
+    }
+
+    const float tank_radius = 0.7f;
+    const float standoff = 1.2f; // Distance from wall
+
+    // Direction to player
+    pz_vec2 to_player = pz_vec2_sub(player_pos, ai_pos);
+    float dist_to_player = pz_vec2_len(to_player);
+    if (dist_to_player < 0.1f) {
+        return false;
+    }
+    pz_vec2 dir_to_player = pz_vec2_scale(to_player, 1.0f / dist_to_player);
+
+    float best_score = -1.0f;
+    pz_vec2 best_cover = ai_pos;
+    pz_vec2 best_peek = ai_pos;
+
+    // Sample positions in a grid around the AI to find good cover spots
+    const float search_range = 10.0f;
+    const float step = 1.0f;
+
+    for (float dx = -search_range; dx <= search_range; dx += step) {
+        for (float dy = -search_range; dy <= search_range; dy += step) {
+            pz_vec2 test_cover = { ai_pos.x + dx, ai_pos.y + dy };
+
+            // Skip if position is in a wall
+            if (!is_position_valid(map, test_cover, tank_radius)) {
+                continue;
+            }
+
+            // Skip if player can see this position (not good cover)
+            if (check_line_of_sight(map, test_cover, player_pos)) {
+                continue;
+            }
+
+            // This is a potential cover position - now find a peek position
+            // The peek position should be closer to player and have LOS
+
+            // Try stepping toward the player from cover
+            for (float peek_step = 1.0f; peek_step <= 4.0f; peek_step += 0.5f) {
+                pz_vec2 test_peek = pz_vec2_add(
+                    test_cover, pz_vec2_scale(dir_to_player, peek_step));
+
+                // Peek position must be valid
+                if (!is_position_valid(map, test_peek, tank_radius)) {
+                    continue;
+                }
+
+                // Peek position must have LOS to player
+                if (!check_line_of_sight(map, test_peek, player_pos)) {
+                    continue;
+                }
+
+                // Found a valid cover/peek pair!
+                float score = 10.0f;
+
+                // Prefer cover closer to AI
+                float cover_dist = pz_vec2_dist(ai_pos, test_cover);
+                score -= cover_dist * 0.3f;
+
+                // Prefer shorter peek distance (less time exposed)
+                score -= peek_step * 0.5f;
+
+                // Prefer cover that's somewhat toward the player
+                float toward
+                    = pz_vec2_dot(pz_vec2_scale((pz_vec2) { dx, dy },
+                                      1.0f / sqrtf(dx * dx + dy * dy + 0.01f)),
+                        dir_to_player);
+                if (toward > 0) {
+                    score += toward * 3.0f;
+                }
+
+                if (score > best_score) {
+                    best_score = score;
+                    best_cover = test_cover;
+                    best_peek = test_peek;
+                }
+
+                break; // Found a peek for this cover, try next cover
+            }
+        }
+    }
+
+    if (best_score > 0) {
+        *cover_pos = best_cover;
+        *peek_pos = best_peek;
+        return true;
+    }
+
+    return false;
+}
+
+/* ============================================================================
+ * Level 2 Cover AI Update
+ * ============================================================================
+ */
+
+static void
+update_level2_ai(pz_ai_controller *ctrl, pz_tank *tank,
+    pz_tank_manager *tank_mgr, const pz_map *map, pz_vec2 player_pos, float dt)
+{
+    const float move_speed = 3.0f; // Movement speed for AI
+    const float arrive_threshold = 0.5f; // How close to target to stop
+    const float cover_wait_time = 1.5f; // Time to wait in cover before peeking
+    const float firing_time = 2.0f; // Max time exposed while firing
+    const float cover_search_cooldown = 3.0f; // Time between cover searches
+
+    // Update cover search timer
+    if (ctrl->cover_search_timer > 0.0f) {
+        ctrl->cover_search_timer -= dt;
+    }
+
+    // State machine for cover behavior
+    pz_vec2 move_dir = { 0.0f, 0.0f };
+
+    switch (ctrl->state) {
+    case PZ_AI_STATE_IDLE:
+        // Initial state - look for cover
+        if (!ctrl->has_cover && ctrl->cover_search_timer <= 0.0f) {
+            if (find_cover_position(map, tank->pos, player_pos,
+                    &ctrl->cover_pos, &ctrl->peek_pos)) {
+                ctrl->has_cover = true;
+                ctrl->state = PZ_AI_STATE_SEEKING_COVER;
+                ctrl->move_target = ctrl->cover_pos;
+                pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
+                    "AI %d found cover at (%.1f, %.1f)", tank->id,
+                    ctrl->cover_pos.x, ctrl->cover_pos.y);
+            } else {
+                ctrl->cover_search_timer = cover_search_cooldown;
+            }
+        }
+        break;
+
+    case PZ_AI_STATE_SEEKING_COVER: {
+        // Move toward cover position
+        pz_vec2 to_cover = pz_vec2_sub(ctrl->cover_pos, tank->pos);
+        float dist = pz_vec2_len(to_cover);
+
+        if (dist < arrive_threshold) {
+            // Arrived at cover
+            ctrl->state = PZ_AI_STATE_IN_COVER;
+            ctrl->state_timer = cover_wait_time
+                * (0.5f + 0.5f * ((float)(rand() % 100) / 100.0f));
+            pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME, "AI %d arrived at cover",
+                tank->id);
+        } else {
+            // Move toward cover
+            move_dir = pz_vec2_scale(to_cover, 1.0f / dist);
+        }
+        break;
+    }
+
+    case PZ_AI_STATE_IN_COVER:
+        // Wait in cover, then peek out
+        ctrl->state_timer -= dt;
+        if (ctrl->state_timer <= 0.0f) {
+            ctrl->state = PZ_AI_STATE_PEEKING;
+            ctrl->move_target = ctrl->peek_pos;
+            ctrl->shots_fired = 0;
+            pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME, "AI %d peeking from cover",
+                tank->id);
+        }
+        break;
+
+    case PZ_AI_STATE_PEEKING: {
+        // Move to peek position
+        pz_vec2 to_peek = pz_vec2_sub(ctrl->peek_pos, tank->pos);
+        float dist = pz_vec2_len(to_peek);
+
+        if (dist < arrive_threshold) {
+            // Arrived at peek position, start firing
+            ctrl->state = PZ_AI_STATE_FIRING;
+            ctrl->state_timer = firing_time;
+        } else {
+            move_dir = pz_vec2_scale(to_peek, 1.0f / dist);
+        }
+        break;
+    }
+
+    case PZ_AI_STATE_FIRING:
+        // Stay exposed and fire (firing happens in pz_ai_fire)
+        // Retreat after timer expires or we've fired enough shots
+        ctrl->state_timer -= dt;
+        if (ctrl->state_timer <= 0.0f
+            || ctrl->shots_fired >= ctrl->max_shots_per_peek) {
+            ctrl->state = PZ_AI_STATE_RETREATING;
+            ctrl->move_target = ctrl->cover_pos;
+            pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
+                "AI %d retreating to cover after %d shots", tank->id,
+                ctrl->shots_fired);
+        }
+        break;
+
+    case PZ_AI_STATE_RETREATING: {
+        // Move back to cover
+        pz_vec2 to_cover = pz_vec2_sub(ctrl->cover_pos, tank->pos);
+        float dist = pz_vec2_len(to_cover);
+
+        if (dist < arrive_threshold) {
+            // Back in cover
+            ctrl->state = PZ_AI_STATE_IN_COVER;
+            ctrl->state_timer = cover_wait_time
+                * (0.5f + 0.5f * ((float)(rand() % 100) / 100.0f));
+
+            // Occasionally search for new cover
+            if ((rand() % 100) < 30) {
+                ctrl->has_cover = false;
+                ctrl->state = PZ_AI_STATE_IDLE;
+                pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
+                    "AI %d looking for new cover", tank->id);
+            }
+        } else {
+            move_dir = pz_vec2_scale(to_cover, 1.0f / dist);
+        }
+        break;
+    }
+    }
+
+    // Apply movement
+    pz_tank_input input = {
+        .move_dir = pz_vec2_scale(move_dir, move_speed),
+        .target_turret = ctrl->current_aim_angle,
+        .fire = false,
+    };
+
+    pz_tank_update(tank_mgr, tank, &input, map, dt);
+}
+
+/* ============================================================================
+ * AI Update
+ * ============================================================================
+ */
+
 void
 pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos, float dt)
 {
@@ -228,19 +511,15 @@ pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos, float dt)
         float dy = player_pos.y - tank->pos.y;
         float target_angle = atan2f(dx, dy);
 
-        // AI has full information (top-down view) - always tracks and aims at
-        // player, but only fires when there's clear line-of-sight
+        // Always track and aim at player
         ctrl->target_aim_angle = target_angle;
         ctrl->can_see_player
             = check_line_of_sight(ai_mgr->map, tank->pos, player_pos);
 
         // Smoothly rotate turret towards target
-        // This simulates the AI having to physically turn the turret like a
-        // player would
         float angle_diff
             = normalize_angle(ctrl->target_aim_angle - ctrl->current_aim_angle);
-        float turret_speed
-            = 5.0f * stats->aim_speed; // Base turret speed * level multiplier
+        float turret_speed = 5.0f * stats->aim_speed;
         float max_rotation = turret_speed * dt;
 
         if (fabsf(angle_diff) <= max_rotation) {
@@ -253,16 +532,20 @@ pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos, float dt)
 
         ctrl->current_aim_angle = normalize_angle(ctrl->current_aim_angle);
 
-        // Build input for this tank
-        // AI tanks are currently stationary (turret only)
-        pz_tank_input input = {
-            .move_dir = { 0.0f, 0.0f }, // No movement
-            .target_turret = ctrl->current_aim_angle,
-            .fire = false, // Firing handled separately
-        };
-
-        // Update the tank with this input
-        pz_tank_update(ai_mgr->tank_mgr, tank, &input, ai_mgr->map, dt);
+        // Level-specific behavior
+        if (ctrl->level >= PZ_ENEMY_LEVEL_2) {
+            // Level 2+: Use cover behavior
+            update_level2_ai(
+                ctrl, tank, ai_mgr->tank_mgr, ai_mgr->map, player_pos, dt);
+        } else {
+            // Level 1: Stationary turret only
+            pz_tank_input input = {
+                .move_dir = { 0.0f, 0.0f },
+                .target_turret = ctrl->current_aim_angle,
+                .fire = false,
+            };
+            pz_tank_update(ai_mgr->tank_mgr, tank, &input, ai_mgr->map, dt);
+        }
 
         // Update fire timer
         if (ctrl->fire_timer > 0.0f) {
@@ -291,6 +574,12 @@ pz_ai_fire(pz_ai_manager *ai_mgr, pz_projectile_manager *proj_mgr)
         // Get the tank
         pz_tank *tank = pz_tank_get_by_id(ai_mgr->tank_mgr, ctrl->tank_id);
         if (!tank || (tank->flags & PZ_TANK_FLAG_DEAD)) {
+            continue;
+        }
+
+        // Level 2+: Only fire in FIRING state
+        if (ctrl->level >= PZ_ENEMY_LEVEL_2
+            && ctrl->state != PZ_AI_STATE_FIRING) {
             continue;
         }
 
@@ -330,7 +619,7 @@ pz_ai_fire(pz_ai_manager *ai_mgr, pz_projectile_manager *proj_mgr)
 
         pz_projectile_config proj_config = {
             .speed = weapon->projectile_speed,
-            .max_bounces = stats->max_bounces, // Use enemy's bounce count
+            .max_bounces = stats->max_bounces,
             .lifetime = -1.0f,
             .damage = weapon->damage,
             .scale = weapon->projectile_scale,
@@ -343,6 +632,9 @@ pz_ai_fire(pz_ai_manager *ai_mgr, pz_projectile_manager *proj_mgr)
         // Reset fire timer
         ctrl->fire_timer = stats->fire_cooldown;
         fired++;
+
+        // Track shots for cover behavior
+        ctrl->shots_fired++;
 
         pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME, "AI tank %d fired (level %d)",
             tank->id, ctrl->level);

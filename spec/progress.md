@@ -69,13 +69,17 @@
 
 ---
 
-## Next Up
-- [x] M2.S: sokol gfx/app migration (done)
-- [ ] M6.5: Tank death and respawn
-- [ ] M7B.1: Enemy types and spawn data (Level 1/2/3 enemies)
-- [ ] M7B.2: Stationary enemy AI (aim + fire at player)
+## Enemy AI System
+- [x] M7B.1: Enemy types and spawn data (Level 1/2/3 enemies)
+- [x] M7B.2: Level 1 enemy AI (stationary, aim + fire at player)
+- [x] M7B.2+: Level 2 enemy AI (uses cover, peeks to fire, retreats)
 - [ ] M7B.3: Enemy death (no respawn)
 - [ ] M7B.4: Campaign map 1 (1x Level 1 enemy)
+- [ ] M7B.5: Win condition (all enemies defeated)
+
+## Next Up
+- [ ] M6.5: Tank death and respawn
+- [ ] M7B.3: Enemy death (no respawn)
 - [ ] M7B.5: Win condition (all enemies defeated)
 
 ## Plan Changes

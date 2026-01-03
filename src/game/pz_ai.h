@@ -34,7 +34,7 @@ typedef struct pz_projectile_manager pz_projectile_manager;
  *   - 15 HP
  *   - Default weapon (1 bounce)
  *   - Faster fire rate
- *   - Stationary (turret only)
+ *   - Uses cover: hides behind walls, peeks out to fire
  *
  * Level 3: Advanced enemy
  *   - 20 HP
@@ -66,6 +66,16 @@ const pz_enemy_stats *pz_enemy_get_stats(pz_enemy_level level);
  * ============================================================================
  */
 
+// AI behavior states for cover-using enemies (Level 2+)
+typedef enum {
+    PZ_AI_STATE_IDLE, // Not moving, just aiming
+    PZ_AI_STATE_SEEKING_COVER, // Moving toward a cover position
+    PZ_AI_STATE_IN_COVER, // Hidden behind cover
+    PZ_AI_STATE_PEEKING, // Moving out from cover to fire
+    PZ_AI_STATE_FIRING, // Exposed, aiming and firing
+    PZ_AI_STATE_RETREATING, // Moving back to cover after firing
+} pz_ai_state;
+
 // AI state for a single enemy
 typedef struct pz_ai_controller {
     int tank_id; // Which tank this AI controls
@@ -82,6 +92,17 @@ typedef struct pz_ai_controller {
     // Behavior timers
     float reaction_delay; // Delay before reacting to player movement
     float last_seen_time; // When we last saw the player
+
+    // Cover behavior (Level 2+)
+    pz_ai_state state; // Current behavior state
+    pz_vec2 cover_pos; // Position behind cover
+    pz_vec2 peek_pos; // Position when peeking out to fire
+    pz_vec2 move_target; // Current movement target
+    float state_timer; // Timer for current state
+    float cover_search_timer; // Cooldown for searching new cover
+    bool has_cover; // Whether we have a valid cover position
+    int shots_fired; // Number of shots fired while peeking
+    int max_shots_per_peek; // How many shots to fire before retreating
 } pz_ai_controller;
 
 /* ============================================================================
