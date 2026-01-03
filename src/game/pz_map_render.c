@@ -83,8 +83,7 @@ struct pz_map_renderer {
 
 // Ground plane Y offset - slightly below walls
 #define GROUND_Y_OFFSET -0.01f
-// Ground shrink amount - shrink tiles slightly to avoid z-fighting
-#define GROUND_SHRINK 0.001f
+
 // Water plane Y offset - water surface is at this Y level relative to ground
 #define WATER_Y_OFFSET -0.5f
 
@@ -140,11 +139,6 @@ static float *
 emit_ground_quad_at_height(float *v, float x0, float z0, float x1, float z1,
     float y, int tile_x, int tile_y, int scale)
 {
-    x0 += GROUND_SHRINK;
-    z0 += GROUND_SHRINK;
-    x1 -= GROUND_SHRINK;
-    z1 -= GROUND_SHRINK;
-
     // World-space UVs: tile position divided by scale
     // This ensures adjacent tiles seamlessly continue the texture
     float inv_scale = 1.0f / (float)scale;
@@ -156,12 +150,7 @@ emit_ground_quad_at_height(float *v, float x0, float z0, float x1, float z1,
     u0 = 1.0f - u0;
     u1 = 1.0f - u1;
 
-    // Debug: log UVs for first few tiles
-    if (tile_x < 2 && tile_y < 2) {
-        pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_RENDER,
-            "Tile (%d,%d) scale=%d inv_scale=%f: UV (%f,%f) to (%f,%f)", tile_x,
-            tile_y, scale, inv_scale, u0, v0, u1, v1);
-    }
+
 
     // After flip: u0 = 1 - tile_x/scale, u1 = 1 - (tile_x+1)/scale
     // For tile_x=0, scale=6: u0=1.0, u1=0.833... (correct)
