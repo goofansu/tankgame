@@ -183,7 +183,7 @@ pz_vec2 pz_map_raycast(const pz_map *map, pz_vec2 start, pz_vec2 direction,
 // ============================================================================
 
 // Load map from file (returns NULL on failure)
-// Supports both v1 (legacy) and v2 formats
+// Supports v2 format only
 // If registry is provided, it will be set on the map for tile lookups
 pz_map *pz_map_load(const char *path);
 pz_map *pz_map_load_with_registry(

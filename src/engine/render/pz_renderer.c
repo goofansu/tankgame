@@ -347,6 +347,20 @@ pz_shader_handle
 pz_renderer_load_shader(pz_renderer *r, const char *vertex_path,
     const char *fragment_path, const char *name)
 {
+    if (!r) {
+        return PZ_INVALID_HANDLE;
+    }
+
+    if (r->backend_type == PZ_BACKEND_SOKOL
+        || r->backend_type == PZ_BACKEND_NULL) {
+        pz_shader_desc desc = {
+            .vertex_source = NULL,
+            .fragment_source = NULL,
+            .name = name,
+        };
+        return pz_renderer_create_shader(r, &desc);
+    }
+
     char *vertex_src = pz_file_read_text(vertex_path);
     if (!vertex_src) {
         pz_log(PZ_LOG_ERROR, PZ_LOG_CAT_RENDER,

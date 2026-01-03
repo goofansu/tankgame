@@ -117,7 +117,7 @@ target_include_directories(tankgame PRIVATE
 )
 
 # Shader compilation with sokol-shdc
-set(SHADER_INPUT ${CMAKE_SOURCE_DIR}/shaders/sokol/tankgame.glsl)
+set(SHADER_INPUT ${CMAKE_SOURCE_DIR}/shaders/tankgame.glsl)
 set(SHADER_OUTPUT ${CMAKE_SOURCE_DIR}/src/engine/render/pz_sokol_shaders.h)
 
 # Find sokol-shdc binary based on platform

@@ -37,7 +37,7 @@ if [[ ! -x "$shdc" ]]; then
     exit 1
 fi
 
-"$shdc" --input shaders/sokol/tankgame.glsl \
+"$shdc" --input shaders/tankgame.glsl \
     --output src/engine/render/pz_sokol_shaders.h \
     --slang glsl410:metal_macos \
     --reflection
