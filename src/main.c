@@ -16,6 +16,7 @@
 #include "core/pz_math.h"
 #include "core/pz_mem.h"
 #include "core/pz_platform.h"
+#include "core/pz_sim.h"
 #include "core/pz_str.h"
 #include "engine/pz_camera.h"
 #include "engine/pz_debug_overlay.h"
@@ -89,6 +90,8 @@ typedef struct app_state {
     pz_shader_handle laser_shader;
     pz_pipeline_handle laser_pipeline;
     pz_buffer_handle laser_vb;
+
+    pz_sim *sim; // Fixed timestep simulation system
 
     explosion_light explosion_lights[MAX_EXPLOSION_LIGHTS];
 
@@ -303,6 +306,11 @@ app_init(void)
             = pz_renderer_create_buffer(g_app.renderer, &laser_vb_desc);
     }
 
+    // Initialize simulation system with fixed timestep
+    // Seed with current time for variety, but can be set to fixed value for
+    // replays
+    g_app.sim = pz_sim_create((uint32_t)time(NULL));
+
     g_app.frame_count = 0;
     g_app.last_hot_reload_check = pz_time_now();
     g_app.last_frame_time = pz_time_now();
@@ -329,13 +337,18 @@ app_frame(void)
     }
 
     double current_time = pz_time_now();
-    float dt = (float)(current_time - g_app.last_frame_time);
+    float frame_dt = (float)(current_time - g_app.last_frame_time);
     g_app.last_frame_time = current_time;
-    if (dt > 0.1f)
-        dt = 0.1f;
-    if (dt < 0.0001f)
-        dt = 0.0001f;
+    if (frame_dt > 0.1f)
+        frame_dt = 0.1f;
+    if (frame_dt < 0.0001f)
+        frame_dt = 0.0001f;
 
+    // Determine number of simulation ticks to run this frame
+    int sim_ticks = pz_sim_accumulate(g_app.sim, frame_dt);
+    float dt = pz_sim_dt(); // Fixed timestep for simulation
+
+    // Gather input (once per frame)
     pz_tank_input player_input = { 0 };
     if (g_app.key_down[SAPP_KEYCODE_W] || g_app.key_down[SAPP_KEYCODE_UP])
         player_input.move_dir.y += 1.0f;
@@ -353,16 +366,10 @@ app_frame(void)
         float aim_dz = mouse_world.z - g_app.player_tank->pos.y;
         player_input.target_turret = atan2f(aim_dx, aim_dz);
         player_input.fire = g_app.mouse_left_down;
+    }
 
-        pz_tank_update(g_app.tank_mgr, g_app.player_tank, &player_input,
-            g_app.game_map, dt);
-
-        if (g_app.tracks && pz_vec2_len(g_app.player_tank->vel) > 0.1f) {
-            pz_tracks_add_mark(g_app.tracks, g_app.player_tank->id,
-                g_app.player_tank->pos.x, g_app.player_tank->pos.y,
-                g_app.player_tank->body_angle, 0.45f);
-        }
-
+    // Handle weapon cycling (once per frame, not per sim tick)
+    if (g_app.player_tank && !(g_app.player_tank->flags & PZ_TANK_FLAG_DEAD)) {
         if (g_app.scroll_accumulator >= 3.0f) {
             pz_tank_cycle_weapon(g_app.player_tank, 1);
             g_app.scroll_accumulator = 0.0f;
@@ -373,75 +380,113 @@ app_frame(void)
         if (g_app.key_f_just_pressed) {
             pz_tank_cycle_weapon(g_app.player_tank, 1);
         }
-
-        pz_powerup_type collected = pz_powerup_check_collection(
-            g_app.powerup_mgr, g_app.player_tank->pos, 0.7f);
-        if (collected != PZ_POWERUP_NONE) {
-            pz_tank_add_weapon(g_app.player_tank, (int)collected);
-            pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME, "Player collected: %s",
-                pz_powerup_type_name(collected));
-        }
-
-        int current_weapon = pz_tank_get_current_weapon(g_app.player_tank);
-        const pz_weapon_stats *weapon
-            = pz_weapon_get_stats((pz_powerup_type)current_weapon);
-
-        bool should_fire = weapon->auto_fire ? g_app.mouse_left_down
-                                             : g_app.mouse_left_just_pressed;
-
-        int active_projectiles = pz_projectile_count_by_owner(
-            g_app.projectile_mgr, g_app.player_tank->id);
-        bool can_fire = active_projectiles < weapon->max_active_projectiles;
-
-        if (should_fire && can_fire
-            && g_app.player_tank->fire_cooldown <= 0.0f) {
-            pz_vec2 spawn_pos = pz_tank_get_barrel_tip(g_app.player_tank);
-            pz_vec2 fire_dir = pz_tank_get_fire_direction(g_app.player_tank);
-
-            pz_projectile_config proj_config = {
-                .speed = weapon->projectile_speed,
-                .max_bounces = weapon->max_bounces,
-                .lifetime = -1.0f,
-                .damage = weapon->damage,
-                .scale = weapon->projectile_scale,
-                .color = weapon->projectile_color,
-            };
-
-            pz_projectile_spawn(g_app.projectile_mgr, spawn_pos, fire_dir,
-                &proj_config, g_app.player_tank->id);
-
-            g_app.player_tank->fire_cooldown = weapon->fire_cooldown;
-        }
     }
 
-    pz_tank_update_all(g_app.tank_mgr, g_app.game_map, dt);
+    // =========================================================================
+    // FIXED TIMESTEP SIMULATION LOOP
+    // Run N simulation ticks at fixed dt for deterministic gameplay
+    // =========================================================================
+    for (int tick = 0; tick < sim_ticks; tick++) {
+        pz_sim_begin_tick(g_app.sim);
 
-    if (g_app.ai_mgr && g_app.player_tank
-        && !(g_app.player_tank->flags & PZ_TANK_FLAG_DEAD)) {
-        pz_ai_update(
-            g_app.ai_mgr, g_app.player_tank->pos, g_app.projectile_mgr, dt);
-        pz_ai_fire(g_app.ai_mgr, g_app.projectile_mgr);
+        // Player tank update
+        if (g_app.player_tank
+            && !(g_app.player_tank->flags & PZ_TANK_FLAG_DEAD)) {
+            pz_tank_update(g_app.tank_mgr, g_app.player_tank, &player_input,
+                g_app.game_map, dt);
 
-        // Add track marks for moving enemy tanks
-        if (g_app.tracks) {
-            for (int i = 0; i < g_app.ai_mgr->controller_count; i++) {
-                pz_ai_controller *ctrl = &g_app.ai_mgr->controllers[i];
-                pz_tank *enemy
-                    = pz_tank_get_by_id(g_app.tank_mgr, ctrl->tank_id);
-                if (enemy && !(enemy->flags & PZ_TANK_FLAG_DEAD)) {
-                    if (pz_vec2_len(enemy->vel) > 0.1f) {
-                        pz_tracks_add_mark(g_app.tracks, enemy->id,
-                            enemy->pos.x, enemy->pos.y, enemy->body_angle,
-                            0.45f);
+            // Track marks for player
+            if (g_app.tracks && pz_vec2_len(g_app.player_tank->vel) > 0.1f) {
+                pz_tracks_add_mark(g_app.tracks, g_app.player_tank->id,
+                    g_app.player_tank->pos.x, g_app.player_tank->pos.y,
+                    g_app.player_tank->body_angle, 0.45f);
+            }
+
+            // Powerup collection
+            pz_powerup_type collected = pz_powerup_check_collection(
+                g_app.powerup_mgr, g_app.player_tank->pos, 0.7f);
+            if (collected != PZ_POWERUP_NONE) {
+                pz_tank_add_weapon(g_app.player_tank, (int)collected);
+                pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME, "Player collected: %s",
+                    pz_powerup_type_name(collected));
+            }
+
+            // Player firing
+            int current_weapon = pz_tank_get_current_weapon(g_app.player_tank);
+            const pz_weapon_stats *weapon
+                = pz_weapon_get_stats((pz_powerup_type)current_weapon);
+
+            bool should_fire = weapon->auto_fire
+                ? g_app.mouse_left_down
+                : g_app.mouse_left_just_pressed;
+
+            int active_projectiles = pz_projectile_count_by_owner(
+                g_app.projectile_mgr, g_app.player_tank->id);
+            bool can_fire = active_projectiles < weapon->max_active_projectiles;
+
+            if (should_fire && can_fire
+                && g_app.player_tank->fire_cooldown <= 0.0f) {
+                pz_vec2 spawn_pos = pz_tank_get_barrel_tip(g_app.player_tank);
+                pz_vec2 fire_dir
+                    = pz_tank_get_fire_direction(g_app.player_tank);
+
+                pz_projectile_config proj_config = {
+                    .speed = weapon->projectile_speed,
+                    .max_bounces = weapon->max_bounces,
+                    .lifetime = -1.0f,
+                    .damage = weapon->damage,
+                    .scale = weapon->projectile_scale,
+                    .color = weapon->projectile_color,
+                };
+
+                pz_projectile_spawn(g_app.projectile_mgr, spawn_pos, fire_dir,
+                    &proj_config, g_app.player_tank->id);
+
+                g_app.player_tank->fire_cooldown = weapon->fire_cooldown;
+            }
+        }
+
+        // Update all tanks (respawn timers, etc.)
+        pz_tank_update_all(g_app.tank_mgr, g_app.game_map, dt);
+
+        // AI update
+        if (g_app.ai_mgr && g_app.player_tank
+            && !(g_app.player_tank->flags & PZ_TANK_FLAG_DEAD)) {
+            pz_ai_update(
+                g_app.ai_mgr, g_app.player_tank->pos, g_app.projectile_mgr, dt);
+            pz_ai_fire(g_app.ai_mgr, g_app.projectile_mgr);
+
+            // Track marks for enemy tanks
+            if (g_app.tracks) {
+                for (int i = 0; i < g_app.ai_mgr->controller_count; i++) {
+                    pz_ai_controller *ctrl = &g_app.ai_mgr->controllers[i];
+                    pz_tank *enemy
+                        = pz_tank_get_by_id(g_app.tank_mgr, ctrl->tank_id);
+                    if (enemy && !(enemy->flags & PZ_TANK_FLAG_DEAD)) {
+                        if (pz_vec2_len(enemy->vel) > 0.1f) {
+                            pz_tracks_add_mark(g_app.tracks, enemy->id,
+                                enemy->pos.x, enemy->pos.y, enemy->body_angle,
+                                0.45f);
+                        }
                     }
                 }
             }
         }
-    }
 
-    pz_powerup_update(g_app.powerup_mgr, dt);
-    pz_projectile_update(
-        g_app.projectile_mgr, g_app.game_map, g_app.tank_mgr, dt);
+        // Powerup and projectile updates
+        pz_powerup_update(g_app.powerup_mgr, dt);
+        pz_projectile_update(
+            g_app.projectile_mgr, g_app.game_map, g_app.tank_mgr, dt);
+
+        // Hash game state for determinism verification
+        if (g_app.player_tank) {
+            pz_sim_hash_vec2(
+                g_app.sim, g_app.player_tank->pos.x, g_app.player_tank->pos.y);
+            pz_sim_hash_float(g_app.sim, g_app.player_tank->body_angle);
+        }
+
+        pz_sim_end_tick(g_app.sim);
+    }
 
     {
         pz_projectile_hit hits[PZ_MAX_PROJECTILE_HITS];
@@ -492,13 +537,16 @@ app_frame(void)
         }
     }
 
+    // =========================================================================
+    // VISUAL-ONLY UPDATES (use frame_dt for smooth animation)
+    // =========================================================================
     for (int i = 0; i < MAX_EXPLOSION_LIGHTS; i++) {
         if (g_app.explosion_lights[i].timer > 0.0f) {
-            g_app.explosion_lights[i].timer -= dt;
+            g_app.explosion_lights[i].timer -= frame_dt;
         }
     }
 
-    pz_particle_update(g_app.particle_mgr, dt);
+    pz_particle_update(g_app.particle_mgr, frame_dt);
 
     double now = pz_time_now();
     if (now - g_app.last_hot_reload_check > 0.5) {
@@ -825,6 +873,7 @@ app_cleanup(void)
         pz_renderer_destroy_shader(g_app.renderer, g_app.laser_shader);
     }
 
+    pz_sim_destroy(g_app.sim);
     pz_ai_manager_destroy(g_app.ai_mgr);
     pz_tank_manager_destroy(g_app.tank_mgr, g_app.renderer);
     pz_projectile_manager_destroy(g_app.projectile_mgr, g_app.renderer);

@@ -67,3 +67,15 @@ target_include_directories(test_map PRIVATE
 )
 target_compile_definitions(test_map PRIVATE PZ_DEBUG)
 add_test(NAME map COMMAND test_map)
+
+# Simulation system tests
+add_executable(test_sim test_sim.c
+    ../src/core/pz_sim.c
+    ../src/core/pz_mem.c
+)
+target_include_directories(test_sim PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR} 
+    ${CMAKE_SOURCE_DIR}/src
+)
+target_compile_definitions(test_sim PRIVATE PZ_DEBUG)
+add_test(NAME sim COMMAND test_sim)

@@ -39,6 +39,7 @@ set(CORE_SOURCES
     src/core/pz_str.c
     src/core/pz_platform.c
     src/core/pz_debug_cmd.c
+    src/core/pz_sim.c
 )
 
 set(ENGINE_SOURCES

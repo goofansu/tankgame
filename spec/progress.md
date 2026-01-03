@@ -35,14 +35,14 @@
 - [x] Camera auto-fit to show entire map
 - [x] Fixed map parser to correctly load terrain types
 
-## Phase 4: First Entity - The Tank (partial, frontloaded gameplay)
+## Phase 4: First Entity - The Tank (complete)
 - [x] M4.1: tank body mesh, turret mesh, entity shader, renders at origin
+- [x] M4.2: entity system (specialized managers: pz_tank_manager, pz_projectile_manager, pz_ai_manager)
+- [x] M4.3: tank entity structure (pz_tank with health, loadout, rendering params)
 - [x] M4.4: input system (WASD + mouse aiming) - frontloaded
+- [x] M4.5: simulation timestep + determinism harness (pz_sim with fixed timestep, RNG, state hashing)
 - [x] M4.6: tank movement (WASD control, mouse turret aim) - frontloaded
 - [x] M4.7: tank-wall collision (separate axis, sliding along walls) - frontloaded
-- [ ] M4.2: entity system foundation (formal entity manager)
-- [ ] M4.3: tank entity structure (formal component)
-- [ ] M4.5: simulation timestep + determinism harness
 
 ## Phase 6: Weapons and Projectiles (frontloaded)
 - [x] M6.1: projectile entity, mesh, movement, lifetime
