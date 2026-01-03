@@ -1,0 +1,11 @@
+# Main Campaign
+# Progress through increasingly difficult arenas
+
+NAME Main Campaign
+
+# Starting lives for the campaign
+LIVES 3
+
+# Maps in order (paths relative to assets/)
+MAP assets/maps/night_arena.map
+MAP assets/maps/day_arena.map

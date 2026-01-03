@@ -113,4 +113,7 @@ void pz_particle_render(pz_particle_manager *mgr, pz_renderer *renderer,
 // Get number of active particles
 int pz_particle_count(const pz_particle_manager *mgr);
 
+// Clear all active particles
+void pz_particle_clear(pz_particle_manager *mgr);
+
 #endif // PZ_PARTICLE_H

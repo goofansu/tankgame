@@ -628,3 +628,16 @@ pz_particle_count(const pz_particle_manager *mgr)
 {
     return mgr ? mgr->active_count : 0;
 }
+
+void
+pz_particle_clear(pz_particle_manager *mgr)
+{
+    if (!mgr) {
+        return;
+    }
+
+    for (int i = 0; i < PZ_MAX_PARTICLES; i++) {
+        mgr->particles[i].active = false;
+    }
+    mgr->active_count = 0;
+}

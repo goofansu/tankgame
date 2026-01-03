@@ -85,8 +85,17 @@
 ## Phase 6 Completion
 - [x] M6.5: Tank death and respawn (player respawns, enemies stay dead)
 
+## Campaign System
+- [x] Campaign file format (plain text, NAME/MAP/LIVES commands)
+- [x] Campaign manager (load, start, advance, track lives)
+- [x] Map session system (encapsulates all map-dependent state)
+- [x] Level transitions (SPACE to advance, R to restart)
+- [x] Lives system (lose life on death, game over when 0)
+- [x] HUD updates (Level X/Y, Lives: N, enemies count)
+- [x] State overlays (Level Complete, Game Over, Campaign Complete)
+- [x] Main campaign with night_arena → day_arena
+
 ## Next Up
-- [ ] M7B.4: Campaign map 1 (1x Level 1 enemy)
 - [ ] Phase 5: Physics and Collision (M5.1-M5.4)
 - [ ] Phase 8: Audio Foundation
 
