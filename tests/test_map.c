@@ -34,21 +34,21 @@ TEST(map_cell_access)
     pz_map *map = pz_map_create(8, 8, 1.0f);
     ASSERT_NOT_NULL(map);
 
-    // Add tile definitions
-    int mud_idx = pz_map_add_tile_def(map, ':', "mud");
-    int ice_idx = pz_map_add_tile_def(map, '*', "ice");
+    // Add tile definitions (symbol → texture name)
+    int mud_idx = pz_map_add_tile_def(map, ':', "mud_wet");
+    int carpet_idx = pz_map_add_tile_def(map, '*', "carpet_gray");
     ASSERT(mud_idx >= 0);
-    ASSERT(ice_idx >= 0);
+    ASSERT(carpet_idx >= 0);
 
     // Set and get cells
-    pz_map_set_cell(map, 0, 0,
-        (pz_map_cell) { .height = 2, .tile_index = 1 }); // stone wall
+    pz_map_set_cell(
+        map, 0, 0, (pz_map_cell) { .height = 2, .tile_index = 1 }); // wall
     pz_map_set_cell(map, 1, 1,
         (pz_map_cell) { .height = 0, .tile_index = (uint8_t)mud_idx });
     pz_map_set_cell(
         map, 2, 2, (pz_map_cell) { .height = -1, .tile_index = 0 }); // pit
     pz_map_set_cell(map, 3, 3,
-        (pz_map_cell) { .height = 0, .tile_index = (uint8_t)ice_idx });
+        (pz_map_cell) { .height = 0, .tile_index = (uint8_t)carpet_idx });
 
     pz_map_cell cell = pz_map_get_cell(map, 0, 0);
     ASSERT_EQ(2, cell.height);
@@ -63,7 +63,7 @@ TEST(map_cell_access)
 
     cell = pz_map_get_cell(map, 3, 3);
     ASSERT_EQ(0, cell.height);
-    ASSERT_EQ(ice_idx, cell.tile_index);
+    ASSERT_EQ(carpet_idx, cell.tile_index);
 
     // Out of bounds returns high wall
     cell = pz_map_get_cell(map, -1, 0);
@@ -181,18 +181,54 @@ TEST(map_solid_check)
     pz_map_destroy(map);
 }
 
+TEST(map_texture_props)
+{
+    // Test texture property lookup (independent of map)
+    pz_texture_props props;
+
+    // Mud textures - slow
+    props = pz_get_texture_props("mud_wet");
+    ASSERT_NEAR(0.5f, props.speed_multiplier, 0.01f);
+    ASSERT_NEAR(1.0f, props.friction, 0.01f);
+
+    props = pz_get_texture_props("mud_churned");
+    ASSERT_NEAR(0.5f, props.speed_multiplier, 0.01f);
+
+    props = pz_get_texture_props("mud_dry");
+    ASSERT_NEAR(0.7f, props.speed_multiplier, 0.01f);
+
+    // Carpet textures - slippery
+    props = pz_get_texture_props("carpet_gray");
+    ASSERT_NEAR(1.2f, props.speed_multiplier, 0.01f);
+    ASSERT_NEAR(0.3f, props.friction, 0.01f);
+
+    // Wood textures - normal
+    props = pz_get_texture_props("wood_oak_brown");
+    ASSERT_NEAR(1.0f, props.speed_multiplier, 0.01f);
+    ASSERT_NEAR(1.0f, props.friction, 0.01f);
+
+    // Unknown texture - defaults
+    props = pz_get_texture_props("unknown_texture");
+    ASSERT_NEAR(1.0f, props.speed_multiplier, 0.01f);
+    ASSERT_NEAR(1.0f, props.friction, 0.01f);
+
+    // NULL - defaults
+    props = pz_get_texture_props(NULL);
+    ASSERT_NEAR(1.0f, props.speed_multiplier, 0.01f);
+}
+
 TEST(map_speed_multiplier)
 {
     pz_map *map = pz_map_create(8, 8, 2.0f);
     ASSERT_NOT_NULL(map);
 
-    // Add terrain types
-    int mud_idx = pz_map_add_tile_def(map, ':', "mud");
-    int ice_idx = pz_map_add_tile_def(map, '*', "ice");
+    // Add terrain types (symbol → texture name mapping)
+    int mud_idx = pz_map_add_tile_def(map, ':', "mud_wet");
+    int carpet_idx = pz_map_add_tile_def(map, '*', "carpet_gray");
 
     pz_vec2 center = pz_map_tile_to_world(map, 4, 4);
 
-    // Ground = normal speed
+    // Default ground (wood_oak_brown) = normal speed
     pz_map_set_cell(map, 4, 4, (pz_map_cell) { .height = 0, .tile_index = 0 });
     ASSERT_NEAR(1.0f, pz_map_get_speed_multiplier(map, center), 0.01f);
 
@@ -201,9 +237,9 @@ TEST(map_speed_multiplier)
         (pz_map_cell) { .height = 0, .tile_index = (uint8_t)mud_idx });
     ASSERT_NEAR(0.5f, pz_map_get_speed_multiplier(map, center), 0.01f);
 
-    // Ice = slightly faster
+    // Carpet = slightly faster
     pz_map_set_cell(map, 4, 4,
-        (pz_map_cell) { .height = 0, .tile_index = (uint8_t)ice_idx });
+        (pz_map_cell) { .height = 0, .tile_index = (uint8_t)carpet_idx });
     ASSERT_NEAR(1.2f, pz_map_get_speed_multiplier(map, center), 0.01f);
 
     // Wall = impassable

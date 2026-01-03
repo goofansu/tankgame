@@ -5,10 +5,10 @@ size 24 14
 tile_size 2.0
 
 # Tile definitions
-tile . ground
-tile # stone
-tile : mud
-tile * ice
+tile . wood_oak_brown
+tile # wood_rustic_dark
+tile : mud_wet
+tile * carpet_gray
 
 # Object tags
 tag P1 spawn angle=0.785 team=0

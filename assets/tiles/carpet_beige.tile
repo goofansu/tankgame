@@ -1,0 +1,5 @@
+# Carpet (beige) - slippery surface
+name carpet_beige
+texture assets/textures/carpet_beige.png
+speed_multiplier 1.2
+friction 0.3

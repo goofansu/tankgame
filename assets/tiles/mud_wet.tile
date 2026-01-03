@@ -1,0 +1,5 @@
+# Mud (wet) - slows movement significantly
+name mud_wet
+texture assets/textures/mud_wet.png
+speed_multiplier 0.5
+friction 1.0

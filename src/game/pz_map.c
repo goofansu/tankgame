@@ -16,15 +16,55 @@
 #include "../core/pz_platform.h"
 #include "../core/pz_str.h"
 
+// Texture property lookup table
+// Maps texture names to gameplay properties (speed multiplier, friction)
+static const struct {
+    const char *name;
+    pz_texture_props props;
+} texture_props_table[] = {
+    // Mud textures - slow movement
+    { "mud_wet", { 0.5f, 1.0f } }, { "mud_churned", { 0.5f, 1.0f } },
+    { "mud_dry", { 0.7f, 1.0f } },
+
+    // Carpet textures - slippery (low friction)
+    { "carpet_gray", { 1.2f, 0.3f } }, { "carpet_beige", { 1.2f, 0.3f } },
+
+    // Wood textures - normal
+    { "wood_oak_brown", { 1.0f, 1.0f } }, { "wood_oak_amber", { 1.0f, 1.0f } },
+    { "wood_oak_veneer", { 1.0f, 1.0f } },
+    { "wood_pine_light", { 1.0f, 1.0f } },
+    { "wood_rustic_dark", { 1.0f, 1.0f } }, { "wood_walnut", { 1.0f, 1.0f } },
+
+    { NULL, { 0, 0 } } // Sentinel
+};
+
+pz_texture_props
+pz_get_texture_props(const char *texture_name)
+{
+    pz_texture_props default_props = { 1.0f, 1.0f };
+
+    if (!texture_name) {
+        return default_props;
+    }
+
+    for (int i = 0; texture_props_table[i].name != NULL; i++) {
+        if (strcmp(texture_name, texture_props_table[i].name) == 0) {
+            return texture_props_table[i].props;
+        }
+    }
+
+    return default_props;
+}
+
 // Default tile definitions
 static void
 init_default_tile_defs(pz_map *map)
 {
-    // Ground - standard passable terrain
-    pz_map_add_tile_def(map, '.', "ground");
+    // Ground - standard passable terrain (wood floor)
+    pz_map_add_tile_def(map, '.', "wood_oak_brown");
 
-    // Stone - wall material
-    pz_map_add_tile_def(map, '#', "stone");
+    // Stone - wall material (dark rustic wood)
+    pz_map_add_tile_def(map, '#', "wood_rustic_dark");
 }
 
 pz_map *
@@ -105,8 +145,8 @@ pz_map_create_test(void)
     snprintf(map->name, sizeof(map->name), "Test Arena");
 
     // Add tile definitions
-    pz_map_add_tile_def(map, ':', "mud");
-    pz_map_add_tile_def(map, '*', "ice");
+    pz_map_add_tile_def(map, ':', "mud_wet");
+    pz_map_add_tile_def(map, '*', "carpet_gray");
 
     // Define the map layout with heights
     // Format: height, tile_symbol
@@ -312,29 +352,9 @@ pz_map_add_tile_def(pz_map *map, char symbol, const char *name)
     strncpy(def->name, name, sizeof(def->name) - 1);
     def->name[sizeof(def->name) - 1] = '\0';
 
-    // Default texture path based on name
+    // Texture path based on name
     snprintf(
         def->texture, sizeof(def->texture), "assets/textures/%s.png", name);
-
-    // Default side texture for walls
-    if (strcmp(name, "stone") == 0) {
-        snprintf(def->side_texture, sizeof(def->side_texture),
-            "assets/textures/wall_side.png");
-    } else {
-        def->side_texture[0] = '\0';
-    }
-
-    // Default properties
-    def->speed_multiplier = 1.0f;
-    def->friction = 1.0f;
-
-    // Special cases
-    if (strcmp(name, "mud") == 0) {
-        def->speed_multiplier = 0.5f;
-    } else if (strcmp(name, "ice") == 0) {
-        def->speed_multiplier = 1.2f;
-        def->friction = 0.3f;
-    }
 
     return idx;
 }
@@ -412,10 +432,11 @@ pz_map_get_speed_multiplier(const pz_map *map, pz_vec2 world_pos)
         return 0.0f; // Impassable
     }
 
-    // Get tile definition for speed multiplier
+    // Get tile definition and look up properties by texture name
     const pz_tile_def *def = pz_map_get_tile_def(map, tx, ty);
     if (def) {
-        return def->speed_multiplier;
+        pz_texture_props props = pz_get_texture_props(def->name);
+        return props.speed_multiplier;
     }
 
     return 1.0f;

@@ -25,15 +25,23 @@
 #define PZ_MAP_MAX_ENEMIES 16
 #define PZ_MAP_MAX_TILE_DEFS 32
 
-// Tile definition (loaded from assets/tiles/)
+// Tile definition - maps a symbol to a texture name
+// Symbols are defined per-map in the map file
 typedef struct pz_tile_def {
     char symbol; // Single char used in map grid (e.g., '.', '#')
-    char name[32]; // Asset name (e.g., "ground", "stone")
-    char texture[128]; // Path to texture
-    char side_texture[128]; // Path to side texture (for walls)
+    char name[32]; // Texture name (e.g., "wood_oak_brown")
+    char texture[128]; // Full path to texture (auto-generated)
+} pz_tile_def;
+
+// Texture properties - gameplay properties derived from texture name
+typedef struct pz_texture_props {
     float speed_multiplier; // Movement speed modifier (default 1.0)
     float friction; // Friction coefficient (default 1.0)
-} pz_tile_def;
+} pz_texture_props;
+
+// Get gameplay properties for a texture by name
+// Returns default properties (1.0, 1.0) if texture not recognized
+pz_texture_props pz_get_texture_props(const char *texture_name);
 
 // Spawn point data
 typedef struct pz_spawn_point {

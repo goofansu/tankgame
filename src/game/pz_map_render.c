@@ -468,9 +468,9 @@ load_tile_texture(pz_map_renderer *mr, const pz_tile_def *def)
             mr->tex_manager, fallback, PZ_FILTER_LINEAR_MIPMAP, PZ_WRAP_REPEAT);
 
         if (tex == PZ_INVALID_HANDLE) {
-            // Last resort: use ground texture
+            // Last resort: use wood_oak_brown as default ground texture
             tex = pz_texture_load_ex(mr->tex_manager,
-                "assets/textures/ground.png", PZ_FILTER_LINEAR_MIPMAP,
+                "assets/textures/wood_oak_brown.png", PZ_FILTER_LINEAR_MIPMAP,
                 PZ_WRAP_REPEAT);
         }
     }
@@ -498,11 +498,12 @@ pz_map_renderer_create(pz_renderer *renderer, pz_texture_manager *tex_manager)
         mr->tile_textures[i] = PZ_INVALID_HANDLE;
     }
 
-    // Load default wall textures
+    // Load default wall textures (using wood textures)
     mr->wall_top_tex = pz_texture_load_ex(tex_manager,
-        "assets/textures/wall.png", PZ_FILTER_LINEAR_MIPMAP, PZ_WRAP_REPEAT);
+        "assets/textures/wood_rustic_dark.png", PZ_FILTER_LINEAR_MIPMAP,
+        PZ_WRAP_REPEAT);
     mr->wall_side_tex
-        = pz_texture_load_ex(tex_manager, "assets/textures/wall_side.png",
+        = pz_texture_load_ex(tex_manager, "assets/textures/wood_walnut.png",
             PZ_FILTER_LINEAR_MIPMAP, PZ_WRAP_REPEAT);
     if (mr->wall_side_tex == PZ_INVALID_HANDLE) {
         mr->wall_side_tex = mr->wall_top_tex;

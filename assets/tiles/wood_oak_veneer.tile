@@ -1,0 +1,5 @@
+# Wood (oak veneer) - standard floor
+name wood_oak_veneer
+texture assets/textures/wood_oak_veneer.png
+speed_multiplier 1.0
+friction 1.0

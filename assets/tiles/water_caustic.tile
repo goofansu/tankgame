@@ -1,0 +1,5 @@
+# Water (caustic) - water surface
+name water_caustic
+texture assets/textures/water_caustic.png
+speed_multiplier 0.3
+friction 0.5
