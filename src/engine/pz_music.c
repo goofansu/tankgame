@@ -32,6 +32,7 @@ struct pz_music {
     int layer_count;
     _Atomic float master_volume;
     _Atomic bool playing;
+    _Atomic double playback_time_ms;
     int sample_rate;
 };
 
@@ -203,6 +204,7 @@ pz_music_create(const pz_music_config *config)
     }
 
     atomic_store_explicit(&music->playing, false, memory_order_relaxed);
+    atomic_store_explicit(&music->playback_time_ms, 0.0, memory_order_relaxed);
 
     pz_log(PZ_LOG_INFO, PZ_LOG_CAT_AUDIO, "Music system ready (%d layers)",
         music->layer_count);
@@ -250,6 +252,7 @@ pz_music_stop(pz_music *music)
         return;
     }
     atomic_store_explicit(&music->playing, false, memory_order_relaxed);
+    atomic_store_explicit(&music->playback_time_ms, 0.0, memory_order_relaxed);
     for (int i = 0; i < music->layer_count; i++) {
         pz_music_reset_layer(music, &music->layers[i]);
     }
@@ -339,6 +342,15 @@ pz_music_get_volume(const pz_music *music)
         return 0.0f;
     }
     return atomic_load_explicit(&music->master_volume, memory_order_relaxed);
+}
+
+double
+pz_music_get_time_ms(const pz_music *music)
+{
+    if (!music) {
+        return 0.0;
+    }
+    return atomic_load_explicit(&music->playback_time_ms, memory_order_relaxed);
 }
 
 void
@@ -447,6 +459,11 @@ pz_music_render(
                 = atomic_load_explicit(&layer->enabled, memory_order_relaxed);
             pz_music_sync_layer(music, layer, enabled);
         }
+    }
+
+    if (music->layer_count > 0) {
+        atomic_store_explicit(&music->playback_time_ms,
+            music->layers[0].time_ms, memory_order_relaxed);
     }
 }
 

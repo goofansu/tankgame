@@ -42,6 +42,8 @@ float pz_music_get_layer_volume(const pz_music *music, int layer);
 void pz_music_set_volume(pz_music *music, float volume);
 float pz_music_get_volume(const pz_music *music);
 
+double pz_music_get_time_ms(const pz_music *music);
+
 void pz_music_render(
     pz_music *music, float *buffer, int num_frames, int num_channels);
 void pz_music_update(pz_music *music, float dt);

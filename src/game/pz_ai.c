@@ -1142,6 +1142,26 @@ pz_ai_count_alive(const pz_ai_manager *ai_mgr)
 }
 
 bool
+pz_ai_has_level3_alive(const pz_ai_manager *ai_mgr)
+{
+    if (!ai_mgr || !ai_mgr->tank_mgr) {
+        return false;
+    }
+
+    for (int i = 0; i < ai_mgr->controller_count; i++) {
+        const pz_ai_controller *ctrl = &ai_mgr->controllers[i];
+        if (ctrl->level == PZ_ENEMY_LEVEL_3) {
+            pz_tank *tank = pz_tank_get_by_id(ai_mgr->tank_mgr, ctrl->tank_id);
+            if (tank && !(tank->flags & PZ_TANK_FLAG_DEAD)) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+bool
 pz_ai_is_controlled(const pz_ai_manager *ai_mgr, int tank_id)
 {
     if (!ai_mgr) {

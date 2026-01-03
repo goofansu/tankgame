@@ -3,6 +3,7 @@ version 2
 name Day Arena
 size 24 14
 tile_size 2.0
+music march
 
 # Tile definitions
 tile . wood_oak_brown

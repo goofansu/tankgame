@@ -126,6 +126,10 @@ typedef struct pz_map {
     // Background settings
     pz_map_background background;
 
+    // Music settings
+    char music_name[64];
+    bool has_music;
+
     // Bounds (in world units)
     float world_width;
     float world_height;

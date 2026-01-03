@@ -84,6 +84,9 @@ pz_map_create(int width, int height, float tile_size)
     map->background.gradient_dir = PZ_GRADIENT_VERTICAL;
     map->background.texture_path[0] = '\0';
 
+    map->has_music = false;
+    map->music_name[0] = '\0';
+
     pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME, "Created map %dx%d (%.1f unit tiles)",
         width, height, tile_size);
 
@@ -810,6 +813,8 @@ pz_map_load(const char *path)
     char name[64] = "Unnamed";
     int width = 0, height = 0;
     float tile_size = 2.0f;
+    char music_name[64] = "";
+    bool has_music = false;
 
     // Tag definitions
     tag_def tags[MAX_TAGS];
@@ -841,6 +846,10 @@ pz_map_load(const char *path)
             sscanf(p + 5, "%d %d", &width, &height);
         } else if (strncmp(p, "tile_size ", 10) == 0) {
             tile_size = (float)atof(p + 10);
+        } else if (strncmp(p, "music ", 6) == 0) {
+            if (sscanf(p + 6, "%63s", music_name) == 1) {
+                has_music = true;
+            }
         } else if (strncmp(p, "tile ", 5) == 0) {
             // Parse: tile <symbol> <name>
             char sym;
@@ -890,6 +899,11 @@ pz_map_load(const char *path)
     }
     strncpy(map->name, name, sizeof(map->name) - 1);
     map->version = version;
+    if (has_music) {
+        strncpy(map->music_name, music_name, sizeof(map->music_name) - 1);
+        map->music_name[sizeof(map->music_name) - 1] = '\0';
+        map->has_music = true;
+    }
 
     // Add tile definitions from file
     for (int i = 0; i < tile_def_count; i++) {
@@ -907,7 +921,7 @@ pz_map_load(const char *path)
         // Check for end of grid section
         if (*p == '#' || strncmp(p, "spawn ", 6) == 0
             || strncmp(p, "enemy ", 6) == 0 || strncmp(p, "sun_", 4) == 0
-            || strncmp(p, "ambient_", 8) == 0
+            || strncmp(p, "ambient_", 8) == 0 || strncmp(p, "music ", 6) == 0
             || strncmp(p, "water_level ", 12) == 0) {
             // Re-process this line below
             break;
@@ -1086,6 +1100,10 @@ pz_map_load(const char *path)
             }
         } else if (strncmp(p, "ambient_darkness ", 17) == 0) {
             map->lighting.ambient_darkness = (float)atof(p + 17);
+        } else if (strncmp(p, "music ", 6) == 0) {
+            if (sscanf(p + 6, "%63s", map->music_name) == 1) {
+                map->has_music = true;
+            }
         } else if (strncmp(p, "water_level ", 12) == 0) {
             map->water_level = atoi(p + 12);
             map->has_water = true;
@@ -1173,9 +1191,18 @@ pz_map_save(const pz_map *map, const char *path)
         "version 2\n"
         "name %s\n"
         "size %d %d\n"
-        "tile_size %.1f\n"
-        "\n",
+        "tile_size %.1f\n",
         map->name, map->width, map->height, map->tile_size);
+    p += written;
+    remaining -= written;
+
+    if (map->has_music && map->music_name[0]) {
+        written = snprintf(p, remaining, "music %s\n", map->music_name);
+        p += written;
+        remaining -= written;
+    }
+
+    written = snprintf(p, remaining, "\n");
     p += written;
     remaining -= written;
 

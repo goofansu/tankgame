@@ -164,6 +164,7 @@ int pz_ai_fire(pz_ai_manager *ai_mgr, pz_projectile_manager *proj_mgr);
 
 // Get count of alive AI-controlled enemies
 int pz_ai_count_alive(const pz_ai_manager *ai_mgr);
+bool pz_ai_has_level3_alive(const pz_ai_manager *ai_mgr);
 
 // Check if a tank is AI-controlled
 bool pz_ai_is_controlled(const pz_ai_manager *ai_mgr, int tank_id);

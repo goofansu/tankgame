@@ -22,12 +22,12 @@
 #include "engine/pz_camera.h"
 #include "engine/pz_debug_overlay.h"
 #include "engine/pz_font.h"
-#include "engine/pz_music.h"
 #include "engine/render/pz_renderer.h"
 #include "engine/render/pz_texture.h"
 #include "game/pz_ai.h"
 #include "game/pz_background.h"
 #include "game/pz_campaign.h"
+#include "game/pz_game_music.h"
 #include "game/pz_lighting.h"
 #include "game/pz_map.h"
 #include "game/pz_map_render.h"
@@ -124,7 +124,7 @@ typedef struct app_state {
     pz_font *font_caveat;
     pz_sim *sim;
     pz_audio *audio;
-    pz_music *music;
+    pz_game_music *game_music;
 
     // Laser rendering (persistent)
     pz_shader_handle laser_shader;
@@ -254,6 +254,14 @@ map_session_load(map_session *session, const char *map_path)
     // Configure background from map settings
     if (g_app.background) {
         pz_background_set_from_map(g_app.background, session->map);
+    }
+
+    if (g_app.game_music) {
+        if (session->map->has_music) {
+            pz_game_music_load(g_app.game_music, session->map->music_name);
+        } else {
+            pz_game_music_stop(g_app.game_music);
+        }
     }
 
     // Set tile registry on map for property lookups
@@ -443,46 +451,16 @@ app_init(void)
 
     g_app.audio = pz_audio_init();
     if (g_app.audio) {
-        pz_music_config music_config = {
-            .soundfont_path = "assets/sounds/soundfont.sf2",
-            .layer_count = 3,
-            .master_volume = 0.6f,
-            .layers = {
-                {
-                    .midi_path = "assets/music/march_drums.mid",
-                    .midi_channel = 9,
-                    .volume = 1.0f,
-                    .enabled = true,
-                    .loop = true,
-                },
-                {
-                    .midi_path = "assets/music/march_bass.mid",
-                    .midi_channel = 0,
-                    .volume = 0.8f,
-                    .enabled = true,
-                    .loop = true,
-                },
-                {
-                    .midi_path = "assets/music/march_melody.mid",
-                    .midi_channel = 1,
-                    .volume = 1.0f,
-                    .enabled = true,
-                    .loop = true,
-                },
-            },
-        };
-
-        g_app.music = pz_music_create(&music_config);
-        if (g_app.music) {
+        g_app.game_music = pz_game_music_create("assets/sounds/soundfont.sf2");
+        if (g_app.game_music) {
             pz_audio_set_callback(
-                g_app.audio, audio_music_callback, g_app.music);
-            pz_music_play(g_app.music);
+                g_app.audio, audio_music_callback, g_app.game_music);
         } else {
             pz_audio_shutdown(g_app.audio);
             g_app.audio = NULL;
         }
     } else {
-        g_app.music = NULL;
+        g_app.game_music = NULL;
     }
 
     // Initialize core systems (persistent across maps)
@@ -915,8 +893,12 @@ app_frame(void)
     }
 
     pz_particle_update(g_app.session.particle_mgr, frame_dt);
-    if (g_app.music) {
-        pz_music_update(g_app.music, frame_dt);
+    if (g_app.game_music && g_app.session.tank_mgr) {
+        int enemies_alive = pz_tank_count_enemies_alive(g_app.session.tank_mgr);
+        bool has_level3 = pz_ai_has_level3_alive(g_app.session.ai_mgr);
+        bool level_complete = (g_app.state == GAME_STATE_LEVEL_COMPLETE);
+        pz_game_music_update(g_app.game_music, enemies_alive, has_level3,
+            level_complete, frame_dt);
     }
 
     double now = pz_time_now();
@@ -1357,21 +1339,6 @@ app_event(const sapp_event *event)
                 }
             } else if (event->key_code == SAPP_KEYCODE_F) {
                 g_app.key_f_just_pressed = true;
-            } else if (event->key_code == SAPP_KEYCODE_1) {
-                if (g_app.music) {
-                    bool enabled = pz_music_get_layer_enabled(g_app.music, 0);
-                    pz_music_set_layer_enabled(g_app.music, 0, !enabled);
-                }
-            } else if (event->key_code == SAPP_KEYCODE_2) {
-                if (g_app.music) {
-                    bool enabled = pz_music_get_layer_enabled(g_app.music, 1);
-                    pz_music_set_layer_enabled(g_app.music, 1, !enabled);
-                }
-            } else if (event->key_code == SAPP_KEYCODE_3) {
-                if (g_app.music) {
-                    bool enabled = pz_music_get_layer_enabled(g_app.music, 2);
-                    pz_music_set_layer_enabled(g_app.music, 2, !enabled);
-                }
             } else if (event->key_code == SAPP_KEYCODE_SPACE) {
                 // SPACE advances to next level (only in level complete state)
                 if (g_app.state == GAME_STATE_LEVEL_COMPLETE
@@ -1516,7 +1483,7 @@ app_cleanup(void)
         pz_audio_set_callback(g_app.audio, NULL, NULL);
         pz_audio_shutdown(g_app.audio);
     }
-    pz_music_destroy(g_app.music);
+    pz_game_music_destroy(g_app.game_music);
 
     pz_log_shutdown();
     pz_mem_dump_leaks();
@@ -1528,7 +1495,8 @@ static void
 audio_music_callback(
     float *buffer, int num_frames, int num_channels, void *userdata)
 {
-    pz_music_render((pz_music *)userdata, buffer, num_frames, num_channels);
+    pz_game_music_render(
+        (pz_game_music *)userdata, buffer, num_frames, num_channels);
 }
 
 sapp_desc
