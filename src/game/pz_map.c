@@ -77,6 +77,13 @@ pz_map_create(int width, int height, float tile_size)
     map->lighting.ambient_color = (pz_vec3) { 0.12f, 0.12f, 0.15f };
     map->lighting.ambient_darkness = 0.85f;
 
+    // Default background: dark gray (fallback, maps should override)
+    map->background.type = PZ_BACKGROUND_COLOR;
+    map->background.color = (pz_vec3) { 0.2f, 0.2f, 0.25f };
+    map->background.color_end = (pz_vec3) { 0.1f, 0.1f, 0.15f };
+    map->background.gradient_dir = PZ_GRADIENT_VERTICAL;
+    map->background.texture_path[0] = '\0';
+
     pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME, "Created map %dx%d (%.1f unit tiles)",
         width, height, tile_size);
 
@@ -523,6 +530,12 @@ const pz_map_lighting *
 pz_map_get_lighting(const pz_map *map)
 {
     return map ? &map->lighting : NULL;
+}
+
+const pz_map_background *
+pz_map_get_background(const pz_map *map)
+{
+    return map ? &map->background : NULL;
 }
 
 // ============================================================================
@@ -1081,6 +1094,38 @@ pz_map_load(const char *path)
             if (sscanf(p + 12, "%f %f %f", &r, &g, &b) == 3) {
                 map->water_color = (pz_vec3) { r, g, b };
             }
+        }
+        // Background settings
+        else if (strncmp(p, "background_color ", 17) == 0) {
+            float r, g, b;
+            if (sscanf(p + 17, "%f %f %f", &r, &g, &b) == 3) {
+                map->background.type = PZ_BACKGROUND_COLOR;
+                map->background.color = (pz_vec3) { r, g, b };
+            }
+        } else if (strncmp(p, "background_gradient ", 20) == 0) {
+            // Format: background_gradient <direction> r1 g1 b1 r2 g2 b2
+            // direction: vertical or radial
+            char dir[16];
+            float r1, g1, b1, r2, g2, b2;
+            if (sscanf(p + 20, "%15s %f %f %f %f %f %f", dir, &r1, &g1, &b1,
+                    &r2, &g2, &b2)
+                == 7) {
+                map->background.type = PZ_BACKGROUND_GRADIENT;
+                map->background.color = (pz_vec3) { r1, g1, b1 };
+                map->background.color_end = (pz_vec3) { r2, g2, b2 };
+                if (strcmp(dir, "radial") == 0) {
+                    map->background.gradient_dir = PZ_GRADIENT_RADIAL;
+                } else {
+                    map->background.gradient_dir = PZ_GRADIENT_VERTICAL;
+                }
+            }
+        } else if (strncmp(p, "background_texture ", 19) == 0) {
+            // Future: background_texture <path>
+            map->background.type = PZ_BACKGROUND_TEXTURE;
+            sscanf(p + 19, "%63s", map->background.texture_path);
+            pz_log(PZ_LOG_WARN, PZ_LOG_CAT_GAME,
+                "Background textures not yet implemented: %s",
+                map->background.texture_path);
         }
     } while (1);
 

@@ -60,6 +60,28 @@ typedef struct pz_map_lighting {
     float ambient_darkness; // 0 = full ambient, 1 = pitch black (default 0.85)
 } pz_map_lighting;
 
+// Background type
+typedef enum pz_background_type {
+    PZ_BACKGROUND_COLOR, // Solid color
+    PZ_BACKGROUND_GRADIENT, // Two-color gradient
+    PZ_BACKGROUND_TEXTURE, // Texture (future)
+} pz_background_type;
+
+// Gradient direction
+typedef enum pz_gradient_direction {
+    PZ_GRADIENT_VERTICAL, // Top to bottom
+    PZ_GRADIENT_RADIAL, // Center outward
+} pz_gradient_direction;
+
+// Map background settings
+typedef struct pz_map_background {
+    pz_background_type type;
+    pz_vec3 color; // For COLOR type, or gradient start color
+    pz_vec3 color_end; // For GRADIENT: end color (bottom/outer)
+    pz_gradient_direction gradient_dir; // For GRADIENT: direction
+    char texture_path[64]; // For TEXTURE: path to texture file (future)
+} pz_map_background;
+
 // Map cell (combined height + tile)
 typedef struct pz_map_cell {
     int8_t height; // Height level: >0 = wall, 0 = ground, <0 = pit
@@ -100,6 +122,9 @@ typedef struct pz_map {
 
     // Lighting settings
     pz_map_lighting lighting;
+
+    // Background settings
+    pz_map_background background;
 
     // Bounds (in world units)
     float world_width;
@@ -168,6 +193,9 @@ int pz_map_get_enemy_count(const pz_map *map);
 
 // Lighting helpers
 const pz_map_lighting *pz_map_get_lighting(const pz_map *map);
+
+// Background helpers
+const pz_map_background *pz_map_get_background(const pz_map *map);
 
 // Debug: print map to console
 void pz_map_print(const pz_map *map);

@@ -39,6 +39,9 @@ grid
 ambient_color 0.12 0.12 0.15
 ambient_darkness 0.85
 
+# Background - Night sky gradient (dark blue top to purple-ish horizon)
+background_gradient vertical 0.02 0.03 0.08 0.12 0.08 0.15
+
 # Water settings
 water_level -1
 water_color 0.15 0.25 0.4

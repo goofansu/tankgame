@@ -24,6 +24,7 @@
 #include "engine/render/pz_renderer.h"
 #include "engine/render/pz_texture.h"
 #include "game/pz_ai.h"
+#include "game/pz_background.h"
 #include "game/pz_campaign.h"
 #include "game/pz_lighting.h"
 #include "game/pz_map.h"
@@ -125,6 +126,9 @@ typedef struct app_state {
     pz_shader_handle laser_shader;
     pz_pipeline_handle laser_pipeline;
     pz_buffer_handle laser_vb;
+
+    // Background rendering (persistent, configured per-map)
+    pz_background *background;
 
     // Campaign system
     pz_campaign_manager *campaign_mgr;
@@ -240,6 +244,11 @@ map_session_load(map_session *session, const char *map_path)
     // Fit camera to map
     pz_camera_fit_map(&g_app.camera, session->map->world_width,
         session->map->world_height, 20.0f);
+
+    // Configure background from map settings
+    if (g_app.background) {
+        pz_background_set_from_map(g_app.background, session->map);
+    }
 
     // Set tile registry on map for property lookups
     pz_map_set_tile_registry(session->map, g_app.tile_registry);
@@ -514,6 +523,13 @@ app_init(void)
         };
         g_app.laser_vb
             = pz_renderer_create_buffer(g_app.renderer, &laser_vb_desc);
+    }
+
+    // Create background renderer (persistent, configured per-map)
+    g_app.background = pz_background_create(g_app.renderer);
+    if (!g_app.background) {
+        pz_log(PZ_LOG_WARN, PZ_LOG_CAT_CORE,
+            "Failed to create background renderer");
     }
 
     // Initialize simulation system
@@ -859,7 +875,12 @@ app_frame(void)
 
     pz_debug_overlay_begin_frame(g_app.debug_overlay);
     pz_renderer_begin_frame(g_app.renderer);
-    pz_renderer_clear(g_app.renderer, 0.2f, 0.2f, 0.25f, 1.0f, 1.0f);
+    pz_renderer_clear(g_app.renderer, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+
+    // Render background (sky gradient) first
+    int vp_width, vp_height;
+    pz_renderer_get_viewport(g_app.renderer, &vp_width, &vp_height);
+    pz_background_render(g_app.background, g_app.renderer, vp_width, vp_height);
 
     pz_tracks_update(g_app.session.tracks);
 
@@ -1414,6 +1435,8 @@ app_cleanup(void)
     if (g_app.laser_shader != PZ_INVALID_HANDLE) {
         pz_renderer_destroy_shader(g_app.renderer, g_app.laser_shader);
     }
+
+    pz_background_destroy(g_app.background, g_app.renderer);
 
     pz_sim_destroy(g_app.sim);
 
