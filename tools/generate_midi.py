@@ -53,6 +53,12 @@ def add_meta(events):
     add_event(events, 0, b"\xFF\x58\x04\x04\x02\x18\x08", 1)
 
 
+def add_meta_with_bpm(events, bpm):
+    tempo_usec = int(60_000_000 / bpm)
+    add_event(events, 0, b"\xFF\x51\x03" + tempo_usec.to_bytes(3, "big"), 0)
+    add_event(events, 0, b"\xFF\x58\x04\x04\x02\x18\x08", 1)
+
+
 def pad_track(events, total_ticks):
     add_event(events, total_ticks, b"\xFF\x01\x00", 10)
 
@@ -133,6 +139,26 @@ def build_melody():
     return events
 
 
+def build_victory():
+    events = []
+    add_meta_with_bpm(events, BPM * 2)
+    add_program(events, 0, 2, 56)
+    bar_ticks = 4 * PPQ
+    half = 2 * PPQ
+    quarter = PPQ
+    fanfare = [
+        (72, quarter), (76, quarter), (79, half),
+        (76, quarter), (79, quarter), (84, half),
+    ]
+    tick = 0
+    total_ticks = 2 * bar_ticks
+    for key, length in fanfare:
+        add_note(events, tick, 2, key, int(length * 0.9), 110)
+        tick += length
+    pad_track(events, total_ticks)
+    return events
+
+
 def main():
     out_dir = os.path.join("assets", "music", "march")
     os.makedirs(out_dir, exist_ok=True)
@@ -140,6 +166,7 @@ def main():
     write_midi(os.path.join(out_dir, "drums.mid"), build_drums())
     write_midi(os.path.join(out_dir, "bass.mid"), build_tuba())
     write_midi(os.path.join(out_dir, "melody.mid"), build_melody())
+    write_midi(os.path.join(out_dir, "victory.mid"), build_victory())
 
 
 if __name__ == "__main__":
