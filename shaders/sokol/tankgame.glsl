@@ -175,6 +175,8 @@ void main() {
 @fs water_fs
 layout(binding=0) uniform texture2D u_water_light_texture;
 layout(binding=0) uniform sampler u_water_light_texture_smp;
+layout(binding=1) uniform texture2D u_water_caustic_texture;
+layout(binding=1) uniform sampler u_water_caustic_texture_smp;
 
 layout(std140, binding=1) uniform water_fs_params {
     float u_time;
@@ -199,63 +201,36 @@ float calculateSurface(float x, float z, float t) {
     return y;
 }
 
-vec2 hash2(vec2 p) {
-    return fract(sin(vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)))) * 43758.5453);
-}
-
-float voronoi(vec2 p) {
-    vec2 n = floor(p);
-    vec2 f = fract(p);
-    float md = 8.0;
-    for (int j = -1; j <= 1; j++) {
-        for (int i = -1; i <= 1; i++) {
-            vec2 g = vec2(float(i), float(j));
-            vec2 o = hash2(n + g);
-            vec2 r = g + o - f;
-            float d = dot(r, r);
-            if (d < md) md = d;
-        }
-    }
-    return sqrt(md);
-}
-
-float voronoiEdge(vec2 p) {
-    vec2 n = floor(p);
-    vec2 f = fract(p);
-    float md = 8.0;
-    float md2 = 8.0;
-    for (int j = -1; j <= 1; j++) {
-        for (int i = -1; i <= 1; i++) {
-            vec2 g = vec2(float(i), float(j));
-            vec2 o = hash2(n + g);
-            vec2 r = g + o - f;
-            float d = dot(r, r);
-            if (d < md) { md2 = md; md = d; }
-            else if (d < md2) md2 = d;
-        }
-    }
-    return sqrt(md2) - sqrt(md);
-}
-
 void main() {
-    vec2 uv = v_world_pos.xz * 0.5 + vec2(u_time * -0.03);
+    // Upper layer UV (bright caustics) - animated distortion like reference shader
+    // Scale 0.23 (0.15 / 0.65) gives smaller caustic cells (65% of previous size)
+    vec2 uv = v_world_pos.xz * 0.23 + vec2(u_time * -0.02);
     
     uv.y += 0.01 * (sin(uv.x * 3.5 + u_time * 0.35) + sin(uv.x * 4.8 + u_time * 1.05) + sin(uv.x * 7.3 + u_time * 0.45)) / 3.0;
-    uv.x += 0.08 * (sin(uv.y * 4.0 + u_time * 0.5) + sin(uv.y * 6.8 + u_time * 0.75) + sin(uv.y * 11.3 + u_time * 0.2)) / 3.0;
-    uv.y += 0.08 * (sin(uv.x * 4.2 + u_time * 0.64) + sin(uv.x * 6.3 + u_time * 1.65) + sin(uv.x * 8.2 + u_time * 0.45)) / 3.0;
+    uv.x += 0.12 * (sin(uv.y * 4.0 + u_time * 0.5) + sin(uv.y * 6.8 + u_time * 0.75) + sin(uv.y * 11.3 + u_time * 0.2)) / 3.0;
+    uv.y += 0.12 * (sin(uv.x * 4.2 + u_time * 0.64) + sin(uv.x * 6.3 + u_time * 1.65) + sin(uv.x * 8.2 + u_time * 0.45)) / 3.0;
     
-    float voronoiVal = voronoi(uv * 2.0);
-    float edge = voronoiEdge(uv * 2.0);
+    // Lower layer UV (dark caustics) - offset and slower drift like reference shader
+    vec2 uv2 = uv + vec2(0.2);
+    uv2 += 0.02 * vec2(sin(u_time * 0.07), cos(u_time * 0.05));
     
-    float causticLine = smoothstep(0.02, 0.08, edge);
-    float highlight = 1.0 - causticLine;
+    // Sample caustic texture for both layers (use alpha channel for caustic intensity)
+    vec4 tex1 = texture(sampler2D(u_water_caustic_texture, u_water_caustic_texture_smp), uv);
+    vec4 tex2 = texture(sampler2D(u_water_caustic_texture, u_water_caustic_texture_smp), uv2);
     
     float wave = calculateSurface(v_world_pos.x, v_world_pos.z, u_time);
     float waveShade = 0.5 + wave * 0.5;
     
+    // Auto-calculate lighter and darker colors from base water color
+    // Light color: brighten toward white while preserving hue
+    vec3 lightColor = mix(u_water_color, vec3(1.0), 0.6);
+    // Dark color: darken the base color
+    vec3 darkColor = u_water_color * 0.4;
+    
+    // Combine: base color + bright upper layer - dark lower layer (like reference shader)
     vec3 color = u_water_color;
-    color = mix(color, u_water_highlight, highlight * 0.6);
-    color = mix(color, u_water_dark, (1.0 - causticLine) * 0.3);
+    color += lightColor * tex1.a * 0.7;   // Upper bright caustic lines
+    color -= darkColor * tex2.a * 0.3;    // Lower dark caustic shadows (subtractive)
     color *= (0.85 + waveShade * 0.15);
     
     if (u_use_lighting != 0) {

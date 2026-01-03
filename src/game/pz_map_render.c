@@ -50,6 +50,7 @@ struct pz_map_renderer {
     // Water shader and pipeline
     pz_shader_handle water_shader;
     pz_pipeline_handle water_pipeline;
+    pz_texture_handle water_caustic_texture;
 
     // Ground batches (one per tile type with geometry)
     ground_batch ground_batches[MAX_TILE_TEXTURES];
@@ -596,6 +597,14 @@ pz_map_renderer_create(pz_renderer *renderer, pz_texture_manager *tex_manager)
     };
     mr->water_pipeline = pz_renderer_create_pipeline(renderer, &water_desc);
 
+    // Load water caustic texture
+    mr->water_caustic_texture
+        = pz_texture_load(tex_manager, "assets/textures/water_caustic.png");
+    if (mr->water_caustic_texture == PZ_INVALID_HANDLE) {
+        pz_log(PZ_LOG_WARN, PZ_LOG_CAT_RENDER,
+            "Failed to load water caustic texture, water effect degraded");
+    }
+
     // Initialize batch handles
     for (int i = 0; i < MAX_TILE_TEXTURES; i++) {
         mr->ground_batches[i].buffer = PZ_INVALID_HANDLE;
@@ -872,8 +881,8 @@ pz_map_renderer_set_map(pz_map_renderer *mr, const pz_map *map)
 
             // Water surface Y position: at the water_level height, offset down
             // to create a visible rim/inset effect around the water
-            float water_y
-                = GROUND_Y_OFFSET + map->water_level * WALL_HEIGHT_UNIT + WATER_Y_OFFSET;
+            float water_y = GROUND_Y_OFFSET
+                + map->water_level * WALL_HEIGHT_UNIT + WATER_Y_OFFSET;
 
             for (int y = 0; y < map->height; y++) {
                 for (int x = 0; x < map->width; x++) {
@@ -1093,6 +1102,11 @@ pz_map_renderer_draw_water(pz_map_renderer *mr, const pz_mat4 *view_projection,
         mr->renderer, mr->water_shader, "u_water_dark", dark_color);
     pz_renderer_set_uniform_vec3(
         mr->renderer, mr->water_shader, "u_water_highlight", highlight_color);
+
+    // Caustic texture
+    if (mr->water_caustic_texture != PZ_INVALID_HANDLE) {
+        pz_renderer_bind_texture(mr->renderer, 1, mr->water_caustic_texture);
+    }
 
     // Light map
     if (params && params->light_texture != PZ_INVALID_HANDLE
