@@ -72,6 +72,10 @@ Example progress.md:
 - `spec/04-network-protocol.md` - networking
 - `spec/05-tooling-and-debugging.md` - dev tools
 
+## Reference Docs
+
+- `docs/map-format.md` - map file format (v2) with height+terrain cells, tags, lighting
+
 ## Visual Validation
 
 **Always validate visual changes with screenshots.** Don't assume rendering code works - verify it.
