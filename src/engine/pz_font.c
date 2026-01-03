@@ -85,6 +85,8 @@ typedef struct pz_font_vertex {
     float x, y; // Screen position
     float u, v; // Texture coords
     float r, g, b, a; // Color
+    float outline_r, outline_g, outline_b, outline_a; // Outline color
+    float outline_width; // Outline width in SDF units
 } pz_font_vertex;
 
 // Font manager
@@ -320,6 +322,12 @@ pz_font_manager_create(pz_renderer *renderer)
         { .name = "a_color",
             .type = PZ_ATTR_FLOAT4,
             .offset = sizeof(float) * 4 },
+        { .name = "a_outline_color",
+            .type = PZ_ATTR_FLOAT4,
+            .offset = sizeof(float) * 8 },
+        { .name = "a_outline_width",
+            .type = PZ_ATTR_FLOAT,
+            .offset = sizeof(float) * 12 },
     };
 
     pz_pipeline_desc pipe_desc = {
@@ -327,7 +335,7 @@ pz_font_manager_create(pz_renderer *renderer)
         .vertex_layout =
             {
                 .attrs = attrs,
-                .attr_count = 3,
+                .attr_count = 5,
                 .stride = sizeof(pz_font_vertex),
             },
         .blend = PZ_BLEND_ALPHA,
@@ -550,7 +558,8 @@ pz_font_begin_frame(pz_font_manager *mgr)
 
 static void
 push_quad(pz_font_manager *mgr, float x0, float y0, float x1, float y1,
-    float u0, float v0, float u1, float v1, pz_vec4 color)
+    float u0, float v0, float u1, float v1, pz_vec4 color,
+    pz_vec4 outline_color, float outline_width)
 {
     if (mgr->vertex_count + 6 > mgr->vertex_capacity)
         return;
@@ -559,19 +568,25 @@ push_quad(pz_font_manager *mgr, float x0, float y0, float x1, float y1,
 
     // Triangle 1
     v[0] = (pz_font_vertex) { x0, y0, u0, v0, color.x, color.y, color.z,
-        color.w };
+        color.w, outline_color.x, outline_color.y, outline_color.z,
+        outline_color.w, outline_width };
     v[1] = (pz_font_vertex) { x1, y0, u1, v0, color.x, color.y, color.z,
-        color.w };
+        color.w, outline_color.x, outline_color.y, outline_color.z,
+        outline_color.w, outline_width };
     v[2] = (pz_font_vertex) { x1, y1, u1, v1, color.x, color.y, color.z,
-        color.w };
+        color.w, outline_color.x, outline_color.y, outline_color.z,
+        outline_color.w, outline_width };
 
     // Triangle 2
     v[3] = (pz_font_vertex) { x0, y0, u0, v0, color.x, color.y, color.z,
-        color.w };
+        color.w, outline_color.x, outline_color.y, outline_color.z,
+        outline_color.w, outline_width };
     v[4] = (pz_font_vertex) { x1, y1, u1, v1, color.x, color.y, color.z,
-        color.w };
+        color.w, outline_color.x, outline_color.y, outline_color.z,
+        outline_color.w, outline_width };
     v[5] = (pz_font_vertex) { x0, y1, u0, v1, color.x, color.y, color.z,
-        color.w };
+        color.w, outline_color.x, outline_color.y, outline_color.z,
+        outline_color.w, outline_width };
 
     mgr->vertex_count += 6;
 }
@@ -624,6 +639,19 @@ pz_font_draw(pz_font_manager *mgr, const pz_text_style *style, float x, float y,
         break;
     }
 
+    // Convert outline width from logical pixels to SDF units
+    // The SDF has PZ_FONT_SDF_SCALE distance per pixel at SDF_SIZE
+    // outline_width is in logical pixels, so scale by dpi and convert to SDF
+    // units
+    float outline_sdf = 0.0f;
+    if (style->outline_width > 0.0f) {
+        // Convert pixel outline to SDF distance units
+        // At SDF_SIZE, 1 pixel = 1/PZ_FONT_SDF_SCALE in SDF distance
+        // We scale by (SDF_SIZE / fb_size) to account for current font size
+        outline_sdf
+            = (style->outline_width * dpi) / (fb_size * PZ_FONT_SDF_SCALE);
+    }
+
     float cursor_x = x;
     const char *p = text;
 
@@ -657,7 +685,8 @@ pz_font_draw(pz_font_manager *mgr, const pz_text_style *style, float x, float y,
         float u1 = (g->atlas_x + g->atlas_w) * inv_atlas;
         float v1 = (g->atlas_y + g->atlas_h) * inv_atlas;
 
-        push_quad(mgr, gx, gy, gx + gw, gy + gh, u0, v0, u1, v1, style->color);
+        push_quad(mgr, gx, gy, gx + gw, gy + gh, u0, v0, u1, v1, style->color,
+            style->outline_color, outline_sdf);
 
         cursor_x += g->x_advance * scale;
     }

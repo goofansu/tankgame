@@ -805,16 +805,10 @@ app_frame(void)
         health_style.align_h = PZ_FONT_ALIGN_RIGHT;
         health_style.align_v = PZ_FONT_ALIGN_BOTTOM;
 
-        // Color based on health percentage
-        float health_pct
-            = (float)g_app.player_tank->health / g_app.player_tank->max_health;
-        if (health_pct > 0.6f) {
-            health_style.color = pz_vec4_new(0.2f, 1.0f, 0.2f, 1.0f); // Green
-        } else if (health_pct > 0.3f) {
-            health_style.color = pz_vec4_new(1.0f, 0.8f, 0.2f, 1.0f); // Yellow
-        } else {
-            health_style.color = pz_vec4_new(1.0f, 0.2f, 0.2f, 1.0f); // Red
-        }
+        // White text with black outline for visibility
+        health_style.color = pz_vec4_new(1.0f, 1.0f, 1.0f, 1.0f);
+        health_style.outline_width = 3.0f;
+        health_style.outline_color = pz_vec4_new(0.0f, 0.0f, 0.0f, 1.0f);
 
         pz_font_drawf(g_app.font_mgr, &health_style, vp_width - 20.0f,
             vp_height - 20.0f, "HP: %d", g_app.player_tank->health);
