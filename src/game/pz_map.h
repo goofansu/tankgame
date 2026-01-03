@@ -227,6 +227,20 @@ void pz_map_print(const pz_map *map);
 pz_vec2 pz_map_raycast(const pz_map *map, pz_vec2 start, pz_vec2 direction,
     float max_dist, bool *hit);
 
+// Extended raycast result with wall normal
+typedef struct pz_raycast_result {
+    bool hit; // True if a wall was hit
+    pz_vec2 point; // Hit point (or end point if no hit)
+    pz_vec2 normal; // Wall normal at hit point (zero if no hit)
+    float distance; // Distance traveled
+} pz_raycast_result;
+
+// Raycast with DDA algorithm - returns exact hit point and wall normal.
+// Uses proper grid traversal to never miss walls.
+// This is the preferred function for projectile collision.
+pz_raycast_result pz_map_raycast_ex(
+    const pz_map *map, pz_vec2 start, pz_vec2 end);
+
 // ============================================================================
 // Map Loading/Saving
 // ============================================================================

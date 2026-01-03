@@ -639,6 +639,177 @@ pz_map_raycast(const pz_map *map, pz_vec2 start, pz_vec2 direction,
     return pz_vec2_add(start, pz_vec2_scale(direction, max_dist));
 }
 
+pz_raycast_result
+pz_map_raycast_ex(const pz_map *map, pz_vec2 start, pz_vec2 end)
+{
+    pz_raycast_result result = { 0 };
+    result.point = end;
+    result.normal = (pz_vec2) { 0, 0 };
+    result.hit = false;
+    result.distance = pz_vec2_len(pz_vec2_sub(end, start));
+
+    if (!map)
+        return result;
+
+    pz_vec2 delta = pz_vec2_sub(end, start);
+    float total_dist = pz_vec2_len(delta);
+    if (total_dist < 0.0001f)
+        return result;
+
+    // Check if start is already in a wall (shouldn't happen, but handle it)
+    if (pz_map_blocks_bullets(map, start)) {
+        result.hit = true;
+        result.point = start;
+        result.distance = 0;
+        // Try to determine normal from direction
+        pz_vec2 dir = pz_vec2_normalize(delta);
+        if (fabsf(dir.x) > fabsf(dir.y)) {
+            result.normal = (pz_vec2) { dir.x > 0 ? -1.0f : 1.0f, 0.0f };
+        } else {
+            result.normal = (pz_vec2) { 0.0f, dir.y > 0 ? -1.0f : 1.0f };
+        }
+        return result;
+    }
+
+    // DDA (Digital Differential Analyzer) algorithm
+    // Step through grid cells along the ray
+
+    float half_w = map->world_width / 2.0f;
+    float half_h = map->world_height / 2.0f;
+    float ts = map->tile_size;
+
+    // Convert to grid-relative coordinates (0,0 at bottom-left of map)
+    float rx = start.x + half_w;
+    float ry = start.y + half_h;
+
+    // Direction
+    pz_vec2 dir = pz_vec2_normalize(delta);
+
+    // Current tile
+    int tile_x = (int)(rx / ts);
+    int tile_y = (int)(ry / ts);
+
+    // Step direction (+1 or -1)
+    int step_x = (dir.x >= 0) ? 1 : -1;
+    int step_y = (dir.y >= 0) ? 1 : -1;
+
+    // Distance to next tile boundary (in terms of t along ray)
+    // t_max_x = distance along ray to next vertical grid line
+    // t_max_y = distance along ray to next horizontal grid line
+    float t_max_x, t_max_y;
+    float t_delta_x, t_delta_y;
+
+    if (fabsf(dir.x) < 0.0001f) {
+        t_max_x = 1e30f;
+        t_delta_x = 1e30f;
+    } else {
+        float next_x = (step_x > 0) ? (tile_x + 1) * ts : tile_x * ts;
+        t_max_x = (next_x - rx) / dir.x;
+        t_delta_x = ts / fabsf(dir.x);
+    }
+
+    if (fabsf(dir.y) < 0.0001f) {
+        t_max_y = 1e30f;
+        t_delta_y = 1e30f;
+    } else {
+        float next_y = (step_y > 0) ? (tile_y + 1) * ts : tile_y * ts;
+        t_max_y = (next_y - ry) / dir.y;
+        t_delta_y = ts / fabsf(dir.y);
+    }
+
+    // Track which edge we crossed to enter each cell
+    // 0 = horizontal edge (normal is Y), 1 = vertical edge (normal is X)
+    int last_step = -1;
+
+    // Maximum iterations to prevent infinite loops
+    int max_iters = (int)(total_dist / ts) + map->width + map->height + 10;
+
+    for (int i = 0; i < max_iters; i++) {
+        // Check if we've traveled past the end point
+        float current_t = (t_max_x < t_max_y) ? (t_max_x - t_delta_x)
+                                              : (t_max_y - t_delta_y);
+        if (current_t > total_dist) {
+            // No hit within range
+            return result;
+        }
+
+        // Check if current tile is solid
+        if (pz_map_in_bounds(map, tile_x, tile_y)) {
+            if (pz_map_get_height(map, tile_x, tile_y) > 0) {
+                // Hit a wall! Calculate exact intersection point
+                result.hit = true;
+
+                // The intersection is at the edge we just crossed
+                float hit_t;
+                if (last_step == 0) {
+                    // Crossed horizontal edge (Y boundary)
+                    float edge_y
+                        = (step_y > 0) ? tile_y * ts : (tile_y + 1) * ts;
+                    hit_t = (edge_y - ry) / dir.y;
+                    result.normal
+                        = (pz_vec2) { 0.0f, (step_y > 0) ? -1.0f : 1.0f };
+                } else if (last_step == 1) {
+                    // Crossed vertical edge (X boundary)
+                    float edge_x
+                        = (step_x > 0) ? tile_x * ts : (tile_x + 1) * ts;
+                    hit_t = (edge_x - rx) / dir.x;
+                    result.normal
+                        = (pz_vec2) { (step_x > 0) ? -1.0f : 1.0f, 0.0f };
+                } else {
+                    // First tile (shouldn't be solid, but handle it)
+                    hit_t = 0;
+                    result.normal = pz_vec2_scale(dir, -1.0f);
+                }
+
+                // Clamp hit_t to valid range
+                if (hit_t < 0)
+                    hit_t = 0;
+                if (hit_t > total_dist)
+                    hit_t = total_dist;
+
+                result.distance = hit_t;
+                result.point = pz_vec2_add(start, pz_vec2_scale(dir, hit_t));
+                return result;
+            }
+        } else {
+            // Out of bounds - treat as hit
+            result.hit = true;
+            float hit_t = (last_step == 0) ? (t_max_y - t_delta_y)
+                                           : (t_max_x - t_delta_x);
+            if (hit_t < 0)
+                hit_t = 0;
+            if (hit_t > total_dist)
+                hit_t = total_dist;
+            result.distance = hit_t;
+            result.point = pz_vec2_add(start, pz_vec2_scale(dir, hit_t));
+            // Normal points back toward the map
+            if (tile_x < 0)
+                result.normal = (pz_vec2) { 1.0f, 0.0f };
+            else if (tile_x >= map->width)
+                result.normal = (pz_vec2) { -1.0f, 0.0f };
+            else if (tile_y < 0)
+                result.normal = (pz_vec2) { 0.0f, 1.0f };
+            else
+                result.normal = (pz_vec2) { 0.0f, -1.0f };
+            return result;
+        }
+
+        // Step to next tile
+        if (t_max_x < t_max_y) {
+            t_max_x += t_delta_x;
+            tile_x += step_x;
+            last_step = 1; // Crossed vertical edge
+        } else {
+            t_max_y += t_delta_y;
+            tile_y += step_y;
+            last_step = 0; // Crossed horizontal edge
+        }
+    }
+
+    // Shouldn't reach here, but return no hit
+    return result;
+}
+
 // ============================================================================
 // Map Loading/Saving
 // ============================================================================

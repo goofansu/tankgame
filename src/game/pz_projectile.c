@@ -182,34 +182,11 @@ pz_projectile_spawn(pz_projectile_manager *mgr, pz_vec2 pos, pz_vec2 direction,
  * ============================================================================
  */
 
-// Get wall normal at a position given movement direction
-static pz_vec2
-get_wall_normal(const pz_map *map, pz_vec2 pos, pz_vec2 dir)
-{
-    // Sample nearby tiles to determine wall orientation
-    float step = 0.05f;
+// Small offset to push projectile away from wall after bounce
+static const float WALL_PUSH_EPSILON = 0.01f;
 
-    // Check which axis is more blocked
-    bool blocked_x
-        = pz_map_is_solid(map, (pz_vec2) { pos.x + dir.x * step, pos.y });
-    bool blocked_y
-        = pz_map_is_solid(map, (pz_vec2) { pos.x, pos.y + dir.y * step });
-
-    if (blocked_x && !blocked_y) {
-        // Wall is perpendicular to X axis
-        return (pz_vec2) { (dir.x > 0) ? -1.0f : 1.0f, 0.0f };
-    } else if (blocked_y && !blocked_x) {
-        // Wall is perpendicular to Y axis
-        return (pz_vec2) { 0.0f, (dir.y > 0) ? -1.0f : 1.0f };
-    } else {
-        // Corner or both blocked - pick dominant direction
-        if (fabsf(dir.x) > fabsf(dir.y)) {
-            return (pz_vec2) { (dir.x > 0) ? -1.0f : 1.0f, 0.0f };
-        } else {
-            return (pz_vec2) { 0.0f, (dir.y > 0) ? -1.0f : 1.0f };
-        }
-    }
-}
+// Maximum bounces per frame (prevents infinite loops in corners)
+static const int MAX_BOUNCES_PER_FRAME = 4;
 
 void
 pz_projectile_update(pz_projectile_manager *mgr, const pz_map *map,
@@ -226,11 +203,8 @@ pz_projectile_update(pz_projectile_manager *mgr, const pz_map *map,
         if (!proj->active)
             continue;
 
-        // Update age, lifetime, and bounce cooldown
+        // Update age and lifetime
         proj->age += dt;
-        if (proj->bounce_cooldown > 0.0f) {
-            proj->bounce_cooldown -= dt;
-        }
 
         if (proj->lifetime > 0.0f) {
             proj->lifetime -= dt;
@@ -241,134 +215,131 @@ pz_projectile_update(pz_projectile_manager *mgr, const pz_map *map,
             }
         }
 
-        // Calculate new position
-        pz_vec2 new_pos
-            = pz_vec2_add(proj->pos, pz_vec2_scale(proj->velocity, dt));
+        // Swept collision: trace the full path this frame, handling bounces
+        float remaining_dt = dt;
+        int bounces_this_frame = 0;
 
-        // Check for tank collision first (before wall collision)
-        // Exclude owner only during grace period - after that, can hit self
-        if (tank_mgr) {
-            int exclude_id = (proj->age < SELF_DAMAGE_GRACE_PERIOD)
-                ? proj->owner_id
-                : -1; // -1 means exclude nobody
+        while (remaining_dt > 0.0001f && proj->active) {
+            pz_vec2 movement = pz_vec2_scale(proj->velocity, remaining_dt);
+            pz_vec2 target_pos = pz_vec2_add(proj->pos, movement);
 
-            pz_tank *hit_tank = pz_tank_check_collision(
-                tank_mgr, new_pos, PROJECTILE_RADIUS, exclude_id);
+            // Check for tank collision along the path
+            // For simplicity, check at the target position
+            // (tanks are large enough this works well)
+            if (tank_mgr) {
+                int exclude_id = (proj->age < SELF_DAMAGE_GRACE_PERIOD)
+                    ? proj->owner_id
+                    : -1;
 
-            if (hit_tank) {
-                // Apply damage and record death event if killed
-                bool killed
-                    = pz_tank_apply_damage(tank_mgr, hit_tank, proj->damage);
+                pz_tank *hit_tank = pz_tank_check_collision(
+                    tank_mgr, target_pos, PROJECTILE_RADIUS, exclude_id);
 
-                pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
-                    "Projectile hit tank %d (damage=%d, killed=%d)",
-                    hit_tank->id, proj->damage, killed);
+                if (hit_tank) {
+                    bool killed = pz_tank_apply_damage(
+                        tank_mgr, hit_tank, proj->damage);
 
-                // Record hit for particle spawning
-                record_hit(mgr, PZ_HIT_TANK, new_pos);
+                    pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
+                        "Projectile hit tank %d (damage=%d, killed=%d)",
+                        hit_tank->id, proj->damage, killed);
 
-                // Destroy projectile
-                proj->active = false;
-                mgr->active_count--;
-                continue;
+                    record_hit(mgr, PZ_HIT_TANK, target_pos);
+
+                    proj->active = false;
+                    mgr->active_count--;
+                    break;
+                }
             }
-        }
 
-        // Check for projectile-projectile collision
-        // Both projectiles are destroyed regardless of bullet strength
-        for (int j = i + 1; j < PZ_MAX_PROJECTILES; j++) {
-            pz_projectile *other = &mgr->projectiles[j];
-            if (!other->active)
-                continue;
+            // Check for projectile-projectile collision
+            bool hit_projectile = false;
+            for (int j = i + 1; j < PZ_MAX_PROJECTILES; j++) {
+                pz_projectile *other = &mgr->projectiles[j];
+                if (!other->active)
+                    continue;
 
-            // Use collision radius for bullet interception
-            float dist = pz_vec2_len(pz_vec2_sub(new_pos, other->pos));
-            if (dist < PROJECTILE_VS_PROJECTILE_RADIUS * 2.0f) {
-                // Both bullets destroy each other
-                pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
-                    "Projectiles %d and %d collided and destroyed each other",
-                    i, j);
+                float dist = pz_vec2_len(pz_vec2_sub(target_pos, other->pos));
+                if (dist < PROJECTILE_VS_PROJECTILE_RADIUS * 2.0f) {
+                    pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
+                        "Projectiles %d and %d collided", i, j);
 
-                // Record hit at midpoint for particle spawning
-                pz_vec2 hit_pos
-                    = pz_vec2_scale(pz_vec2_add(new_pos, other->pos), 0.5f);
-                record_hit(mgr, PZ_HIT_PROJECTILE, hit_pos);
+                    pz_vec2 hit_pos = pz_vec2_scale(
+                        pz_vec2_add(target_pos, other->pos), 0.5f);
+                    record_hit(mgr, PZ_HIT_PROJECTILE, hit_pos);
 
-                proj->active = false;
-                other->active = false;
-                mgr->active_count -= 2;
+                    proj->active = false;
+                    other->active = false;
+                    mgr->active_count -= 2;
+                    hit_projectile = true;
+                    break;
+                }
+            }
+            if (hit_projectile)
                 break;
-            }
-        }
 
-        // Skip if this projectile was destroyed by collision with another
-        if (!proj->active)
-            continue;
+            // Use DDA raycast to check wall collision
+            if (map) {
+                pz_raycast_result ray
+                    = pz_map_raycast_ex(map, proj->pos, target_pos);
 
-        // Check for wall collision (only if not in bounce cooldown)
-        // Use blocks_bullets - pits (water) don't block bullets, only walls do
-        if (map && pz_map_blocks_bullets(map, new_pos)
-            && proj->bounce_cooldown <= 0.0f) {
-            // Hit a wall - bounce or destroy
-            if (proj->bounces_remaining > 0) {
-                // Get wall normal based on current (safe) position
-                pz_vec2 dir = pz_vec2_normalize(proj->velocity);
-                pz_vec2 normal = get_wall_normal(map, proj->pos, dir);
+                if (ray.hit) {
+                    // Hit a wall
+                    if (proj->bounces_remaining > 0
+                        && bounces_this_frame < MAX_BOUNCES_PER_FRAME) {
+                        // Bounce off the wall
+                        proj->bounces_remaining--;
+                        bounces_this_frame++;
 
-                // Reflect velocity
-                proj->velocity = pz_vec2_reflect(proj->velocity, normal);
+                        // Move to just before the hit point
+                        proj->pos = pz_vec2_add(ray.point,
+                            pz_vec2_scale(ray.normal, WALL_PUSH_EPSILON));
 
-                // Push back from wall until we're in a safe position
-                // Start from the old (safe) position and push along normal
-                new_pos = proj->pos;
-                float push_dist = 0.15f;
+                        // Reflect velocity
+                        proj->velocity
+                            = pz_vec2_reflect(proj->velocity, ray.normal);
 
-                // Find a safe position outside the wall
-                while (pz_map_is_solid(map, new_pos) && push_dist < 1.0f) {
-                    new_pos = pz_vec2_add(
-                        proj->pos, pz_vec2_scale(normal, push_dist));
-                    push_dist += 0.05f;
+                        // Calculate remaining time after the bounce
+                        float total_move = pz_vec2_len(movement);
+                        if (total_move > 0.0001f) {
+                            float used_fraction = ray.distance / total_move;
+                            remaining_dt *= (1.0f - used_fraction);
+                        } else {
+                            remaining_dt = 0;
+                        }
+
+                        pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
+                            "Projectile bounced at (%.2f, %.2f), normal (%.1f, "
+                            "%.1f), %d left",
+                            ray.point.x, ray.point.y, ray.normal.x,
+                            ray.normal.y, proj->bounces_remaining);
+
+                        // Continue the loop to process remaining movement
+                        continue;
+                    } else {
+                        // No bounces left - destroy
+                        record_hit(mgr, PZ_HIT_WALL, ray.point);
+
+                        proj->active = false;
+                        mgr->active_count--;
+                        pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
+                            "Projectile destroyed at wall (no bounces left)");
+                        break;
+                    }
+                } else {
+                    // No wall hit - check bounds and move to target
+                    if (!pz_map_in_bounds_world(map, target_pos)) {
+                        proj->active = false;
+                        mgr->active_count--;
+                        break;
+                    }
+                    proj->pos = target_pos;
+                    remaining_dt = 0;
                 }
-
-                // If we couldn't find a safe spot, just stay at old position
-                if (pz_map_is_solid(map, new_pos)) {
-                    new_pos = proj->pos;
-                }
-
-                proj->bounces_remaining--;
-
-                // Set cooldown to prevent immediate re-bounce
-                // Cooldown = time to travel ~0.3 units at current speed
-                proj->bounce_cooldown = 0.3f / proj->speed;
-
-                pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
-                    "Projectile bounced, %d bounces left, pushed %.2f",
-                    proj->bounces_remaining, push_dist - 0.15f);
             } else {
-                // No bounces left - destroy
-                // Record hit for particle spawning
-                record_hit(mgr, PZ_HIT_WALL, proj->pos);
-
-                proj->active = false;
-                mgr->active_count--;
-                pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
-                    "Projectile destroyed (no bounces left)");
-                continue;
+                // No map - just move
+                proj->pos = target_pos;
+                remaining_dt = 0;
             }
-        } else if (map && pz_map_blocks_bullets(map, new_pos)
-            && proj->bounce_cooldown > 0.0f) {
-            // Still in cooldown but hitting wall - don't move into it
-            new_pos = proj->pos;
         }
-
-        // Check for out of bounds
-        if (map && !pz_map_in_bounds_world(map, new_pos)) {
-            proj->active = false;
-            mgr->active_count--;
-            continue;
-        }
-
-        proj->pos = new_pos;
     }
 }
 
