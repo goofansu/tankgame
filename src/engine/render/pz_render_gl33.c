@@ -459,6 +459,14 @@ gl33_set_viewport(pz_renderer *r, int width, int height)
     glViewport(0, 0, width, height);
 }
 
+static float
+gl33_get_dpi_scale(pz_renderer *r)
+{
+    (void)r;
+    // GL33 backend doesn't have access to sokol_app, return 1.0
+    return 1.0f;
+}
+
 /* ============================================================================
  * Shaders
  * ============================================================================
@@ -1361,6 +1369,7 @@ static const pz_render_backend_vtable s_gl33_vtable = {
     .shutdown = gl33_shutdown,
     .get_viewport = gl33_get_viewport,
     .set_viewport = gl33_set_viewport,
+    .get_dpi_scale = gl33_get_dpi_scale,
     .create_shader = gl33_create_shader,
     .destroy_shader = gl33_destroy_shader,
     .create_texture = gl33_create_texture,

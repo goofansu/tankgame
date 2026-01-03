@@ -206,6 +206,7 @@ void pz_renderer_destroy(pz_renderer *r);
 pz_renderer_backend pz_renderer_get_backend(pz_renderer *r);
 void pz_renderer_get_viewport(pz_renderer *r, int *width, int *height);
 void pz_renderer_set_viewport(pz_renderer *r, int width, int height);
+float pz_renderer_get_dpi_scale(pz_renderer *r);
 
 // Shader operations
 pz_shader_handle pz_renderer_create_shader(

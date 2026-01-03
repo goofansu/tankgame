@@ -877,6 +877,13 @@ sokol_set_viewport(pz_renderer *r, int width, int height)
     r->viewport_height = height;
 }
 
+static float
+sokol_get_dpi_scale(pz_renderer *r)
+{
+    (void)r;
+    return sapp_dpi_scale();
+}
+
 static pz_shader_handle
 sokol_create_shader(pz_renderer *r, const pz_shader_desc *desc)
 {
@@ -1817,6 +1824,7 @@ pz_render_backend_sokol_vtable(void)
         .shutdown = sokol_shutdown,
         .get_viewport = sokol_get_viewport,
         .set_viewport = sokol_set_viewport,
+        .get_dpi_scale = sokol_get_dpi_scale,
         .create_shader = sokol_create_shader,
         .destroy_shader = sokol_destroy_shader,
         .create_texture = sokol_create_texture,

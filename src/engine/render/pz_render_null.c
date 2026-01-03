@@ -75,6 +75,13 @@ null_set_viewport(pz_renderer *r, int width, int height)
     r->viewport_height = height;
 }
 
+static float
+null_get_dpi_scale(pz_renderer *r)
+{
+    (void)r;
+    return 1.0f;
+}
+
 /* ============================================================================
  * Shaders
  * ============================================================================
@@ -398,6 +405,7 @@ static const pz_render_backend_vtable s_null_vtable = {
     .shutdown = null_shutdown,
     .get_viewport = null_get_viewport,
     .set_viewport = null_set_viewport,
+    .get_dpi_scale = null_get_dpi_scale,
     .create_shader = null_create_shader,
     .destroy_shader = null_destroy_shader,
     .create_texture = null_create_texture,

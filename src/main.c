@@ -791,11 +791,17 @@ app_frame(void)
     if (g_app.font_mgr && g_app.font_russo && g_app.player_tank) {
         pz_font_begin_frame(g_app.font_mgr);
 
-        int vp_width, vp_height;
-        pz_renderer_get_viewport(g_app.renderer, &vp_width, &vp_height);
+        // Get logical viewport size (framebuffer / dpi_scale)
+        int fb_width, fb_height;
+        pz_renderer_get_viewport(g_app.renderer, &fb_width, &fb_height);
+        float dpi_scale = sapp_dpi_scale();
+        float vp_width = (float)fb_width / dpi_scale;
+        float vp_height = (float)fb_height / dpi_scale;
 
+        // Font sizes and positions are in logical pixels - DPI scaling is
+        // handled internally
         pz_text_style health_style
-            = PZ_TEXT_STYLE_DEFAULT(g_app.font_russo, 36);
+            = PZ_TEXT_STYLE_DEFAULT(g_app.font_russo, 36.0f);
         health_style.align_h = PZ_FONT_ALIGN_RIGHT;
         health_style.align_v = PZ_FONT_ALIGN_BOTTOM;
 
@@ -810,8 +816,8 @@ app_frame(void)
             health_style.color = pz_vec4_new(1.0f, 0.2f, 0.2f, 1.0f); // Red
         }
 
-        pz_font_drawf(g_app.font_mgr, &health_style, (float)vp_width - 20.0f,
-            (float)vp_height - 20.0f, "HP: %d", g_app.player_tank->health);
+        pz_font_drawf(g_app.font_mgr, &health_style, vp_width - 20.0f,
+            vp_height - 20.0f, "HP: %d", g_app.player_tank->health);
 
         pz_font_end_frame(g_app.font_mgr);
     }
@@ -959,6 +965,7 @@ sokol_main(int argc, char *argv[])
         .width = WINDOW_WIDTH,
         .height = WINDOW_HEIGHT,
         .sample_count = 4,
+        .high_dpi = true,
         .window_title = WINDOW_TITLE,
     };
 }

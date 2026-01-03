@@ -110,6 +110,7 @@ struct pz_font_manager {
     pz_buffer_handle vertex_buffer;
     pz_pipeline_handle pipeline;
     int screen_width, screen_height;
+    float dpi_scale;
 };
 
 /* ============================================================================
@@ -544,6 +545,7 @@ pz_font_begin_frame(pz_font_manager *mgr)
     mgr->vertex_count = 0;
     pz_renderer_get_viewport(
         mgr->renderer, &mgr->screen_width, &mgr->screen_height);
+    mgr->dpi_scale = pz_renderer_get_dpi_scale(mgr->renderer);
 }
 
 static void
@@ -582,17 +584,27 @@ pz_font_draw(pz_font_manager *mgr, const pz_text_style *style, float x, float y,
         return;
 
     pz_font *font = style->font;
-    float scale = style->size / SDF_SIZE;
+    float dpi = mgr->dpi_scale;
 
-    // Apply alignment
+    // Scale from logical pixels to framebuffer pixels
+    // style->size is in logical pixels, we need framebuffer pixels for
+    // rendering
+    float fb_size = style->size * dpi;
+    float scale = fb_size / SDF_SIZE;
+
+    // Convert input position from logical to framebuffer pixels
+    x *= dpi;
+    y *= dpi;
+
+    // Apply alignment (bounds are in logical pixels, so scale them)
     pz_text_bounds bounds = pz_font_measure(style, text);
 
     switch (style->align_h) {
     case PZ_FONT_ALIGN_CENTER:
-        x -= bounds.width * 0.5f;
+        x -= bounds.width * dpi * 0.5f;
         break;
     case PZ_FONT_ALIGN_RIGHT:
-        x -= bounds.width;
+        x -= bounds.width * dpi;
         break;
     default:
         break;
@@ -600,13 +612,13 @@ pz_font_draw(pz_font_manager *mgr, const pz_text_style *style, float x, float y,
 
     switch (style->align_v) {
     case PZ_FONT_ALIGN_TOP:
-        y += pz_font_baseline(font, style->size);
+        y += pz_font_baseline(font, style->size) * dpi;
         break;
     case PZ_FONT_ALIGN_MIDDLE:
-        y += pz_font_baseline(font, style->size) - bounds.height * 0.5f;
+        y += (pz_font_baseline(font, style->size) - bounds.height * 0.5f) * dpi;
         break;
     case PZ_FONT_ALIGN_BOTTOM:
-        y -= (bounds.height - pz_font_baseline(font, style->size));
+        y -= (bounds.height - pz_font_baseline(font, style->size)) * dpi;
         break;
     default: // BASELINE
         break;
@@ -620,7 +632,7 @@ pz_font_draw(pz_font_manager *mgr, const pz_text_style *style, float x, float y,
 
         if (cp == '\n') {
             cursor_x = x;
-            y += pz_font_line_height(font, style->size);
+            y += pz_font_line_height(font, style->size) * dpi;
             continue;
         }
 
@@ -632,7 +644,7 @@ pz_font_draw(pz_font_manager *mgr, const pz_text_style *style, float x, float y,
             continue;
         }
 
-        // Calculate quad position
+        // Calculate quad position (in framebuffer pixels)
         float gx = cursor_x + g->x_offset * scale;
         float gy = y + g->y_offset * scale;
         float gw = g->width * scale;

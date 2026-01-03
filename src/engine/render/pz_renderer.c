@@ -105,6 +105,15 @@ pz_renderer_set_viewport(pz_renderer *r, int width, int height)
     r->vtable->set_viewport(r, width, height);
 }
 
+float
+pz_renderer_get_dpi_scale(pz_renderer *r)
+{
+    if (r->vtable->get_dpi_scale) {
+        return r->vtable->get_dpi_scale(r);
+    }
+    return 1.0f;
+}
+
 /* ============================================================================
  * Shaders
  * ============================================================================

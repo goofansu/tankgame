@@ -25,6 +25,7 @@ typedef struct pz_render_backend_vtable {
     // Viewport
     void (*get_viewport)(pz_renderer *r, int *width, int *height);
     void (*set_viewport)(pz_renderer *r, int width, int height);
+    float (*get_dpi_scale)(pz_renderer *r);
 
     // Shaders
     pz_shader_handle (*create_shader)(
