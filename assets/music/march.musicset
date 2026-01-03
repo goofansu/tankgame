@@ -1,6 +1,6 @@
 # March - Military themed music
 name March
-bpm 110
+bpm 120
 
 layer base march/melody.mid channel=1 volume=1.0
 layer intensity1 march/drums.mid channel=9 volume=0.7
