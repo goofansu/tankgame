@@ -27,6 +27,7 @@ typedef struct pz_tile_registry pz_tile_registry;
 #define PZ_MAP_MAX_SPAWNS 32
 #define PZ_MAP_MAX_ENEMIES 16
 #define PZ_MAP_MAX_POWERUPS 16
+#define PZ_MAP_MAX_BARRIERS 32
 #define PZ_MAP_MAX_TILE_DEFS 32
 
 // Tile definition - maps a symbol to a tile name
@@ -59,6 +60,14 @@ typedef struct pz_powerup_spawn {
     char type_name[32]; // Powerup type name (resolved at runtime)
     float respawn_time; // Time to respawn after collection (default: 15)
 } pz_powerup_spawn;
+
+// Barrier spawn data (destructible obstacles)
+// Barriers block movement, projectiles, and light until destroyed
+typedef struct pz_barrier_spawn {
+    pz_vec2 pos;
+    char tile_name[32]; // Which tile's textures to use (e.g., "cobble")
+    float health; // Starting health (default: 20)
+} pz_barrier_spawn;
 
 // Map lighting settings
 typedef struct pz_map_lighting {
@@ -132,6 +141,10 @@ typedef struct pz_map {
     // Powerup spawns
     pz_powerup_spawn powerups[PZ_MAP_MAX_POWERUPS];
     int powerup_count;
+
+    // Barrier spawns (destructible obstacles)
+    pz_barrier_spawn barriers[PZ_MAP_MAX_BARRIERS];
+    int barrier_count;
 
     // Lighting settings
     pz_map_lighting lighting;
@@ -211,6 +224,10 @@ int pz_map_get_enemy_count(const pz_map *map);
 // Powerup spawn helpers
 const pz_powerup_spawn *pz_map_get_powerup(const pz_map *map, int index);
 int pz_map_get_powerup_count(const pz_map *map);
+
+// Barrier spawn helpers
+const pz_barrier_spawn *pz_map_get_barrier(const pz_map *map, int index);
+int pz_map_get_barrier_count(const pz_map *map);
 
 // Lighting helpers
 const pz_map_lighting *pz_map_get_lighting(const pz_map *map);

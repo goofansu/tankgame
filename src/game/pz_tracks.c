@@ -15,7 +15,7 @@
 #define MAX_PENDING_MARKS 256
 
 // Maximum number of entities that can leave tracks
-#define MAX_TRACKED_ENTITIES 16
+#define MAX_TRACKED_ENTITIES 64
 
 // Track mark dimensions (in world units)
 #define TRACK_MARK_LENGTH 0.26f // Length of each track segment

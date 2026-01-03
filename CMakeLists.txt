@@ -78,6 +78,7 @@ set(GAME_SOURCES
     src/game/pz_lighting.c
     src/game/pz_particle.c
     src/game/pz_background.c
+    src/game/pz_barrier.c
     src/game/pz_game_music.c
     src/game/pz_game_sfx.c
     src/game/pz_powerup.c

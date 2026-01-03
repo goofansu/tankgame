@@ -27,6 +27,7 @@
 #include "engine/render/pz_texture.h"
 #include "game/pz_ai.h"
 #include "game/pz_background.h"
+#include "game/pz_barrier.h"
 #include "game/pz_campaign.h"
 #include "game/pz_game_music.h"
 #include "game/pz_game_sfx.h"
@@ -100,6 +101,7 @@ typedef struct map_session {
     pz_projectile_manager *projectile_mgr;
     pz_particle_manager *particle_mgr;
     pz_powerup_manager *powerup_mgr;
+    pz_barrier_manager *barrier_mgr;
 
     // Map gameplay state
     int initial_enemy_count;
@@ -194,6 +196,9 @@ map_session_unload(map_session *session)
 
     pz_powerup_manager_destroy(session->powerup_mgr, g_app.renderer);
     session->powerup_mgr = NULL;
+
+    pz_barrier_manager_destroy(session->barrier_mgr, g_app.renderer);
+    session->barrier_mgr = NULL;
 
     pz_particle_manager_destroy(session->particle_mgr, g_app.renderer);
     session->particle_mgr = NULL;
@@ -312,6 +317,8 @@ map_session_load(map_session *session, const char *map_path)
     session->projectile_mgr = pz_projectile_manager_create(g_app.renderer);
     session->particle_mgr = pz_particle_manager_create(g_app.renderer);
     session->powerup_mgr = pz_powerup_manager_create(g_app.renderer);
+    session->barrier_mgr = pz_barrier_manager_create(
+        g_app.renderer, g_app.tile_registry, session->map->tile_size);
 
     // Spawn player at first spawn point
     pz_vec2 player_spawn_pos = { 0.0f, 0.0f };
@@ -349,6 +356,16 @@ map_session_load(map_session *session, const char *map_path)
                 pz_log(PZ_LOG_WARN, PZ_LOG_CAT_GAME, "Unknown powerup type: %s",
                     ps->type_name);
             }
+        }
+    }
+
+    // Spawn barriers from map data
+    int barrier_count = pz_map_get_barrier_count(session->map);
+    for (int i = 0; i < barrier_count; i++) {
+        const pz_barrier_spawn *bs = pz_map_get_barrier(session->map, i);
+        if (bs) {
+            pz_barrier_add(
+                session->barrier_mgr, bs->pos, bs->tile_name, bs->health);
         }
     }
 
@@ -432,6 +449,21 @@ map_session_reset(map_session *session)
                     pz_powerup_add(
                         session->powerup_mgr, ps->pos, type, ps->respawn_time);
                 }
+            }
+        }
+    }
+
+    // Reset barriers (clear and respawn from map)
+    if (session->barrier_mgr) {
+        pz_barrier_clear(session->barrier_mgr);
+
+        // Respawn from map
+        int barrier_count = pz_map_get_barrier_count(session->map);
+        for (int i = 0; i < barrier_count; i++) {
+            const pz_barrier_spawn *bs = pz_map_get_barrier(session->map, i);
+            if (bs) {
+                pz_barrier_add(
+                    session->barrier_mgr, bs->pos, bs->tile_name, bs->health);
             }
         }
     }
@@ -924,6 +956,18 @@ app_frame(void)
         // Update all tanks (respawn timers, etc.)
         pz_tank_update_all(g_app.session.tank_mgr, g_app.session.map, dt);
 
+        // Resolve tank-barrier collisions for all tanks
+        if (g_app.session.barrier_mgr) {
+            for (int i = 0; i < PZ_MAX_TANKS; i++) {
+                pz_tank *tank = &g_app.session.tank_mgr->tanks[i];
+                if ((tank->flags & PZ_TANK_FLAG_ACTIVE)
+                    && !(tank->flags & PZ_TANK_FLAG_DEAD)) {
+                    pz_barrier_resolve_collision(g_app.session.barrier_mgr,
+                        &tank->pos, g_app.session.tank_mgr->collision_radius);
+                }
+            }
+        }
+
         // AI update
         if (g_app.session.ai_mgr && g_app.session.player_tank
             && !(g_app.session.player_tank->flags & PZ_TANK_FLAG_DEAD)) {
@@ -956,10 +1000,82 @@ app_frame(void)
             }
         }
 
-        // Powerup and projectile updates
+        // Powerup, barrier, and projectile updates
         pz_powerup_update(g_app.session.powerup_mgr, dt);
+        if (g_app.session.barrier_mgr) {
+            pz_barrier_update(g_app.session.barrier_mgr, dt);
+        }
         pz_projectile_update(g_app.session.projectile_mgr, g_app.session.map,
             g_app.session.tank_mgr, dt);
+
+        // Check projectile-barrier collisions
+        if (g_app.session.barrier_mgr && g_app.session.projectile_mgr) {
+            for (int i = 0; i < PZ_MAX_PROJECTILES; i++) {
+                pz_projectile *proj
+                    = &g_app.session.projectile_mgr->projectiles[i];
+                if (!proj->active)
+                    continue;
+
+                pz_vec2 hit_pos, hit_normal;
+                pz_barrier *barrier = NULL;
+
+                // Check if projectile is inside a barrier
+                // Use a small raycast from previous position to current
+                pz_vec2 prev_pos
+                    = pz_vec2_sub(proj->pos, pz_vec2_scale(proj->velocity, dt));
+                if (pz_barrier_raycast(g_app.session.barrier_mgr, prev_pos,
+                        proj->pos, &hit_pos, &hit_normal, &barrier)) {
+
+                    // Apply damage to barrier
+                    bool destroyed = false;
+                    pz_barrier_apply_damage(g_app.session.barrier_mgr, hit_pos,
+                        (float)proj->damage, &destroyed);
+
+                    // Record hit for particle effects (reuse existing system)
+                    if (g_app.session.projectile_mgr->hit_count
+                        < PZ_MAX_PROJECTILE_HITS) {
+                        pz_projectile_hit *hit
+                            = &g_app.session.projectile_mgr->hits
+                                   [g_app.session.projectile_mgr->hit_count++];
+                        hit->type = destroyed ? PZ_HIT_WALL : PZ_HIT_WALL;
+                        hit->pos = hit_pos;
+                    }
+
+                    // Destroy projectile
+                    proj->active = false;
+                    g_app.session.projectile_mgr->active_count--;
+
+                    // If barrier was destroyed, spawn larger explosion
+                    if (destroyed) {
+                        pz_vec3 exp_pos
+                            = { barrier->pos.x, 0.75f, barrier->pos.y };
+                        pz_smoke_config explosion = PZ_SMOKE_TANK_HIT;
+                        explosion.position = exp_pos;
+                        explosion.count = 12;
+                        explosion.spread = 1.0f;
+                        explosion.scale_min = 1.5f;
+                        explosion.scale_max = 2.5f;
+                        pz_particle_spawn_smoke(
+                            g_app.session.particle_mgr, &explosion);
+
+                        // Add explosion light for destroyed barrier
+                        for (int j = 0; j < MAX_EXPLOSION_LIGHTS; j++) {
+                            if (g_app.session.explosion_lights[j].timer
+                                <= 0.0f) {
+                                g_app.session.explosion_lights[j].pos
+                                    = barrier->pos;
+                                g_app.session.explosion_lights[j].is_tank
+                                    = false;
+                                g_app.session.explosion_lights[j].duration
+                                    = 0.3f;
+                                g_app.session.explosion_lights[j].timer = 0.3f;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         // Hash game state for determinism verification
         if (g_app.session.player_tank) {
@@ -1137,6 +1253,12 @@ app_frame(void)
         pz_lighting_add_map_occluders(
             g_app.session.lighting, g_app.session.map);
 
+        // Add barrier occluders
+        if (g_app.session.barrier_mgr) {
+            pz_barrier_add_occluders(
+                g_app.session.barrier_mgr, g_app.session.lighting);
+        }
+
         pz_lighting_clear_lights(g_app.session.lighting);
 
         for (int i = 0; i < PZ_MAX_TANKS; i++) {
@@ -1262,6 +1384,28 @@ app_frame(void)
     // Draw debug texture scale grid if enabled
     pz_map_renderer_draw_debug(g_app.session.renderer, vp);
 
+    // Render barriers (after map, before tanks)
+    if (g_app.session.barrier_mgr) {
+        pz_barrier_render_params barrier_params = { 0 };
+        if (g_app.session.lighting) {
+            barrier_params.light_texture
+                = pz_lighting_get_texture(g_app.session.lighting);
+            pz_lighting_get_uv_transform(g_app.session.lighting,
+                &barrier_params.light_scale_x, &barrier_params.light_scale_z,
+                &barrier_params.light_offset_x, &barrier_params.light_offset_z);
+        }
+        if (g_app.session.map) {
+            const pz_map_lighting *map_light
+                = pz_map_get_lighting(g_app.session.map);
+            barrier_params.has_sun = map_light->has_sun;
+            barrier_params.sun_direction = map_light->sun_direction;
+            barrier_params.sun_color = map_light->sun_color;
+            barrier_params.ambient = map_light->ambient_color;
+        }
+        pz_barrier_render(
+            g_app.session.barrier_mgr, g_app.renderer, vp, &barrier_params);
+    }
+
     pz_tank_render_params tank_params = { 0 };
     if (g_app.session.lighting) {
         tank_params.light_texture
@@ -1284,6 +1428,19 @@ app_frame(void)
         bool hit_wall = false;
         pz_vec2 laser_end = pz_map_raycast(g_app.session.map, laser_start,
             laser_dir, LASER_MAX_DIST, &hit_wall);
+
+        // Also check barrier collision for laser
+        if (g_app.session.barrier_mgr) {
+            pz_vec2 barrier_hit_pos;
+            if (pz_barrier_raycast(g_app.session.barrier_mgr, laser_start,
+                    laser_end, &barrier_hit_pos, NULL, NULL)) {
+                // Use barrier hit if it's closer than wall hit
+                if (pz_vec2_dist(laser_start, barrier_hit_pos)
+                    < pz_vec2_dist(laser_start, laser_end)) {
+                    laser_end = barrier_hit_pos;
+                }
+            }
+        }
 
         float laser_len = pz_vec2_dist(laser_start, laser_end);
         if (laser_len > 0.01f) {

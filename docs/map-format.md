@@ -82,15 +82,17 @@ tag P1 spawn angle=0.785 team=0
 tag E1 enemy angle=3.14 level=3
 tag W1 powerup type=machine_gun respawn=15
 tag W2 powerup type=ricochet respawn=20
+tag B1 barrier tile=cobble health=20
 
 <grid>
-2# 0.|P1 0.|E1 0.|W1 2#
+2# 0.|P1 0.|E1 0.|W1 0.|B1 2#
 </grid>
 ```
 
 **Spawn params:** `angle`, `team`, `team_spawn`
 **Enemy params:** `angle`, `level` (1-3)
 **Powerup params:** `type` (machine_gun, ricochet), `respawn` (seconds, default 15)
+**Barrier params:** `tile` (tile name for texture), `health` (default 20)
 
 ## Water Level
 

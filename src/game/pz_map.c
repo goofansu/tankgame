@@ -544,6 +544,21 @@ pz_map_get_powerup_count(const pz_map *map)
     return map ? map->powerup_count : 0;
 }
 
+const pz_barrier_spawn *
+pz_map_get_barrier(const pz_map *map, int index)
+{
+    if (!map || index < 0 || index >= map->barrier_count) {
+        return NULL;
+    }
+    return &map->barriers[index];
+}
+
+int
+pz_map_get_barrier_count(const pz_map *map)
+{
+    return map ? map->barrier_count : 0;
+}
+
 const pz_map_lighting *
 pz_map_get_lighting(const pz_map *map)
 {
@@ -1004,6 +1019,47 @@ parse_powerup_tag(const char *params, pz_powerup_spawn *powerup)
     return powerup->type_name[0] != '\0';
 }
 
+// Parse barrier tag: "barrier tile=<name> health=<f>"
+static bool
+parse_barrier_tag(const char *params, pz_barrier_spawn *barrier)
+{
+    barrier->tile_name[0] = '\0';
+    barrier->health = 20.0f; // Default health
+
+    const char *p = params;
+    while (*p) {
+        while (*p && (isspace((unsigned char)*p) || *p == ',')) {
+            p++;
+        }
+        if (!*p)
+            break;
+
+        if (strncmp(p, "tile=", 5) == 0) {
+            // Extract tile name
+            const char *start = p + 5;
+            const char *end = start;
+            while (*end && !isspace((unsigned char)*end) && *end != ',') {
+                end++;
+            }
+            size_t len = end - start;
+            if (len >= sizeof(barrier->tile_name)) {
+                len = sizeof(barrier->tile_name) - 1;
+            }
+            strncpy(barrier->tile_name, start, len);
+            barrier->tile_name[len] = '\0';
+            p = end;
+            continue;
+        } else if (strncmp(p, "health=", 7) == 0) {
+            barrier->health = (float)atof(p + 7);
+        }
+
+        while (*p && !isspace((unsigned char)*p) && *p != ',') {
+            p++;
+        }
+    }
+    return barrier->tile_name[0] != '\0';
+}
+
 // Tag storage for v2 format
 typedef struct tag_def {
     char name[32];
@@ -1342,6 +1398,12 @@ pz_map_load(const char *path)
                 pz_powerup_spawn *ps = &map->powerups[map->powerup_count++];
                 ps->pos = pos;
                 parse_powerup_tag(tag->params, ps);
+            }
+        } else if (strcmp(tag->type, "barrier") == 0) {
+            if (map->barrier_count < PZ_MAP_MAX_BARRIERS) {
+                pz_barrier_spawn *bs = &map->barriers[map->barrier_count++];
+                bs->pos = pos;
+                parse_barrier_tag(tag->params, bs);
             }
         }
     }

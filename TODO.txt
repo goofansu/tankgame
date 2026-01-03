@@ -2,6 +2,7 @@
 * Rename tanks from numbers
 * Give tanks different weapons
 * destroyable objects on the map
+* kill init_default_tile_defs
 
 * spatial audio panning/attenuation (M8.2)
 * replace fallback texture with orange checkerboard
