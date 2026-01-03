@@ -27,11 +27,11 @@ static const pz_enemy_stats ENEMY_STATS[] = {
         .aim_speed = 1.0f,
         .body_color = { 0.5f, 0.5f, 0.5f, 1.0f } },
 
-    // Level 1: Basic enemy
+    // Level 1: Basic enemy (stationary turret, fires often, uses bounce shots)
     { .health = 10,
         .max_bounces = 1,
-        .fire_cooldown = 1.2f,
-        .aim_speed = 1.0f,
+        .fire_cooldown = 0.6f,
+        .aim_speed = 1.2f,
         .body_color = { 0.6f, 0.25f, 0.25f, 1.0f } }, // Dark red
 
     // Level 2: Intermediate enemy (uses cover)
@@ -253,6 +253,101 @@ is_position_valid(const pz_map *map, pz_vec2 pos, float radius)
     }
 
     return true;
+}
+
+// Try to find a bounce shot angle to hit the player
+// Returns true if a valid bounce shot was found, sets bounce_angle
+// This simulates firing a projectile and checking if it would hit the player
+// after bouncing off a wall.
+static bool
+find_bounce_shot(
+    const pz_map *map, pz_vec2 ai_pos, pz_vec2 player_pos, float *bounce_angle)
+{
+    if (!map) {
+        return false;
+    }
+
+    const float max_ray_dist = 30.0f; // Maximum distance to check
+    const float player_hit_radius = 0.9f; // Tank collision radius
+    const int num_angles = 36; // Sample 36 angles (every 10 degrees)
+
+    float best_score = -1.0f;
+    float best_angle = 0.0f;
+
+    // Try firing in multiple directions and simulate one bounce
+    for (int i = 0; i < num_angles; i++) {
+        float angle = (float)i * (2.0f * PZ_PI / (float)num_angles);
+        pz_vec2 dir = { sinf(angle), cosf(angle) };
+
+        // Cast ray to find wall
+        pz_vec2 end = pz_vec2_add(ai_pos, pz_vec2_scale(dir, max_ray_dist));
+        pz_raycast_result ray = pz_map_raycast_ex(map, ai_pos, end);
+
+        if (!ray.hit) {
+            continue; // No wall hit, can't bounce
+        }
+
+        // Calculate reflected direction
+        pz_vec2 reflected = pz_vec2_reflect(dir, ray.normal);
+
+        // Push slightly off the wall
+        pz_vec2 bounce_pos
+            = pz_vec2_add(ray.point, pz_vec2_scale(ray.normal, 0.05f));
+
+        // Cast ray from bounce point in reflected direction toward player
+        float dist_to_player = pz_vec2_dist(bounce_pos, player_pos);
+        pz_vec2 reflected_end
+            = pz_vec2_add(bounce_pos, pz_vec2_scale(reflected, max_ray_dist));
+
+        // Check if reflected ray passes close to player
+        // Find closest approach of the reflected ray to the player
+
+        // Vector from bounce point to player
+        pz_vec2 to_player = pz_vec2_sub(player_pos, bounce_pos);
+
+        // Project player position onto reflected ray
+        float dot = pz_vec2_dot(to_player, reflected);
+
+        if (dot < 0) {
+            continue; // Player is behind the bounce direction
+        }
+
+        // Closest point on reflected ray to player
+        pz_vec2 closest
+            = pz_vec2_add(bounce_pos, pz_vec2_scale(reflected, dot));
+        float miss_dist = pz_vec2_dist(closest, player_pos);
+
+        // Check if the ray would hit a wall before reaching the player
+        pz_vec2 check_end = pz_vec2_add(
+            bounce_pos, pz_vec2_scale(reflected, dot + player_hit_radius));
+        pz_raycast_result check = pz_map_raycast_ex(map, bounce_pos, check_end);
+
+        if (check.hit && check.distance < dot - player_hit_radius) {
+            continue; // Wall blocks the path to player
+        }
+
+        // Score this shot (lower miss distance is better)
+        if (miss_dist < player_hit_radius * 1.5f) {
+            // Calculate a score based on how close we'd get
+            float score = player_hit_radius * 2.0f - miss_dist;
+
+            // Prefer shorter total path
+            float total_dist = ray.distance + dot;
+            score -= total_dist * 0.01f;
+
+            if (score > best_score) {
+                best_score = score;
+                best_angle = angle;
+            }
+        }
+    }
+
+    if (best_score > 0) {
+        *bounce_angle = best_angle;
+        return true;
+    }
+
+    return false;
 }
 
 // Find a cover position relative to the player
@@ -969,12 +1064,53 @@ pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
         // Calculate angle to player
         float dx = player_pos.x - tank->pos.x;
         float dy = player_pos.y - tank->pos.y;
-        float target_angle = atan2f(dx, dy);
+        float direct_angle = atan2f(dx, dy);
 
-        // Always track and aim at player
-        ctrl->target_aim_angle = target_angle;
+        // Check line of sight
         ctrl->can_see_player
             = check_line_of_sight(ai_mgr->map, tank->pos, player_pos);
+
+        // Level 1: Consider bounce shots when player is not visible
+        if (ctrl->level == PZ_ENEMY_LEVEL_1) {
+            // Update bounce shot search timer
+            if (ctrl->bounce_shot_search_timer > 0.0f) {
+                ctrl->bounce_shot_search_timer -= dt;
+            }
+
+            if (ctrl->can_see_player) {
+                // Direct LOS - aim straight at player
+                ctrl->target_aim_angle = direct_angle;
+                ctrl->has_bounce_shot = false;
+            } else {
+                // No LOS - try to find a bounce shot
+                if (!ctrl->has_bounce_shot
+                    && ctrl->bounce_shot_search_timer <= 0.0f) {
+                    float bounce_angle;
+                    if (find_bounce_shot(ai_mgr->map, tank->pos, player_pos,
+                            &bounce_angle)) {
+                        ctrl->has_bounce_shot = true;
+                        ctrl->bounce_shot_angle = bounce_angle;
+                        pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
+                            "AI %d found bounce shot at angle %.1f deg",
+                            tank->id, bounce_angle * 180.0f / PZ_PI);
+                    } else {
+                        // No bounce shot found, try again later
+                        ctrl->bounce_shot_search_timer = 0.5f;
+                    }
+                }
+
+                if (ctrl->has_bounce_shot) {
+                    ctrl->target_aim_angle = ctrl->bounce_shot_angle;
+                } else {
+                    // Fallback: aim at player anyway (for when they become
+                    // visible)
+                    ctrl->target_aim_angle = direct_angle;
+                }
+            }
+        } else {
+            // Level 2/3: Always aim directly at player
+            ctrl->target_aim_angle = direct_angle;
+        }
 
         // Smoothly rotate turret towards target
         float angle_diff
@@ -1053,13 +1189,18 @@ pz_ai_fire(pz_ai_manager *ai_mgr, pz_projectile_manager *proj_mgr)
                 continue;
             }
         }
-        // Level 1: Always try to fire (stationary turret)
+        // Level 1: Always try to fire (stationary turret, including bounce
+        // shots)
 
-        // Only fire if:
-        // 1. We can see the player
-        // 2. Fire timer has elapsed
-        // 3. Turret is roughly aimed at target (within ~15 degrees)
-        if (!ctrl->can_see_player) {
+        // Check if we can fire
+        // Level 1: Can fire if we see player OR have a bounce shot
+        // Others: Need to see the player
+        bool can_attempt_fire = ctrl->can_see_player;
+        if (ctrl->level == PZ_ENEMY_LEVEL_1 && ctrl->has_bounce_shot) {
+            can_attempt_fire = true;
+        }
+
+        if (!can_attempt_fire) {
             continue;
         }
 
@@ -1107,6 +1248,13 @@ pz_ai_fire(pz_ai_manager *ai_mgr, pz_projectile_manager *proj_mgr)
 
         // Track shots for cover behavior
         ctrl->shots_fired++;
+
+        // Level 1: After firing a bounce shot, search for a new one next time
+        if (ctrl->level == PZ_ENEMY_LEVEL_1 && ctrl->has_bounce_shot) {
+            ctrl->has_bounce_shot = false;
+            ctrl->bounce_shot_search_timer = 0.3f; // Brief delay before
+                                                   // searching again
+        }
 
         pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME, "AI tank %d fired (level %d)",
             tank->id, ctrl->level);

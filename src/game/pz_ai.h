@@ -119,6 +119,11 @@ typedef struct pz_ai_controller {
     float last_player_pos_y;
     pz_vec2 flank_target; // Target position for flanking
     bool wants_to_fire; // Request to fire (checked in pz_ai_fire)
+
+    // Bounce shot targeting (Level 1)
+    bool has_bounce_shot; // Whether we found a valid bounce shot
+    float bounce_shot_angle; // Angle to aim for bounce shot
+    float bounce_shot_search_timer; // Cooldown for searching new bounce shots
 } pz_ai_controller;
 
 /* ============================================================================

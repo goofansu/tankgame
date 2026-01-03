@@ -8,46 +8,35 @@ LIVES 5
 
 # Maps in order of difficulty
 
-# Level 1: Night Arena - Introduction
-# 1x Level 1 + 1x Level 2 + 1x Level 3 enemies (mixed intro)
-MAP assets/maps/night_arena.map
-
-# Level 2: Sunset Fortress - Easy
-# 2x Level 1 enemies (stationary targets)
+# Level 1: Sunset Fortress - Easy
 MAP assets/maps/sunset_fortress.map
 
+# Level 2: Night Arena - Introduction
+MAP assets/maps/night_arena.map
+
 # Level 3: Canyon Crossing - Easy-Medium
-# 1x Level 1 + 2x Level 2 enemies, dramatic height with deep canyon
 MAP assets/maps/canyon_crossing.map
 
 # Level 4: Day Arena - Medium
-# 3x Level 3 aggressive enemies
 MAP assets/maps/day_arena.map
 
 # Level 5: Dawn Waterway - Medium-Hard
-# 1x Level 1 + 2x Level 2 enemies with water hazards
 MAP assets/maps/dawn_waterway.map
 
 # Level 6: Volcanic Ridge - Medium-Hard
-# 2x Level 2 + 1x Level 3 with lava pits and tall mountains
 MAP assets/maps/volcanic_ridge.map
 
 # Level 7: Midnight Maze - Hard
-# 2x Level 2 + 1x Level 3 in dark maze with limited visibility
 MAP assets/maps/midnight_maze.map
 
 # Level 8: Frozen Peaks - Hard
-# 2x Level 2 + 2x Level 3 on icy mountain terrain
 MAP assets/maps/frozen_peaks.map
 
 # Level 9: Golden Hour Assault - Very Hard
-# 3x Level 3 + 1x Level 2 enemies with water obstacles
 MAP assets/maps/golden_hour_assault.map
 
 # Level 10: Storm Citadel - Very Hard
-# 3x Level 3 + 2x Level 2 in fortress with deep pits
 MAP assets/maps/storm_citadel.map
 
 # Level 11: Abyss Gauntlet - EXTREME
-# 5x Level 3 + 1x Level 2 - the ultimate challenge with massive height drops
 MAP assets/maps/abyss_gauntlet.map

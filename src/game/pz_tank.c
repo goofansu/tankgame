@@ -34,6 +34,165 @@ static const float INVULN_DURATION = 1.5f;
 // Default health
 static const int DEFAULT_HEALTH = 10;
 
+static bool
+circle_overlaps_tile(pz_vec2 center, float radius, float min_x, float min_y,
+    float max_x, float max_y, pz_vec2 *push_out)
+{
+    float nearest_x = pz_clampf(center.x, min_x, max_x);
+    float nearest_y = pz_clampf(center.y, min_y, max_y);
+    float dx = center.x - nearest_x;
+    float dy = center.y - nearest_y;
+    float dist_sq = dx * dx + dy * dy;
+    float radius_sq = radius * radius;
+
+    if (dist_sq >= radius_sq) {
+        return false;
+    }
+
+    if (!push_out) {
+        return true;
+    }
+
+    if (dist_sq > 0.000001f) {
+        float dist = sqrtf(dist_sq);
+        float push = radius - dist;
+        push_out->x = (dx / dist) * push;
+        push_out->y = (dy / dist) * push;
+        return true;
+    }
+
+    float left = center.x - min_x;
+    float right = max_x - center.x;
+    float bottom = center.y - min_y;
+    float top = max_y - center.y;
+
+    float min_dist = left;
+    pz_vec2 normal = { -1.0f, 0.0f };
+    if (right < min_dist) {
+        min_dist = right;
+        normal = (pz_vec2) { 1.0f, 0.0f };
+    }
+    if (bottom < min_dist) {
+        min_dist = bottom;
+        normal = (pz_vec2) { 0.0f, -1.0f };
+    }
+    if (top < min_dist) {
+        min_dist = top;
+        normal = (pz_vec2) { 0.0f, 1.0f };
+    }
+
+    push_out->x = normal.x * (radius + min_dist);
+    push_out->y = normal.y * (radius + min_dist);
+    return true;
+}
+
+static bool
+tank_circle_hits_map(const pz_map *map, pz_vec2 center, float radius)
+{
+    if (!map)
+        return false;
+
+    float half_w = map->world_width / 2.0f;
+    float half_h = map->world_height / 2.0f;
+    float ts = map->tile_size;
+
+    int min_tx = (int)floorf((center.x - radius + half_w) / ts);
+    int max_tx = (int)floorf((center.x + radius + half_w) / ts);
+    int min_ty = (int)floorf((center.y - radius + half_h) / ts);
+    int max_ty = (int)floorf((center.y + radius + half_h) / ts);
+
+    for (int ty = min_ty; ty <= max_ty; ty++) {
+        for (int tx = min_tx; tx <= max_tx; tx++) {
+            if (!pz_map_in_bounds(map, tx, ty)) {
+                return true;
+            }
+            if (pz_map_get_height(map, tx, ty) == 0) {
+                continue;
+            }
+
+            float min_x = tx * ts - half_w;
+            float min_y = ty * ts - half_h;
+            float max_x = min_x + ts;
+            float max_y = min_y + ts;
+
+            if (circle_overlaps_tile(
+                    center, radius, min_x, min_y, max_x, max_y, NULL)) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+static void
+resolve_tank_circle_map(const pz_map *map, pz_vec2 *center, float radius)
+{
+    if (!map || !center)
+        return;
+
+    float half_w = map->world_width / 2.0f;
+    float half_h = map->world_height / 2.0f;
+    float ts = map->tile_size;
+
+    for (int iter = 0; iter < 4; iter++) {
+        bool any = false;
+
+        float min_x = -half_w + radius;
+        float max_x = half_w - radius;
+        float min_y = -half_h + radius;
+        float max_y = half_h - radius;
+
+        if (center->x < min_x) {
+            center->x = min_x;
+            any = true;
+        } else if (center->x > max_x) {
+            center->x = max_x;
+            any = true;
+        }
+        if (center->y < min_y) {
+            center->y = min_y;
+            any = true;
+        } else if (center->y > max_y) {
+            center->y = max_y;
+            any = true;
+        }
+
+        int min_tx = (int)floorf((center->x - radius + half_w) / ts);
+        int max_tx = (int)floorf((center->x + radius + half_w) / ts);
+        int min_ty = (int)floorf((center->y - radius + half_h) / ts);
+        int max_ty = (int)floorf((center->y + radius + half_h) / ts);
+
+        for (int ty = min_ty; ty <= max_ty; ty++) {
+            for (int tx = min_tx; tx <= max_tx; tx++) {
+                if (!pz_map_in_bounds(map, tx, ty)) {
+                    continue;
+                }
+                if (pz_map_get_height(map, tx, ty) == 0) {
+                    continue;
+                }
+
+                float tile_min_x = tx * ts - half_w;
+                float tile_min_y = ty * ts - half_h;
+                float tile_max_x = tile_min_x + ts;
+                float tile_max_y = tile_min_y + ts;
+                pz_vec2 push_out = { 0.0f, 0.0f };
+
+                if (circle_overlaps_tile(*center, radius, tile_min_x,
+                        tile_min_y, tile_max_x, tile_max_y, &push_out)) {
+                    center->x += push_out.x;
+                    center->y += push_out.y;
+                    any = true;
+                }
+            }
+        }
+
+        if (!any) {
+            break;
+        }
+    }
+}
+
 // Update turret color to match current weapon's projectile color
 static void
 update_turret_color(pz_tank *tank)
@@ -327,78 +486,27 @@ pz_tank_update(pz_tank_manager *mgr, pz_tank *tank, const pz_tank_input *input,
     // Update position
     pz_vec2 new_pos = pz_vec2_add(tank->pos, pz_vec2_scale(tank->vel, dt));
 
-    // Wall collision (separate axis) with more aggressive checking
+    // Wall collision (separate axis) using circle-vs-tile checks
     if (map) {
         float r = mgr->collision_radius;
+        pz_vec2 pos = tank->pos;
 
-        // Check X-axis movement
-        bool blocked_x = false;
-        float test_x = new_pos.x;
-        float test_y = tank->pos.y;
-
-        // Right edge - check multiple points
-        if (pz_map_is_solid(map, (pz_vec2) { test_x + r, test_y })
-            || pz_map_is_solid(map, (pz_vec2) { test_x + r, test_y + r * 0.8f })
-            || pz_map_is_solid(map, (pz_vec2) { test_x + r, test_y - r * 0.8f })
-            || pz_map_is_solid(map, (pz_vec2) { test_x + r, test_y + r * 0.4f })
-            || pz_map_is_solid(
-                map, (pz_vec2) { test_x + r, test_y - r * 0.4f })) {
-            blocked_x = true;
-        }
-        // Left edge - check multiple points
-        if (!blocked_x
-            && (pz_map_is_solid(map, (pz_vec2) { test_x - r, test_y })
-                || pz_map_is_solid(
-                    map, (pz_vec2) { test_x - r, test_y + r * 0.8f })
-                || pz_map_is_solid(
-                    map, (pz_vec2) { test_x - r, test_y - r * 0.8f })
-                || pz_map_is_solid(
-                    map, (pz_vec2) { test_x - r, test_y + r * 0.4f })
-                || pz_map_is_solid(
-                    map, (pz_vec2) { test_x - r, test_y - r * 0.4f }))) {
-            blocked_x = true;
-        }
-
-        // Check Y-axis movement
-        bool blocked_y = false;
-        test_x = tank->pos.x;
-        test_y = new_pos.y;
-
-        // Top edge (+Y) - check multiple points
-        if (pz_map_is_solid(map, (pz_vec2) { test_x, test_y + r })
-            || pz_map_is_solid(map, (pz_vec2) { test_x + r * 0.8f, test_y + r })
-            || pz_map_is_solid(map, (pz_vec2) { test_x - r * 0.8f, test_y + r })
-            || pz_map_is_solid(map, (pz_vec2) { test_x + r * 0.4f, test_y + r })
-            || pz_map_is_solid(
-                map, (pz_vec2) { test_x - r * 0.4f, test_y + r })) {
-            blocked_y = true;
-        }
-        // Bottom edge (-Y) - check multiple points
-        if (!blocked_y
-            && (pz_map_is_solid(map, (pz_vec2) { test_x, test_y - r })
-                || pz_map_is_solid(
-                    map, (pz_vec2) { test_x + r * 0.8f, test_y - r })
-                || pz_map_is_solid(
-                    map, (pz_vec2) { test_x - r * 0.8f, test_y - r })
-                || pz_map_is_solid(
-                    map, (pz_vec2) { test_x + r * 0.4f, test_y - r })
-                || pz_map_is_solid(
-                    map, (pz_vec2) { test_x - r * 0.4f, test_y - r }))) {
-            blocked_y = true;
-        }
-
-        // Apply movement on unblocked axes
-        if (!blocked_x) {
-            tank->pos.x = new_pos.x;
+        pz_vec2 test_x = { new_pos.x, pos.y };
+        if (!tank_circle_hits_map(map, test_x, r)) {
+            pos.x = new_pos.x;
         } else {
             tank->vel.x = 0;
         }
 
-        if (!blocked_y) {
-            tank->pos.y = new_pos.y;
+        pz_vec2 test_y = { pos.x, new_pos.y };
+        if (!tank_circle_hits_map(map, test_y, r)) {
+            pos.y = new_pos.y;
         } else {
             tank->vel.y = 0;
         }
+
+        resolve_tank_circle_map(map, &pos, r);
+        tank->pos = pos;
     } else {
         tank->pos = new_pos;
     }
