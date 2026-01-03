@@ -7,7 +7,7 @@
  * Map Format v2:
  * - Combined height+terrain cells in a single grid
  * - Height determines collision (>0 = wall, <0 = pit/submerged)
- * - Tile types reference assets in assets/tiles/
+ * - Tile types reference tile definitions in assets/tiles/
  * - Inline object placement with tags
  */
 
@@ -19,29 +19,22 @@
 
 #include "../core/pz_math.h"
 
+// Forward declaration
+typedef struct pz_tile_registry pz_tile_registry;
+
 // Maximum map dimensions
 #define PZ_MAP_MAX_SIZE 64
 #define PZ_MAP_MAX_SPAWNS 32
 #define PZ_MAP_MAX_ENEMIES 16
 #define PZ_MAP_MAX_TILE_DEFS 32
 
-// Tile definition - maps a symbol to a texture name
+// Tile definition - maps a symbol to a tile name
 // Symbols are defined per-map in the map file
+// Actual tile properties come from the tile registry
 typedef struct pz_tile_def {
     char symbol; // Single char used in map grid (e.g., '.', '#')
-    char name[32]; // Texture name (e.g., "wood_oak_brown")
-    char texture[128]; // Full path to texture (auto-generated)
+    char name[32]; // Tile name (e.g., "wood_oak_brown") - looked up in registry
 } pz_tile_def;
-
-// Texture properties - gameplay properties derived from texture name
-typedef struct pz_texture_props {
-    float speed_multiplier; // Movement speed modifier (default 1.0)
-    float friction; // Friction coefficient (default 1.0)
-} pz_texture_props;
-
-// Get gameplay properties for a texture by name
-// Returns default properties (1.0, 1.0) if texture not recognized
-pz_texture_props pz_get_texture_props(const char *texture_name);
 
 // Spawn point data
 typedef struct pz_spawn_point {
@@ -81,9 +74,12 @@ typedef struct pz_map {
     int height;
     float tile_size;
 
-    // Tile definitions
+    // Tile definitions (symbol -> tile name mapping)
     pz_tile_def tile_defs[PZ_MAP_MAX_TILE_DEFS];
     int tile_def_count;
+
+    // Tile registry reference (owned externally, used for lookups)
+    const pz_tile_registry *tile_registry;
 
     // Grid data (width * height cells)
     pz_map_cell *cells;
@@ -114,6 +110,9 @@ typedef struct pz_map {
 pz_map *pz_map_create(int width, int height, float tile_size);
 void pz_map_destroy(pz_map *map);
 
+// Set the tile registry for the map (must be called before using tile lookups)
+void pz_map_set_tile_registry(pz_map *map, const pz_tile_registry *registry);
+
 // Build a hardcoded test map
 pz_map *pz_map_create_test(void);
 
@@ -143,7 +142,12 @@ bool pz_map_is_passable(const pz_map *map, pz_vec2 world_pos);
 bool pz_map_blocks_bullets(const pz_map *map, pz_vec2 world_pos);
 
 // Get movement speed multiplier for terrain at position
+// Requires tile registry to be set on the map
 float pz_map_get_speed_multiplier(const pz_map *map, pz_vec2 world_pos);
+
+// Get friction for terrain at position
+// Requires tile registry to be set on the map
+float pz_map_get_friction(const pz_map *map, pz_vec2 world_pos);
 
 // Convert between tile and world coordinates
 pz_vec2 pz_map_tile_to_world(const pz_map *map, int tile_x, int tile_y);
@@ -180,7 +184,10 @@ pz_vec2 pz_map_raycast(const pz_map *map, pz_vec2 start, pz_vec2 direction,
 
 // Load map from file (returns NULL on failure)
 // Supports both v1 (legacy) and v2 formats
+// If registry is provided, it will be set on the map for tile lookups
 pz_map *pz_map_load(const char *path);
+pz_map *pz_map_load_with_registry(
+    const char *path, const pz_tile_registry *registry);
 
 // Save map to file in v2 format (returns true on success)
 bool pz_map_save(const pz_map *map, const char *path);

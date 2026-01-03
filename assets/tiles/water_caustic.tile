@@ -1,5 +1,5 @@
-# Water (caustic) - water surface
+# Water caustic effect - used for water surface rendering
 name water_caustic
-texture assets/textures/water_caustic.png
-speed_multiplier 0.3
-friction 0.5
+ground_texture assets/textures/water_caustic.png
+speed_multiplier 0.0
+friction 1.0

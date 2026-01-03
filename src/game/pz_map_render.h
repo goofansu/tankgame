@@ -3,6 +3,9 @@
  *
  * Handles rendering the map terrain with appropriate textures
  * for each tile type, including 3D wall geometry.
+ *
+ * Wall textures are now sourced from tile definitions via the tile registry,
+ * allowing different wall appearances per tile type.
  */
 
 #ifndef PZ_MAP_RENDER_H
@@ -11,13 +14,14 @@
 #include "../engine/render/pz_renderer.h"
 #include "../engine/render/pz_texture.h"
 #include "pz_map.h"
+#include "pz_tile_registry.h"
 
 // Forward declaration
 typedef struct pz_map_renderer pz_map_renderer;
 
-// Create a map renderer
-pz_map_renderer *pz_map_renderer_create(
-    pz_renderer *renderer, pz_texture_manager *tex_manager);
+// Create a map renderer with tile registry for texture lookups
+pz_map_renderer *pz_map_renderer_create(pz_renderer *renderer,
+    pz_texture_manager *tex_manager, const pz_tile_registry *tile_registry);
 
 // Destroy the map renderer
 void pz_map_renderer_destroy(pz_map_renderer *mr);

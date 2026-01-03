@@ -1,4 +1,0 @@
-# Ground tile - standard passable terrain
-[tile]
-name = "ground"
-texture = "assets/textures/ground.png"

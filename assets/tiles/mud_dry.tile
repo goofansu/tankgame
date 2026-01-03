@@ -1,5 +1,5 @@
-# Mud (dry) - slightly slows movement
+# Mud (dry) - moderately slow movement
 name mud_dry
-texture assets/textures/mud_dry.png
+ground_texture assets/textures/mud_dry.png
 speed_multiplier 0.7
 friction 1.0

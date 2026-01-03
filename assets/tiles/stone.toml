@@ -1,5 +1,0 @@
-# Stone tile - wall material
-[tile]
-name = "stone"
-texture = "assets/textures/wall.png"
-side_texture = "assets/textures/wall_side.png"

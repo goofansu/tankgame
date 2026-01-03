@@ -2,7 +2,7 @@
  * Map Rendering System Implementation
  *
  * Renders terrain tiles and 3D wall geometry from map data.
- * Uses tile definitions from the map for textures and properties.
+ * Uses tile definitions from the tile registry for textures.
  */
 
 #include "pz_map_render.h"
@@ -28,16 +28,18 @@ typedef struct ground_batch {
     int vertex_count;
 } ground_batch;
 
+// Wall mesh batch (one per tile type with wall geometry)
+typedef struct wall_batch {
+    pz_texture_handle top_texture;
+    pz_texture_handle side_texture;
+    pz_buffer_handle buffer;
+    int vertex_count;
+} wall_batch;
+
 struct pz_map_renderer {
     pz_renderer *renderer;
     pz_texture_manager *tex_manager;
-
-    // Tile texture cache (indexed by tile_def index)
-    pz_texture_handle tile_textures[MAX_TILE_TEXTURES];
-
-    // Wall textures
-    pz_texture_handle wall_top_tex;
-    pz_texture_handle wall_side_tex;
+    const pz_tile_registry *tile_registry;
 
     // Ground shader and pipeline
     pz_shader_handle ground_shader;
@@ -56,9 +58,9 @@ struct pz_map_renderer {
     ground_batch ground_batches[MAX_TILE_TEXTURES];
     int ground_batch_count;
 
-    // Wall vertex buffer (all walls combined)
-    pz_buffer_handle wall_buffer;
-    int wall_vertex_count;
+    // Wall batches (one per tile type with wall geometry)
+    wall_batch wall_batches[MAX_TILE_TEXTURES];
+    int wall_batch_count;
 
     // Water vertex buffer
     pz_buffer_handle water_buffer;
@@ -446,36 +448,14 @@ count_pit_faces(int tile_x, int tile_y, const pz_map *map)
 // Texture Loading
 // ============================================================================
 
-static pz_texture_handle
-load_tile_texture(pz_map_renderer *mr, const pz_tile_def *def)
+// Get tile config from registry, with fallback
+static const pz_tile_config *
+get_tile_config(const pz_map_renderer *mr, const char *tile_name)
 {
-    if (!def || !def->texture[0]) {
-        return PZ_INVALID_HANDLE;
+    if (!mr->tile_registry || !tile_name || !tile_name[0]) {
+        return NULL;
     }
-
-    // Try to load the texture
-    pz_texture_handle tex = pz_texture_load_ex(
-        mr->tex_manager, def->texture, PZ_FILTER_LINEAR_MIPMAP, PZ_WRAP_REPEAT);
-
-    if (tex == PZ_INVALID_HANDLE) {
-        // Try fallback textures based on name
-        char fallback[128];
-
-        // Try assets/textures/<name>.png
-        snprintf(
-            fallback, sizeof(fallback), "assets/textures/%s.png", def->name);
-        tex = pz_texture_load_ex(
-            mr->tex_manager, fallback, PZ_FILTER_LINEAR_MIPMAP, PZ_WRAP_REPEAT);
-
-        if (tex == PZ_INVALID_HANDLE) {
-            // Last resort: use wood_oak_brown as default ground texture
-            tex = pz_texture_load_ex(mr->tex_manager,
-                "assets/textures/wood_oak_brown.png", PZ_FILTER_LINEAR_MIPMAP,
-                PZ_WRAP_REPEAT);
-        }
-    }
-
-    return tex;
+    return pz_tile_registry_get(mr->tile_registry, tile_name);
 }
 
 // ============================================================================
@@ -483,7 +463,8 @@ load_tile_texture(pz_map_renderer *mr, const pz_tile_def *def)
 // ============================================================================
 
 pz_map_renderer *
-pz_map_renderer_create(pz_renderer *renderer, pz_texture_manager *tex_manager)
+pz_map_renderer_create(pz_renderer *renderer, pz_texture_manager *tex_manager,
+    const pz_tile_registry *tile_registry)
 {
     pz_map_renderer *mr = pz_calloc(1, sizeof(pz_map_renderer));
     if (!mr) {
@@ -492,22 +473,7 @@ pz_map_renderer_create(pz_renderer *renderer, pz_texture_manager *tex_manager)
 
     mr->renderer = renderer;
     mr->tex_manager = tex_manager;
-
-    // Initialize texture handles
-    for (int i = 0; i < MAX_TILE_TEXTURES; i++) {
-        mr->tile_textures[i] = PZ_INVALID_HANDLE;
-    }
-
-    // Load default wall textures (using wood textures)
-    mr->wall_top_tex = pz_texture_load_ex(tex_manager,
-        "assets/textures/wood_rustic_dark.png", PZ_FILTER_LINEAR_MIPMAP,
-        PZ_WRAP_REPEAT);
-    mr->wall_side_tex
-        = pz_texture_load_ex(tex_manager, "assets/textures/wood_walnut.png",
-            PZ_FILTER_LINEAR_MIPMAP, PZ_WRAP_REPEAT);
-    if (mr->wall_side_tex == PZ_INVALID_HANDLE) {
-        mr->wall_side_tex = mr->wall_top_tex;
-    }
+    mr->tile_registry = tile_registry;
 
     // Ground shader
     mr->ground_shader = pz_renderer_load_shader(
@@ -611,11 +577,14 @@ pz_map_renderer_create(pz_renderer *renderer, pz_texture_manager *tex_manager)
         mr->ground_batches[i].buffer = PZ_INVALID_HANDLE;
         mr->ground_batches[i].texture = PZ_INVALID_HANDLE;
         mr->ground_batches[i].vertex_count = 0;
+
+        mr->wall_batches[i].buffer = PZ_INVALID_HANDLE;
+        mr->wall_batches[i].top_texture = PZ_INVALID_HANDLE;
+        mr->wall_batches[i].side_texture = PZ_INVALID_HANDLE;
+        mr->wall_batches[i].vertex_count = 0;
     }
     mr->ground_batch_count = 0;
-
-    mr->wall_buffer = PZ_INVALID_HANDLE;
-    mr->wall_vertex_count = 0;
+    mr->wall_batch_count = 0;
 
     mr->water_buffer = PZ_INVALID_HANDLE;
     mr->water_vertex_count = 0;
@@ -639,9 +608,12 @@ pz_map_renderer_destroy(pz_map_renderer *mr)
         }
     }
 
-    // Destroy wall buffer
-    if (mr->wall_buffer != PZ_INVALID_HANDLE) {
-        pz_renderer_destroy_buffer(mr->renderer, mr->wall_buffer);
+    // Destroy wall batches
+    for (int i = 0; i < MAX_TILE_TEXTURES; i++) {
+        if (mr->wall_batches[i].buffer != PZ_INVALID_HANDLE) {
+            pz_renderer_destroy_buffer(
+                mr->renderer, mr->wall_batches[i].buffer);
+        }
     }
 
     // Destroy water buffer
@@ -683,11 +655,6 @@ pz_map_renderer_set_map(pz_map_renderer *mr, const pz_map *map)
 
     mr->map = map;
 
-    // Load textures for all tile definitions
-    for (int i = 0; i < map->tile_def_count && i < MAX_TILE_TEXTURES; i++) {
-        mr->tile_textures[i] = load_tile_texture(mr, &map->tile_defs[i]);
-    }
-
     // Destroy old ground batches
     for (int i = 0; i < MAX_TILE_TEXTURES; i++) {
         if (mr->ground_batches[i].buffer != PZ_INVALID_HANDLE) {
@@ -700,159 +667,159 @@ pz_map_renderer_set_map(pz_map_renderer *mr, const pz_map *map)
     }
     mr->ground_batch_count = 0;
 
-    // Count tiles per tile_def index
-    int tile_counts[MAX_TILE_TEXTURES] = { 0 };
+    // Destroy old wall batches
+    for (int i = 0; i < MAX_TILE_TEXTURES; i++) {
+        if (mr->wall_batches[i].buffer != PZ_INVALID_HANDLE) {
+            pz_renderer_destroy_buffer(
+                mr->renderer, mr->wall_batches[i].buffer);
+            mr->wall_batches[i].buffer = PZ_INVALID_HANDLE;
+        }
+        mr->wall_batches[i].vertex_count = 0;
+        mr->wall_batches[i].top_texture = PZ_INVALID_HANDLE;
+        mr->wall_batches[i].side_texture = PZ_INVALID_HANDLE;
+    }
+    mr->wall_batch_count = 0;
+
+    // Count tiles and wall faces per tile_def index
+    int ground_counts[MAX_TILE_TEXTURES] = { 0 };
+    int wall_face_counts[MAX_TILE_TEXTURES] = { 0 };
+
     for (int y = 0; y < map->height; y++) {
         for (int x = 0; x < map->width; x++) {
             uint8_t idx = pz_map_get_tile_index(map, x, y);
-            if (idx < MAX_TILE_TEXTURES) {
-                tile_counts[idx]++;
+            if (idx >= MAX_TILE_TEXTURES)
+                continue;
+
+            ground_counts[idx]++;
+
+            int8_t h = pz_map_get_height(map, x, y);
+            if (h > 0) {
+                float height = h * WALL_HEIGHT_UNIT;
+                wall_face_counts[idx] += count_wall_faces(x, y, height, map);
+            } else if (h < 0) {
+                wall_face_counts[idx] += count_pit_faces(x, y, map);
             }
         }
     }
 
-    // Allocate vertex arrays for each tile type
-    float *vertices[MAX_TILE_TEXTURES] = { NULL };
-    float *vertex_ptrs[MAX_TILE_TEXTURES] = { NULL };
+    // Allocate vertex arrays for each tile type (ground and wall)
+    float *ground_verts[MAX_TILE_TEXTURES] = { NULL };
+    float *ground_ptrs[MAX_TILE_TEXTURES] = { NULL };
+    float *wall_verts[MAX_TILE_TEXTURES] = { NULL };
+    float *wall_ptrs[MAX_TILE_TEXTURES] = { NULL };
 
     for (int i = 0; i < map->tile_def_count && i < MAX_TILE_TEXTURES; i++) {
-        if (tile_counts[i] > 0) {
-            vertices[i] = pz_alloc(tile_counts[i] * 6 * 5 * sizeof(float));
-            vertex_ptrs[i] = vertices[i];
+        if (ground_counts[i] > 0) {
+            ground_verts[i]
+                = pz_alloc(ground_counts[i] * 6 * 5 * sizeof(float));
+            ground_ptrs[i] = ground_verts[i];
+        }
+        if (wall_face_counts[i] > 0) {
+            wall_verts[i] = pz_alloc(
+                wall_face_counts[i] * 6 * WALL_VERTEX_SIZE * sizeof(float));
+            wall_ptrs[i] = wall_verts[i];
         }
     }
 
     float half_w = map->world_width / 2.0f;
     float half_h = map->world_height / 2.0f;
 
-    // Generate ground vertices (lowered for pits)
+    // Generate ground and wall vertices per tile type
     for (int y = 0; y < map->height; y++) {
         for (int x = 0; x < map->width; x++) {
             uint8_t idx = pz_map_get_tile_index(map, x, y);
-            if (idx >= MAX_TILE_TEXTURES || !vertex_ptrs[idx]) {
+            if (idx >= MAX_TILE_TEXTURES)
                 continue;
-            }
 
             float x0 = x * map->tile_size - half_w;
             float x1 = (x + 1) * map->tile_size - half_w;
             float z0 = y * map->tile_size - half_h;
             float z1 = (y + 1) * map->tile_size - half_h;
 
-            // Calculate Y position based on height
-            // Positive heights are walls (ground at 0)
-            // Negative heights are pits (ground lowered)
             int8_t h = pz_map_get_height(map, x, y);
-            float ground_y = GROUND_Y_OFFSET;
-            if (h < 0) {
-                // Lower ground for pits
-                ground_y = GROUND_Y_OFFSET + h * WALL_HEIGHT_UNIT;
+
+            // Ground
+            if (ground_ptrs[idx]) {
+                float ground_y = GROUND_Y_OFFSET;
+                if (h < 0) {
+                    ground_y = GROUND_Y_OFFSET + h * WALL_HEIGHT_UNIT;
+                }
+                ground_ptrs[idx] = emit_ground_quad_at_height(
+                    ground_ptrs[idx], x0, z0, x1, z1, ground_y);
             }
 
-            vertex_ptrs[idx] = emit_ground_quad_at_height(
-                vertex_ptrs[idx], x0, z0, x1, z1, ground_y);
+            // Walls
+            if (wall_ptrs[idx]) {
+                if (h > 0) {
+                    float height = h * WALL_HEIGHT_UNIT;
+                    wall_ptrs[idx] = emit_wall_box(
+                        wall_ptrs[idx], x0, z0, x1, z1, height, x, y, map);
+                } else if (h < 0) {
+                    float depth = -h * WALL_HEIGHT_UNIT;
+                    wall_ptrs[idx] = emit_pit_box(
+                        wall_ptrs[idx], x0, z0, x1, z1, depth, x, y, map);
+                }
+            }
         }
     }
 
-    // Create GPU buffers for ground batches
-    mr->ground_batch_count = 0;
+    // Create GPU buffers for ground and wall batches
     for (int i = 0; i < map->tile_def_count && i < MAX_TILE_TEXTURES; i++) {
-        if (tile_counts[i] > 0 && vertices[i]) {
-            int num_verts = tile_counts[i] * 6;
+        const pz_tile_def *def = &map->tile_defs[i];
+        const pz_tile_config *config = get_tile_config(mr, def->name);
+
+        // Ground batch
+        if (ground_counts[i] > 0 && ground_verts[i]) {
+            int num_verts = ground_counts[i] * 6;
 
             ground_batch *batch = &mr->ground_batches[mr->ground_batch_count++];
             batch->vertex_count = num_verts;
-            batch->texture = mr->tile_textures[i];
+            batch->texture = config
+                ? config->ground_texture
+                : pz_tile_registry_get_fallback(mr->tile_registry)
+                      ->ground_texture;
 
             pz_buffer_desc desc = {
                 .type = PZ_BUFFER_VERTEX,
                 .usage = PZ_BUFFER_STATIC,
-                .data = vertices[i],
+                .data = ground_verts[i],
                 .size = num_verts * 5 * sizeof(float),
             };
             batch->buffer = pz_renderer_create_buffer(mr->renderer, &desc);
 
-            pz_free(vertices[i]);
+            pz_free(ground_verts[i]);
         }
-    }
 
-    // Generate wall mesh (includes both positive walls and pit walls)
-    if (mr->wall_buffer != PZ_INVALID_HANDLE) {
-        pz_renderer_destroy_buffer(mr->renderer, mr->wall_buffer);
-        mr->wall_buffer = PZ_INVALID_HANDLE;
-    }
-    mr->wall_vertex_count = 0;
+        // Wall batch
+        if (wall_face_counts[i] > 0 && wall_verts[i]) {
+            int actual_floats = (int)(wall_ptrs[i] - wall_verts[i]);
+            int actual_verts = actual_floats / WALL_VERTEX_SIZE;
 
-    // Count wall faces (height > 0) and pit faces (height < 0)
-    int total_wall_faces = 0;
-    int total_pit_faces = 0;
-    for (int y = 0; y < map->height; y++) {
-        for (int x = 0; x < map->width; x++) {
-            int8_t h = pz_map_get_height(map, x, y);
-            if (h > 0) {
-                float height = h * WALL_HEIGHT_UNIT;
-                total_wall_faces += count_wall_faces(x, y, height, map);
-            } else if (h < 0) {
-                total_pit_faces += count_pit_faces(x, y, map);
-            }
-        }
-    }
+            if (actual_verts > 0) {
+                wall_batch *batch = &mr->wall_batches[mr->wall_batch_count++];
+                batch->vertex_count = actual_verts;
 
-    int total_faces = total_wall_faces + total_pit_faces;
-    if (total_faces > 0) {
-        int total_verts = total_faces * 6;
-        float *wall_verts
-            = pz_alloc(total_verts * WALL_VERTEX_SIZE * sizeof(float));
-        float *wall_ptr = wall_verts;
-
-        // Generate positive walls
-        for (int y = 0; y < map->height; y++) {
-            for (int x = 0; x < map->width; x++) {
-                int8_t h = pz_map_get_height(map, x, y);
-                if (h > 0) {
-                    float height = h * WALL_HEIGHT_UNIT;
-
-                    float x0 = x * map->tile_size - half_w;
-                    float x1 = (x + 1) * map->tile_size - half_w;
-                    float z0 = y * map->tile_size - half_h;
-                    float z1 = (y + 1) * map->tile_size - half_h;
-
-                    wall_ptr = emit_wall_box(
-                        wall_ptr, x0, z0, x1, z1, height, x, y, map);
+                if (config) {
+                    batch->top_texture = config->wall_texture;
+                    batch->side_texture = config->wall_side_texture;
+                } else {
+                    const pz_tile_config *fallback
+                        = pz_tile_registry_get_fallback(mr->tile_registry);
+                    batch->top_texture = fallback->wall_texture;
+                    batch->side_texture = fallback->wall_side_texture;
                 }
+
+                pz_buffer_desc desc = {
+                    .type = PZ_BUFFER_VERTEX,
+                    .usage = PZ_BUFFER_STATIC,
+                    .data = wall_verts[i],
+                    .size = actual_verts * WALL_VERTEX_SIZE * sizeof(float),
+                };
+                batch->buffer = pz_renderer_create_buffer(mr->renderer, &desc);
             }
+
+            pz_free(wall_verts[i]);
         }
-
-        // Generate pit walls
-        for (int y = 0; y < map->height; y++) {
-            for (int x = 0; x < map->width; x++) {
-                int8_t h = pz_map_get_height(map, x, y);
-                if (h < 0) {
-                    float depth = -h * WALL_HEIGHT_UNIT;
-
-                    float x0 = x * map->tile_size - half_w;
-                    float x1 = (x + 1) * map->tile_size - half_w;
-                    float z0 = y * map->tile_size - half_h;
-                    float z1 = (y + 1) * map->tile_size - half_h;
-
-                    wall_ptr = emit_pit_box(
-                        wall_ptr, x0, z0, x1, z1, depth, x, y, map);
-                }
-            }
-        }
-
-        int actual_floats = (int)(wall_ptr - wall_verts);
-        int actual_verts = actual_floats / WALL_VERTEX_SIZE;
-        mr->wall_vertex_count = actual_verts;
-
-        pz_buffer_desc desc = {
-            .type = PZ_BUFFER_VERTEX,
-            .usage = PZ_BUFFER_STATIC,
-            .data = wall_verts,
-            .size = actual_verts * WALL_VERTEX_SIZE * sizeof(float),
-        };
-        mr->wall_buffer = pz_renderer_create_buffer(mr->renderer, &desc);
-
-        pz_free(wall_verts);
     }
 
     // Generate water mesh (for tiles at or below water_level)
@@ -863,8 +830,6 @@ pz_map_renderer_set_map(pz_map_renderer *mr, const pz_map *map)
     mr->water_vertex_count = 0;
 
     if (map->has_water) {
-        // Count water tiles (tiles BELOW water level - submerged areas)
-        // Only tiles strictly below water_level get water rendered
         int water_tile_count = 0;
         for (int y = 0; y < map->height; y++) {
             for (int x = 0; x < map->width; x++) {
@@ -877,11 +842,9 @@ pz_map_renderer_set_map(pz_map_renderer *mr, const pz_map *map)
 
         if (water_tile_count > 0) {
             int num_verts = water_tile_count * 6;
-            float *water_verts = pz_alloc(num_verts * 5 * sizeof(float));
-            float *water_ptr = water_verts;
+            float *water_verts_data = pz_alloc(num_verts * 5 * sizeof(float));
+            float *water_ptr = water_verts_data;
 
-            // Water surface Y position: at the water_level height, offset down
-            // to create a visible rim/inset effect around the water
             float water_y = GROUND_Y_OFFSET
                 + map->water_level * WALL_HEIGHT_UNIT + WATER_Y_OFFSET;
 
@@ -905,18 +868,26 @@ pz_map_renderer_set_map(pz_map_renderer *mr, const pz_map *map)
             pz_buffer_desc desc = {
                 .type = PZ_BUFFER_VERTEX,
                 .usage = PZ_BUFFER_STATIC,
-                .data = water_verts,
+                .data = water_verts_data,
                 .size = num_verts * 5 * sizeof(float),
             };
             mr->water_buffer = pz_renderer_create_buffer(mr->renderer, &desc);
 
-            pz_free(water_verts);
+            pz_free(water_verts_data);
         }
     }
 
+    // Count total wall verts for logging
+    int total_wall_verts = 0;
+    for (int i = 0; i < mr->wall_batch_count; i++) {
+        total_wall_verts += mr->wall_batches[i].vertex_count;
+    }
+
     pz_log(PZ_LOG_INFO, PZ_LOG_CAT_RENDER,
-        "Map mesh generated: %d ground batches, %d wall verts, %d water verts",
-        mr->ground_batch_count, mr->wall_vertex_count, mr->water_vertex_count);
+        "Map mesh generated: %d ground batches, %d wall batches (%d verts), %d "
+        "water verts",
+        mr->ground_batch_count, mr->wall_batch_count, total_wall_verts,
+        mr->water_vertex_count);
 }
 
 void
@@ -1006,7 +977,7 @@ void
 pz_map_renderer_draw_walls(pz_map_renderer *mr, const pz_mat4 *view_projection,
     const pz_map_render_params *params)
 {
-    if (!mr || !mr->map || mr->wall_vertex_count == 0) {
+    if (!mr || !mr->map || mr->wall_batch_count == 0) {
         return;
     }
 
@@ -1065,15 +1036,22 @@ pz_map_renderer_draw_walls(pz_map_renderer *mr, const pz_mat4 *view_projection,
     pz_renderer_set_uniform_int(
         mr->renderer, mr->wall_shader, "u_texture_side", 1);
 
-    pz_renderer_bind_texture(mr->renderer, 0, mr->wall_top_tex);
-    pz_renderer_bind_texture(mr->renderer, 1, mr->wall_side_tex);
+    // Draw each wall batch with its own textures
+    for (int i = 0; i < mr->wall_batch_count; i++) {
+        wall_batch *batch = &mr->wall_batches[i];
+        if (batch->vertex_count == 0)
+            continue;
 
-    pz_draw_cmd cmd = {
-        .pipeline = mr->wall_pipeline,
-        .vertex_buffer = mr->wall_buffer,
-        .vertex_count = mr->wall_vertex_count,
-    };
-    pz_renderer_draw(mr->renderer, &cmd);
+        pz_renderer_bind_texture(mr->renderer, 0, batch->top_texture);
+        pz_renderer_bind_texture(mr->renderer, 1, batch->side_texture);
+
+        pz_draw_cmd cmd = {
+            .pipeline = mr->wall_pipeline,
+            .vertex_buffer = batch->buffer,
+            .vertex_count = batch->vertex_count,
+        };
+        pz_renderer_draw(mr->renderer, &cmd);
+    }
 }
 
 static void

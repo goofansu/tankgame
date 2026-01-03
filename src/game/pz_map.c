@@ -5,6 +5,7 @@
  */
 
 #include "pz_map.h"
+#include "pz_tile_registry.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -15,46 +16,6 @@
 #include "../core/pz_mem.h"
 #include "../core/pz_platform.h"
 #include "../core/pz_str.h"
-
-// Texture property lookup table
-// Maps texture names to gameplay properties (speed multiplier, friction)
-static const struct {
-    const char *name;
-    pz_texture_props props;
-} texture_props_table[] = {
-    // Mud textures - slow movement
-    { "mud_wet", { 0.5f, 1.0f } }, { "mud_churned", { 0.5f, 1.0f } },
-    { "mud_dry", { 0.7f, 1.0f } },
-
-    // Carpet textures - slippery (low friction)
-    { "carpet_gray", { 1.2f, 0.3f } }, { "carpet_beige", { 1.2f, 0.3f } },
-
-    // Wood textures - normal
-    { "wood_oak_brown", { 1.0f, 1.0f } }, { "wood_oak_amber", { 1.0f, 1.0f } },
-    { "wood_oak_veneer", { 1.0f, 1.0f } },
-    { "wood_pine_light", { 1.0f, 1.0f } },
-    { "wood_rustic_dark", { 1.0f, 1.0f } }, { "wood_walnut", { 1.0f, 1.0f } },
-
-    { NULL, { 0, 0 } } // Sentinel
-};
-
-pz_texture_props
-pz_get_texture_props(const char *texture_name)
-{
-    pz_texture_props default_props = { 1.0f, 1.0f };
-
-    if (!texture_name) {
-        return default_props;
-    }
-
-    for (int i = 0; texture_props_table[i].name != NULL; i++) {
-        if (strcmp(texture_name, texture_props_table[i].name) == 0) {
-            return texture_props_table[i].props;
-        }
-    }
-
-    return default_props;
-}
 
 // Default tile definitions
 static void
@@ -131,6 +92,14 @@ pz_map_destroy(pz_map *map)
 
     pz_free(map->cells);
     pz_free(map);
+}
+
+void
+pz_map_set_tile_registry(pz_map *map, const pz_tile_registry *registry)
+{
+    if (map) {
+        map->tile_registry = registry;
+    }
 }
 
 // Build a hardcoded 16x16 test map
@@ -338,9 +307,7 @@ pz_map_add_tile_def(pz_map *map, char symbol, const char *name)
             // Update existing
             strncpy(map->tile_defs[i].name, name,
                 sizeof(map->tile_defs[i].name) - 1);
-            snprintf(map->tile_defs[i].texture,
-                sizeof(map->tile_defs[i].texture), "assets/textures/%s.png",
-                name);
+            map->tile_defs[i].name[sizeof(map->tile_defs[i].name) - 1] = '\0';
             return i;
         }
     }
@@ -351,10 +318,6 @@ pz_map_add_tile_def(pz_map *map, char symbol, const char *name)
     def->symbol = symbol;
     strncpy(def->name, name, sizeof(def->name) - 1);
     def->name[sizeof(def->name) - 1] = '\0';
-
-    // Texture path based on name
-    snprintf(
-        def->texture, sizeof(def->texture), "assets/textures/%s.png", name);
 
     return idx;
 }
@@ -432,11 +395,43 @@ pz_map_get_speed_multiplier(const pz_map *map, pz_vec2 world_pos)
         return 0.0f; // Impassable
     }
 
-    // Get tile definition and look up properties by texture name
+    // Get tile definition and look up properties from registry
     const pz_tile_def *def = pz_map_get_tile_def(map, tx, ty);
-    if (def) {
-        pz_texture_props props = pz_get_texture_props(def->name);
-        return props.speed_multiplier;
+    if (def && map->tile_registry) {
+        const pz_tile_config *config
+            = pz_tile_registry_get(map->tile_registry, def->name);
+        if (config) {
+            return config->speed_multiplier;
+        }
+    }
+
+    return 1.0f;
+}
+
+float
+pz_map_get_friction(const pz_map *map, pz_vec2 world_pos)
+{
+    int tx, ty;
+    pz_map_world_to_tile(map, world_pos, &tx, &ty);
+
+    if (!pz_map_in_bounds(map, tx, ty)) {
+        return 1.0f;
+    }
+
+    // Check if solid - no friction applies
+    int8_t height = pz_map_get_height(map, tx, ty);
+    if (height != 0) {
+        return 1.0f;
+    }
+
+    // Get tile definition and look up properties from registry
+    const pz_tile_def *def = pz_map_get_tile_def(map, tx, ty);
+    if (def && map->tile_registry) {
+        const pz_tile_config *config
+            = pz_tile_registry_get(map->tile_registry, def->name);
+        if (config) {
+            return config->friction;
+        }
     }
 
     return 1.0f;
@@ -1094,6 +1089,16 @@ pz_map_load(const char *path)
     pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME, "Loaded map v%d: %s (%s)",
         map->version, map->name, path);
 
+    return map;
+}
+
+pz_map *
+pz_map_load_with_registry(const char *path, const pz_tile_registry *registry)
+{
+    pz_map *map = pz_map_load(path);
+    if (map && registry) {
+        pz_map_set_tile_registry(map, registry);
+    }
     return map;
 }
 

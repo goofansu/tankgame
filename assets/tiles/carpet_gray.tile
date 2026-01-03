@@ -1,5 +1,5 @@
-# Carpet (gray) - slippery surface
+# Carpet (gray) - fast but slippery
 name carpet_gray
-texture assets/textures/carpet_gray.png
+ground_texture assets/textures/carpet_gray.png
 speed_multiplier 1.2
 friction 0.3

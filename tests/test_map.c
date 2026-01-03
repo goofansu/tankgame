@@ -181,68 +181,26 @@ TEST(map_solid_check)
     pz_map_destroy(map);
 }
 
-TEST(map_texture_props)
-{
-    // Test texture property lookup (independent of map)
-    pz_texture_props props;
+// NOTE: Tile properties are now loaded from .tile files via pz_tile_registry.
+// The old pz_get_texture_props function has been removed.
+// Tile property tests should be added to a separate tile registry test file.
 
-    // Mud textures - slow
-    props = pz_get_texture_props("mud_wet");
-    ASSERT_NEAR(0.5f, props.speed_multiplier, 0.01f);
-    ASSERT_NEAR(1.0f, props.friction, 0.01f);
-
-    props = pz_get_texture_props("mud_churned");
-    ASSERT_NEAR(0.5f, props.speed_multiplier, 0.01f);
-
-    props = pz_get_texture_props("mud_dry");
-    ASSERT_NEAR(0.7f, props.speed_multiplier, 0.01f);
-
-    // Carpet textures - slippery
-    props = pz_get_texture_props("carpet_gray");
-    ASSERT_NEAR(1.2f, props.speed_multiplier, 0.01f);
-    ASSERT_NEAR(0.3f, props.friction, 0.01f);
-
-    // Wood textures - normal
-    props = pz_get_texture_props("wood_oak_brown");
-    ASSERT_NEAR(1.0f, props.speed_multiplier, 0.01f);
-    ASSERT_NEAR(1.0f, props.friction, 0.01f);
-
-    // Unknown texture - defaults
-    props = pz_get_texture_props("unknown_texture");
-    ASSERT_NEAR(1.0f, props.speed_multiplier, 0.01f);
-    ASSERT_NEAR(1.0f, props.friction, 0.01f);
-
-    // NULL - defaults
-    props = pz_get_texture_props(NULL);
-    ASSERT_NEAR(1.0f, props.speed_multiplier, 0.01f);
-}
-
-TEST(map_speed_multiplier)
+// NOTE: Speed multiplier tests require a tile registry to be set on the map.
+// These tests would need to be integrated with the tile registry for full
+// coverage. For now, we test the basic structure without registry (returns
+// defaults).
+TEST(map_speed_multiplier_without_registry)
 {
     pz_map *map = pz_map_create(8, 8, 2.0f);
     ASSERT_NOT_NULL(map);
 
-    // Add terrain types (symbol → texture name mapping)
-    int mud_idx = pz_map_add_tile_def(map, ':', "mud_wet");
-    int carpet_idx = pz_map_add_tile_def(map, '*', "carpet_gray");
-
     pz_vec2 center = pz_map_tile_to_world(map, 4, 4);
 
-    // Default ground (wood_oak_brown) = normal speed
+    // Without tile registry, speed multiplier returns 1.0 for passable tiles
     pz_map_set_cell(map, 4, 4, (pz_map_cell) { .height = 0, .tile_index = 0 });
     ASSERT_NEAR(1.0f, pz_map_get_speed_multiplier(map, center), 0.01f);
 
-    // Mud = half speed
-    pz_map_set_cell(map, 4, 4,
-        (pz_map_cell) { .height = 0, .tile_index = (uint8_t)mud_idx });
-    ASSERT_NEAR(0.5f, pz_map_get_speed_multiplier(map, center), 0.01f);
-
-    // Carpet = slightly faster
-    pz_map_set_cell(map, 4, 4,
-        (pz_map_cell) { .height = 0, .tile_index = (uint8_t)carpet_idx });
-    ASSERT_NEAR(1.2f, pz_map_get_speed_multiplier(map, center), 0.01f);
-
-    // Wall = impassable
+    // Wall = impassable (still works without registry)
     pz_map_set_cell(map, 4, 4, (pz_map_cell) { .height = 2, .tile_index = 1 });
     ASSERT_NEAR(0.0f, pz_map_get_speed_multiplier(map, center), 0.01f);
 

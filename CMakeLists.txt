@@ -69,6 +69,7 @@ set(GAME_SOURCES
     src/game/pz_map.c
     src/game/pz_map_render.c
     src/game/pz_mesh.c
+    src/game/pz_tile_registry.c
     src/game/pz_tracks.c
     src/game/pz_lighting.c
     src/game/pz_particle.c

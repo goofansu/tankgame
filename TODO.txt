@@ -1,0 +1,4 @@
+* destroyable objects on the map
+* tile registry tests for .tile parsing + texture defaults
+* tile registry hot-reload for .tile files
+* replace fallback texture with orange checkerboard

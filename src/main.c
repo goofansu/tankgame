@@ -33,6 +33,7 @@
 #include "game/pz_powerup.h"
 #include "game/pz_projectile.h"
 #include "game/pz_tank.h"
+#include "game/pz_tile_registry.h"
 #include "game/pz_tracks.h"
 
 #define WINDOW_TITLE "Tank Game"
@@ -112,6 +113,7 @@ typedef struct app_state {
     // Core systems (persistent across maps)
     pz_renderer *renderer;
     pz_texture_manager *tex_manager;
+    pz_tile_registry *tile_registry;
     pz_camera camera;
     pz_debug_overlay *debug_overlay;
     pz_font_manager *font_mgr;
@@ -239,9 +241,12 @@ map_session_load(map_session *session, const char *map_path)
     pz_camera_fit_map(&g_app.camera, session->map->world_width,
         session->map->world_height, 20.0f);
 
-    // Create map renderer
-    session->renderer
-        = pz_map_renderer_create(g_app.renderer, g_app.tex_manager);
+    // Set tile registry on map for property lookups
+    pz_map_set_tile_registry(session->map, g_app.tile_registry);
+
+    // Create map renderer with tile registry
+    session->renderer = pz_map_renderer_create(
+        g_app.renderer, g_app.tex_manager, g_app.tile_registry);
     if (session->renderer) {
         pz_map_renderer_set_map(session->renderer, session->map);
     }
@@ -437,6 +442,16 @@ app_init(void)
     }
 
     g_app.tex_manager = pz_texture_manager_create(g_app.renderer);
+
+    // Create and load tile registry
+    g_app.tile_registry = pz_tile_registry_create();
+    if (g_app.tile_registry) {
+        int tiles_loaded = pz_tile_registry_load_all(
+            g_app.tile_registry, g_app.tex_manager, "assets/tiles");
+        pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
+            "Tile registry initialized with %d tiles", tiles_loaded);
+    }
+
     pz_camera_init(&g_app.camera, width, height);
 
     pz_debug_cmd_init(NULL);
@@ -1402,6 +1417,7 @@ app_cleanup(void)
 
     pz_sim_destroy(g_app.sim);
 
+    pz_tile_registry_destroy(g_app.tile_registry);
     pz_texture_manager_destroy(g_app.tex_manager);
     pz_renderer_destroy(g_app.renderer);
 
