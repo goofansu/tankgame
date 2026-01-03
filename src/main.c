@@ -358,8 +358,9 @@ app_frame(void)
             g_app.game_map, dt);
 
         if (g_app.tracks && pz_vec2_len(g_app.player_tank->vel) > 0.1f) {
-            pz_tracks_add_mark(g_app.tracks, g_app.player_tank->pos.x,
-                g_app.player_tank->pos.y, g_app.player_tank->body_angle, 0.45f);
+            pz_tracks_add_mark(g_app.tracks, g_app.player_tank->id,
+                g_app.player_tank->pos.x, g_app.player_tank->pos.y,
+                g_app.player_tank->body_angle, 0.45f);
         }
 
         if (g_app.scroll_accumulator >= 3.0f) {
@@ -419,6 +420,22 @@ app_frame(void)
         && !(g_app.player_tank->flags & PZ_TANK_FLAG_DEAD)) {
         pz_ai_update(g_app.ai_mgr, g_app.player_tank->pos, dt);
         pz_ai_fire(g_app.ai_mgr, g_app.projectile_mgr);
+
+        // Add track marks for moving enemy tanks
+        if (g_app.tracks) {
+            for (int i = 0; i < g_app.ai_mgr->controller_count; i++) {
+                pz_ai_controller *ctrl = &g_app.ai_mgr->controllers[i];
+                pz_tank *enemy
+                    = pz_tank_get_by_id(g_app.tank_mgr, ctrl->tank_id);
+                if (enemy && !(enemy->flags & PZ_TANK_FLAG_DEAD)) {
+                    if (pz_vec2_len(enemy->vel) > 0.1f) {
+                        pz_tracks_add_mark(g_app.tracks, enemy->id,
+                            enemy->pos.x, enemy->pos.y, enemy->body_angle,
+                            0.45f);
+                    }
+                }
+            }
+        }
     }
 
     pz_powerup_update(g_app.powerup_mgr, dt);

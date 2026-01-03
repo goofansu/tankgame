@@ -14,6 +14,9 @@
 // Maximum number of track marks to batch before rendering
 #define MAX_PENDING_MARKS 256
 
+// Maximum number of entities that can leave tracks
+#define MAX_TRACKED_ENTITIES 16
+
 // Track mark dimensions (in world units)
 #define TRACK_MARK_LENGTH 0.26f // Length of each track segment
 #define TRACK_MARK_WIDTH 0.13f // Width of a single tread mark
@@ -34,6 +37,13 @@ typedef struct track_mark {
     float x, z; // World position
     float angle; // Rotation angle
 } track_mark;
+
+// Per-entity track state (last position for distance tracking)
+typedef struct entity_track_state {
+    int entity_id;
+    float last_x, last_z;
+    bool active;
+} entity_track_state;
 
 struct pz_tracks {
     pz_renderer *renderer;
@@ -59,9 +69,8 @@ struct pz_tracks {
     track_mark pending_marks[MAX_PENDING_MARKS];
     int pending_count;
 
-    // Last track position (center of tank)
-    float last_x, last_z;
-    bool has_last_position;
+    // Per-entity track state for distance tracking
+    entity_track_state entity_states[MAX_TRACKED_ENTITIES];
 
     // Whether we need to clear on next update
     bool needs_clear;
@@ -201,25 +210,56 @@ add_single_mark(pz_tracks *tracks, float x, float z, float angle)
     mark->angle = angle;
 }
 
+// Find or create entity state for the given entity ID
+static entity_track_state *
+get_entity_state(pz_tracks *tracks, int entity_id)
+{
+    // First, try to find existing state
+    for (int i = 0; i < MAX_TRACKED_ENTITIES; i++) {
+        if (tracks->entity_states[i].active
+            && tracks->entity_states[i].entity_id == entity_id) {
+            return &tracks->entity_states[i];
+        }
+    }
+
+    // Not found, create new state in first empty slot
+    for (int i = 0; i < MAX_TRACKED_ENTITIES; i++) {
+        if (!tracks->entity_states[i].active) {
+            tracks->entity_states[i].entity_id = entity_id;
+            tracks->entity_states[i].active = true;
+            tracks->entity_states[i].last_x = 0.0f;
+            tracks->entity_states[i].last_z = 0.0f;
+            return &tracks->entity_states[i];
+        }
+    }
+
+    // No slots available
+    return NULL;
+}
+
 void
-pz_tracks_add_mark(pz_tracks *tracks, float pos_x, float pos_z, float angle,
-    float tread_offset)
+pz_tracks_add_mark(pz_tracks *tracks, int entity_id, float pos_x, float pos_z,
+    float angle, float tread_offset)
 {
     if (!tracks)
         return;
 
-    if (!tracks->has_last_position) {
-        // First position, just record it
-        tracks->last_x = pos_x;
-        tracks->last_z = pos_z;
-        tracks->has_last_position = true;
+    entity_track_state *state = get_entity_state(tracks, entity_id);
+    if (!state)
+        return; // Too many entities
+
+    // Check if we have a previous position (non-zero for this entity)
+    // Use a flag based on whether this is the first time
+    float dx = pos_x - state->last_x;
+    float dz = pos_z - state->last_z;
+    float dist = sqrtf(dx * dx + dz * dz);
+
+    // If distance is huge, this is likely first position or teleport
+    if (dist > 5.0f) {
+        state->last_x = pos_x;
+        state->last_z = pos_z;
         return;
     }
-
-    // Check if tank center has moved far enough
-    float dx = pos_x - tracks->last_x;
-    float dz = pos_z - tracks->last_z;
-    float dist = sqrtf(dx * dx + dz * dz);
 
     if (dist >= TRACK_MIN_DISTANCE) {
         // Direction of movement
@@ -238,8 +278,23 @@ pz_tracks_add_mark(pz_tracks *tracks, float pos_x, float pos_z, float angle,
         add_single_mark(tracks, left_x, left_z, move_angle);
         add_single_mark(tracks, right_x, right_z, move_angle);
 
-        tracks->last_x = pos_x;
-        tracks->last_z = pos_z;
+        state->last_x = pos_x;
+        state->last_z = pos_z;
+    }
+}
+
+void
+pz_tracks_clear_entity(pz_tracks *tracks, int entity_id)
+{
+    if (!tracks)
+        return;
+
+    for (int i = 0; i < MAX_TRACKED_ENTITIES; i++) {
+        if (tracks->entity_states[i].active
+            && tracks->entity_states[i].entity_id == entity_id) {
+            tracks->entity_states[i].active = false;
+            return;
+        }
     }
 }
 
@@ -433,6 +488,10 @@ pz_tracks_clear(pz_tracks *tracks)
         return;
 
     tracks->pending_count = 0;
-    tracks->has_last_position = false;
     tracks->needs_clear = true;
+
+    // Clear all entity states
+    for (int i = 0; i < MAX_TRACKED_ENTITIES; i++) {
+        tracks->entity_states[i].active = false;
+    }
 }

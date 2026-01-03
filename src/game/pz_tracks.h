@@ -35,13 +35,17 @@ pz_tracks *pz_tracks_create(pz_renderer *renderer,
 // Destroy the track system
 void pz_tracks_destroy(pz_tracks *tracks);
 
-// Add a track mark at the given position
+// Add a track mark at the given position for a specific entity
+// - entity_id: unique ID for this entity (e.g., tank ID)
 // - pos_x, pos_z: world position of the tank center
 // - angle: tank body angle in radians (direction it's facing)
 // - tread_offset: distance from center to each tread (typically tank_width/2)
 // Call this when the tank has moved enough distance
-void pz_tracks_add_mark(pz_tracks *tracks, float pos_x, float pos_z,
-    float angle, float tread_offset);
+void pz_tracks_add_mark(pz_tracks *tracks, int entity_id, float pos_x,
+    float pos_z, float angle, float tread_offset);
+
+// Clear track state for a specific entity (e.g., when entity dies/respawns)
+void pz_tracks_clear_entity(pz_tracks *tracks, int entity_id);
 
 // Update track rendering - call once per frame before ground rendering
 // Renders any pending track marks into the accumulation texture
