@@ -1,0 +1,5 @@
+# Mud tile - slows movement to 50%
+[tile]
+name = "mud"
+texture = "assets/textures/mud.png"
+speed_multiplier = 0.5

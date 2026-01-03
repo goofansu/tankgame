@@ -1,0 +1,6 @@
+# Ice tile - slippery, reduced friction
+[tile]
+name = "ice"
+texture = "assets/textures/ice.png"
+speed_multiplier = 1.2
+friction = 0.3

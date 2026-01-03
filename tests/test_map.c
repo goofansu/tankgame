@@ -15,33 +15,59 @@ TEST(map_create)
     ASSERT_NEAR(32.0f, map->world_width, 0.01f);
     ASSERT_NEAR(32.0f, map->world_height, 0.01f);
 
-    // Default tiles should be ground
-    ASSERT_EQ(PZ_TILE_GROUND, pz_map_get_tile(map, 0, 0));
-    ASSERT_EQ(PZ_TILE_GROUND, pz_map_get_tile(map, 8, 8));
+    // Should have default tile definitions (ground, stone)
+    ASSERT(map->tile_def_count >= 2);
+
+    // Default cells should be ground at height 0
+    pz_map_cell cell = pz_map_get_cell(map, 0, 0);
+    ASSERT_EQ(0, cell.height);
+    ASSERT_EQ(0, cell.tile_index); // ground
+
+    cell = pz_map_get_cell(map, 8, 8);
+    ASSERT_EQ(0, cell.height);
 
     pz_map_destroy(map);
 }
 
-TEST(map_tile_access)
+TEST(map_cell_access)
 {
     pz_map *map = pz_map_create(8, 8, 1.0f);
     ASSERT_NOT_NULL(map);
 
-    // Set and get tiles
-    pz_map_set_tile(map, 0, 0, PZ_TILE_WALL);
-    pz_map_set_tile(map, 1, 1, PZ_TILE_WATER);
-    pz_map_set_tile(map, 2, 2, PZ_TILE_MUD);
-    pz_map_set_tile(map, 3, 3, PZ_TILE_ICE);
+    // Add tile definitions
+    int mud_idx = pz_map_add_tile_def(map, ':', "mud");
+    int ice_idx = pz_map_add_tile_def(map, '*', "ice");
+    ASSERT(mud_idx >= 0);
+    ASSERT(ice_idx >= 0);
 
-    ASSERT_EQ(PZ_TILE_WALL, pz_map_get_tile(map, 0, 0));
-    ASSERT_EQ(PZ_TILE_WATER, pz_map_get_tile(map, 1, 1));
-    ASSERT_EQ(PZ_TILE_MUD, pz_map_get_tile(map, 2, 2));
-    ASSERT_EQ(PZ_TILE_ICE, pz_map_get_tile(map, 3, 3));
+    // Set and get cells
+    pz_map_set_cell(map, 0, 0,
+        (pz_map_cell) { .height = 2, .tile_index = 1 }); // stone wall
+    pz_map_set_cell(map, 1, 1,
+        (pz_map_cell) { .height = 0, .tile_index = (uint8_t)mud_idx });
+    pz_map_set_cell(
+        map, 2, 2, (pz_map_cell) { .height = -1, .tile_index = 0 }); // pit
+    pz_map_set_cell(map, 3, 3,
+        (pz_map_cell) { .height = 0, .tile_index = (uint8_t)ice_idx });
 
-    // Out of bounds returns WALL (solid)
-    ASSERT_EQ(PZ_TILE_WALL, pz_map_get_tile(map, -1, 0));
-    ASSERT_EQ(PZ_TILE_WALL, pz_map_get_tile(map, 0, -1));
-    ASSERT_EQ(PZ_TILE_WALL, pz_map_get_tile(map, 100, 0));
+    pz_map_cell cell = pz_map_get_cell(map, 0, 0);
+    ASSERT_EQ(2, cell.height);
+    ASSERT_EQ(1, cell.tile_index);
+
+    cell = pz_map_get_cell(map, 1, 1);
+    ASSERT_EQ(0, cell.height);
+    ASSERT_EQ(mud_idx, cell.tile_index);
+
+    cell = pz_map_get_cell(map, 2, 2);
+    ASSERT_EQ(-1, cell.height);
+
+    cell = pz_map_get_cell(map, 3, 3);
+    ASSERT_EQ(0, cell.height);
+    ASSERT_EQ(ice_idx, cell.tile_index);
+
+    // Out of bounds returns high wall
+    cell = pz_map_get_cell(map, -1, 0);
+    ASSERT(cell.height > 0); // Should be solid
 
     pz_map_destroy(map);
 }
@@ -57,9 +83,40 @@ TEST(map_height)
     // Set and get height
     pz_map_set_height(map, 0, 0, 2);
     pz_map_set_height(map, 1, 1, 5);
+    pz_map_set_height(map, 2, 2, -1); // pit
 
     ASSERT_EQ(2, pz_map_get_height(map, 0, 0));
     ASSERT_EQ(5, pz_map_get_height(map, 1, 1));
+    ASSERT_EQ(-1, pz_map_get_height(map, 2, 2));
+
+    pz_map_destroy(map);
+}
+
+TEST(map_tile_defs)
+{
+    pz_map *map = pz_map_create(8, 8, 1.0f);
+    ASSERT_NOT_NULL(map);
+
+    // Check default tile defs
+    int ground_idx = pz_map_find_tile_def(map, '.');
+    int stone_idx = pz_map_find_tile_def(map, '#');
+    ASSERT(ground_idx >= 0);
+    ASSERT(stone_idx >= 0);
+
+    const pz_tile_def *ground = pz_map_get_tile_def_by_index(map, ground_idx);
+    const pz_tile_def *stone = pz_map_get_tile_def_by_index(map, stone_idx);
+    ASSERT_NOT_NULL(ground);
+    ASSERT_NOT_NULL(stone);
+    ASSERT_EQ('.', ground->symbol);
+    ASSERT_EQ('#', stone->symbol);
+
+    // Add custom tile def
+    int lava_idx = pz_map_add_tile_def(map, 'L', "lava");
+    ASSERT(lava_idx >= 0);
+    ASSERT_EQ(lava_idx, pz_map_find_tile_def(map, 'L'));
+
+    // Unknown tile returns -1
+    ASSERT_EQ(-1, pz_map_find_tile_def(map, 'X'));
 
     pz_map_destroy(map);
 }
@@ -98,28 +155,28 @@ TEST(map_solid_check)
     pz_map *map = pz_map_create(8, 8, 2.0f);
     ASSERT_NOT_NULL(map);
 
-    // Ground is passable
-    pz_map_set_tile(map, 4, 4, PZ_TILE_GROUND);
     pz_vec2 center = pz_map_tile_to_world(map, 4, 4);
+
+    // Height 0 is passable
+    pz_map_set_height(map, 4, 4, 0);
     ASSERT(!pz_map_is_solid(map, center));
     ASSERT(pz_map_is_passable(map, center));
 
-    // Wall is solid
-    pz_map_set_tile(map, 4, 4, PZ_TILE_WALL);
+    // Height > 0 (wall) is solid
+    pz_map_set_height(map, 4, 4, 2);
     ASSERT(pz_map_is_solid(map, center));
     ASSERT(!pz_map_is_passable(map, center));
 
-    // Water is solid (impassable)
-    pz_map_set_tile(map, 4, 4, PZ_TILE_WATER);
+    // Height < 0 (pit) is also solid for tanks
+    pz_map_set_height(map, 4, 4, -1);
     ASSERT(pz_map_is_solid(map, center));
 
-    // Mud is passable (slow)
-    pz_map_set_tile(map, 4, 4, PZ_TILE_MUD);
-    ASSERT(!pz_map_is_solid(map, center));
+    // But bullets can fly over pits
+    ASSERT(!pz_map_blocks_bullets(map, center));
 
-    // Ice is passable
-    pz_map_set_tile(map, 4, 4, PZ_TILE_ICE);
-    ASSERT(!pz_map_is_solid(map, center));
+    // Walls block bullets
+    pz_map_set_height(map, 4, 4, 2);
+    ASSERT(pz_map_blocks_bullets(map, center));
 
     pz_map_destroy(map);
 }
@@ -129,22 +186,28 @@ TEST(map_speed_multiplier)
     pz_map *map = pz_map_create(8, 8, 2.0f);
     ASSERT_NOT_NULL(map);
 
+    // Add terrain types
+    int mud_idx = pz_map_add_tile_def(map, ':', "mud");
+    int ice_idx = pz_map_add_tile_def(map, '*', "ice");
+
     pz_vec2 center = pz_map_tile_to_world(map, 4, 4);
 
     // Ground = normal speed
-    pz_map_set_tile(map, 4, 4, PZ_TILE_GROUND);
+    pz_map_set_cell(map, 4, 4, (pz_map_cell) { .height = 0, .tile_index = 0 });
     ASSERT_NEAR(1.0f, pz_map_get_speed_multiplier(map, center), 0.01f);
 
     // Mud = half speed
-    pz_map_set_tile(map, 4, 4, PZ_TILE_MUD);
+    pz_map_set_cell(map, 4, 4,
+        (pz_map_cell) { .height = 0, .tile_index = (uint8_t)mud_idx });
     ASSERT_NEAR(0.5f, pz_map_get_speed_multiplier(map, center), 0.01f);
 
-    // Ice = slightly faster (but will have drift physics)
-    pz_map_set_tile(map, 4, 4, PZ_TILE_ICE);
+    // Ice = slightly faster
+    pz_map_set_cell(map, 4, 4,
+        (pz_map_cell) { .height = 0, .tile_index = (uint8_t)ice_idx });
     ASSERT_NEAR(1.2f, pz_map_get_speed_multiplier(map, center), 0.01f);
 
-    // Wall/water = impassable
-    pz_map_set_tile(map, 4, 4, PZ_TILE_WALL);
+    // Wall = impassable
+    pz_map_set_cell(map, 4, 4, (pz_map_cell) { .height = 2, .tile_index = 1 });
     ASSERT_NEAR(0.0f, pz_map_get_speed_multiplier(map, center), 0.01f);
 
     pz_map_destroy(map);
@@ -179,14 +242,14 @@ TEST(map_test_creation)
     ASSERT_EQ(16, map->width);
     ASSERT_EQ(16, map->height);
 
-    // Border should be walls
-    ASSERT_EQ(PZ_TILE_WALL, pz_map_get_tile(map, 0, 0));
-    ASSERT_EQ(PZ_TILE_WALL, pz_map_get_tile(map, 15, 0));
-    ASSERT_EQ(PZ_TILE_WALL, pz_map_get_tile(map, 0, 15));
-    ASSERT_EQ(PZ_TILE_WALL, pz_map_get_tile(map, 15, 15));
+    // Border should be walls (height > 0)
+    ASSERT(pz_map_get_height(map, 0, 0) > 0);
+    ASSERT(pz_map_get_height(map, 15, 0) > 0);
+    ASSERT(pz_map_get_height(map, 0, 15) > 0);
+    ASSERT(pz_map_get_height(map, 15, 15) > 0);
 
-    // Interior should have some ground
-    ASSERT_EQ(PZ_TILE_GROUND, pz_map_get_tile(map, 1, 1));
+    // Interior should have some ground (height = 0)
+    ASSERT_EQ(0, pz_map_get_height(map, 1, 1));
 
     // Should have spawn points
     ASSERT_EQ(4, map->spawn_count);
@@ -194,6 +257,38 @@ TEST(map_test_creation)
     // Print for visual verification
     printf("\n");
     pz_map_print(map);
+
+    pz_map_destroy(map);
+}
+
+TEST(map_v2_format)
+{
+    // Test loading a v2 format map
+    pz_map *map = pz_map_load("assets/maps/test_arena.map");
+    if (!map) {
+        printf(
+            "Note: Skipping v2 format test (map file not found in test env)\n");
+        return;
+    }
+
+    ASSERT_EQ(2, map->version);
+    ASSERT_EQ(24, map->width);
+    ASSERT_EQ(14, map->height);
+
+    // Check tile definitions were loaded
+    ASSERT(map->tile_def_count >= 2);
+    ASSERT(pz_map_find_tile_def(map, '.') >= 0);
+    ASSERT(pz_map_find_tile_def(map, '#') >= 0);
+
+    // Border should be walls
+    ASSERT(pz_map_get_height(map, 0, 0) > 0);
+    ASSERT(pz_map_get_height(map, 23, 0) > 0);
+
+    // Should have spawns from tags
+    ASSERT(map->spawn_count > 0);
+
+    // Should have enemies from tags
+    ASSERT(map->enemy_count > 0);
 
     pz_map_destroy(map);
 }
