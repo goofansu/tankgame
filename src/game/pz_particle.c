@@ -503,9 +503,10 @@ pz_particle_spawn_fog(
     p.rotation_speed = randf_range(-0.6f, 0.6f);
 
     float scale_bias = pz_lerpf(0.9f, 1.25f, idle_factor);
-    float base_scale = randf_range(0.9f, 1.4f) * scale_bias;
+    float base_scale = randf_range(1.08f, 1.68f) * scale_bias; // 20% bigger
     p.scale_start = base_scale * 0.5f;
-    p.scale_end = base_scale * pz_lerpf(1.4f, 2.0f, idle_factor);
+    p.scale_end
+        = base_scale * pz_lerpf(1.6f, 2.4f, idle_factor); // scales up more
     p.scale = p.scale_start;
 
     p.alpha_start = pz_lerpf(0.35f, 0.65f, idle_factor);
@@ -515,8 +516,8 @@ pz_particle_spawn_fog(
     p.color = base_colors[rand() % 4];
 
     float lifetime
-        = pz_lerpf(1.1f, 2.6f, idle_factor) + randf_range(-0.2f, 0.2f);
-    p.lifetime = pz_minf(pz_maxf(lifetime, 0.6f), 3.0f);
+        = pz_lerpf(1.1f, 3.4f, idle_factor) + randf_range(-0.2f, 0.2f);
+    p.lifetime = pz_minf(pz_maxf(lifetime, 0.6f), 4.0f);
     p.age = 0.0f;
 
     p.variant = rand() % 4;

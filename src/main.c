@@ -92,14 +92,16 @@ spawn_tank_fog(
 
         float spawn_interval = pz_lerpf(0.25f, 0.08f, moving_factor);
         if (moving_factor < 0.1f) {
-            spawn_interval = pz_lerpf(0.25f, 0.16f, idle_factor);
+            // Idle tanks produce ~30% of the smoke (longer interval)
+            spawn_interval = pz_lerpf(0.25f, 0.85f, idle_factor);
         }
 
         tank->fog_timer -= dt;
         if (tank->fog_timer <= 0.0f) {
             pz_vec2 forward
                 = { sinf(tank->body_angle), cosf(tank->body_angle) };
-            float trail_offset = pz_lerpf(0.55f, 0.95f, moving_factor);
+            // Spawn in back half of tank (tank is ~2.5 units long)
+            float trail_offset = pz_lerpf(0.9f, 1.25f, moving_factor);
             pz_vec3 fog_pos = { tank->pos.x - forward.x * trail_offset, 0.35f,
                 tank->pos.y - forward.y * trail_offset };
 
