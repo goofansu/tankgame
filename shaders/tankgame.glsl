@@ -725,7 +725,8 @@ void main() {
         }
     }
 
-    float ao = pow(clamp(v_ao, 0.0, 1.0), 1.6);
+    float ao = pow(clamp(v_ao, 0.0, 1.0), 1.2);
+    ao = mix(1.0, ao, 0.5);
     frag_color = vec4(tex_color.rgb * (lighting * ao), tex_color.a);
 }
 @end
