@@ -469,6 +469,61 @@ pz_particle_spawn_smoke(pz_particle_manager *mgr, const pz_smoke_config *config)
     }
 }
 
+void
+pz_particle_spawn_fog(
+    pz_particle_manager *mgr, pz_vec3 position, float idle_factor)
+{
+    if (!mgr)
+        return;
+
+    idle_factor = pz_clampf(idle_factor, 0.0f, 1.0f);
+
+    pz_vec3 base_colors[] = {
+        { 0.68f, 0.70f, 0.72f },
+        { 0.60f, 0.62f, 0.65f },
+        { 0.54f, 0.56f, 0.60f },
+        { 0.48f, 0.50f, 0.54f },
+    };
+
+    pz_particle p = { 0 };
+    p.type = PZ_PARTICLE_FOG;
+
+    // Subtle spread around the trail position
+    p.pos.x = position.x + randf_range(-0.25f, 0.25f);
+    p.pos.y = position.y + randf_range(0.0f, 0.2f);
+    p.pos.z = position.z + randf_range(-0.25f, 0.25f);
+
+    // Gentle drift, mostly upward
+    p.velocity.x = randf_range(-0.15f, 0.15f);
+    p.velocity.y = randf_range(0.08f, 0.25f);
+    p.velocity.z = randf_range(-0.15f, 0.15f);
+
+    // Soft rotation
+    p.rotation = randf() * 2.0f * PZ_PI;
+    p.rotation_speed = randf_range(-0.6f, 0.6f);
+
+    float scale_bias = pz_lerpf(0.9f, 1.25f, idle_factor);
+    float base_scale = randf_range(0.9f, 1.4f) * scale_bias;
+    p.scale_start = base_scale * 0.5f;
+    p.scale_end = base_scale * pz_lerpf(1.4f, 2.0f, idle_factor);
+    p.scale = p.scale_start;
+
+    p.alpha_start = pz_lerpf(0.35f, 0.65f, idle_factor);
+    p.alpha_end = 0.0f;
+    p.alpha = p.alpha_start;
+
+    p.color = base_colors[rand() % 4];
+
+    float lifetime
+        = pz_lerpf(1.1f, 2.6f, idle_factor) + randf_range(-0.2f, 0.2f);
+    p.lifetime = pz_minf(pz_maxf(lifetime, 0.6f), 3.0f);
+    p.age = 0.0f;
+
+    p.variant = rand() % 4;
+
+    pz_particle_spawn(mgr, &p);
+}
+
 /* ============================================================================
  * Update
  * ============================================================================

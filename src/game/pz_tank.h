@@ -73,6 +73,8 @@ typedef struct pz_tank {
     float damage_flash; // Timer for damage flash effect (0 = no flash)
     pz_vec4 body_color;
     pz_vec4 turret_color; // Updated based on selected weapon
+    float fog_timer; // Spawn timer for fog trail
+    float idle_time; // How long the tank has been idle
 } pz_tank;
 
 // Input for a tank (per-tick input state)

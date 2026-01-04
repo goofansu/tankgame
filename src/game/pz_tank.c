@@ -719,6 +719,8 @@ pz_tank_respawn(pz_tank *tank)
     tank->respawn_timer = 0.0f;
     tank->invuln_timer = INVULN_DURATION;
     tank->damage_flash = 0.0f;
+    tank->fog_timer = 0.0f;
+    tank->idle_time = 0.0f;
 
     pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME, "Tank %d respawned at (%.2f, %.2f)",
         tank->id, tank->spawn_pos.x, tank->spawn_pos.y);

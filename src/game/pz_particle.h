@@ -20,6 +20,7 @@
 // Particle types
 typedef enum pz_particle_type {
     PZ_PARTICLE_SMOKE, // Blue-gray smoke puff
+    PZ_PARTICLE_FOG, // Lingering gray fog trail
     PZ_PARTICLE_IMPACT, // Quick flash on bullet impact
     PZ_PARTICLE_COUNT
 } pz_particle_type;
@@ -98,6 +99,10 @@ void pz_particle_manager_destroy(
 // Spawn a group of smoke particles
 void pz_particle_spawn_smoke(
     pz_particle_manager *mgr, const pz_smoke_config *config);
+
+// Spawn a single fog particle (used for tank trails)
+void pz_particle_spawn_fog(
+    pz_particle_manager *mgr, pz_vec3 position, float idle_factor);
 
 // Spawn a single particle (for custom effects)
 void pz_particle_spawn(pz_particle_manager *mgr, const pz_particle *template);

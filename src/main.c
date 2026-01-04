@@ -63,6 +63,52 @@ generate_screenshot_path(void)
     return pz_str_dup(filename);
 }
 
+static void
+spawn_tank_fog(
+    pz_particle_manager *particle_mgr, pz_tank_manager *tank_mgr, float dt)
+{
+    if (!particle_mgr || !tank_mgr)
+        return;
+
+    float max_speed = tank_mgr->max_speed > 0.0f ? tank_mgr->max_speed : 1.0f;
+
+    for (int i = 0; i < PZ_MAX_TANKS; i++) {
+        pz_tank *tank = &tank_mgr->tanks[i];
+        if (!(tank->flags & PZ_TANK_FLAG_ACTIVE)
+            || (tank->flags & PZ_TANK_FLAG_DEAD)) {
+            continue;
+        }
+
+        float speed = pz_vec2_len(tank->vel);
+        if (speed < 0.15f) {
+            tank->idle_time = pz_minf(tank->idle_time + dt, 3.0f);
+        } else {
+            tank->idle_time = 0.0f;
+        }
+
+        float idle_factor = pz_clampf(tank->idle_time / 2.0f, 0.0f, 1.0f);
+        float moving_factor
+            = pz_clampf(speed / (max_speed * 0.75f), 0.0f, 1.0f);
+
+        float spawn_interval = pz_lerpf(0.25f, 0.08f, moving_factor);
+        if (moving_factor < 0.1f) {
+            spawn_interval = pz_lerpf(0.25f, 0.16f, idle_factor);
+        }
+
+        tank->fog_timer -= dt;
+        if (tank->fog_timer <= 0.0f) {
+            pz_vec2 forward
+                = { sinf(tank->body_angle), cosf(tank->body_angle) };
+            float trail_offset = pz_lerpf(0.55f, 0.95f, moving_factor);
+            pz_vec3 fog_pos = { tank->pos.x - forward.x * trail_offset, 0.35f,
+                tank->pos.y - forward.y * trail_offset };
+
+            pz_particle_spawn_fog(particle_mgr, fog_pos, idle_factor);
+            tank->fog_timer = spawn_interval;
+        }
+    }
+}
+
 typedef struct {
     pz_vec2 pos;
     float timer; // Remaining time
@@ -1230,6 +1276,9 @@ app_frame(void)
             g_app.session.explosion_lights[i].timer -= frame_dt;
         }
     }
+
+    spawn_tank_fog(
+        g_app.session.particle_mgr, g_app.session.tank_mgr, frame_dt);
 
     pz_particle_update(g_app.session.particle_mgr, frame_dt);
 
