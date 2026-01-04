@@ -27,17 +27,20 @@ MAP assets/maps/dawn_waterway.map
 # Level 7: Volcanic Ridge - Medium-Hard
 MAP assets/maps/volcanic_ridge.map
 
-# Level 8: Midnight Maze - Hard
+# Level 8: Lava Crossing
+MAP assets/maps/lava_crossing.map
+
+# Level 9: Midnight Maze - Hard
 MAP assets/maps/midnight_maze.map
 
-# Level 9: Frozen Peaks - Hard
+# Level 10: Frozen Peaks - Hard
 MAP assets/maps/frozen_peaks.map
 
-# Level 10: Golden Hour Assault - Very Hard
+# Level 11: Golden Hour Assault - Very Hard
 MAP assets/maps/golden_hour_assault.map
 
-# Level 11: Storm Citadel - Very Hard
+# Level 12: Storm Citadel - Very Hard
 MAP assets/maps/storm_citadel.map
 
-# Level 12: Abyss Gauntlet - EXTREME
+# Level 13: Abyss Gauntlet
 MAP assets/maps/abyss_gauntlet.map
