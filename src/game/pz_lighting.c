@@ -13,6 +13,7 @@
 
 #include "../core/pz_log.h"
 #include "../core/pz_mem.h"
+#include "../core/pz_sort.h"
 
 // Number of rays per light for shadow polygon (more = smoother shadows)
 #define SHADOW_RAY_COUNT 256
@@ -156,8 +157,8 @@ ray_segment_intersect(pz_vec2 ray_origin, pz_vec2 ray_dir, float max_dist,
 
 // Cast a ray and find the nearest intersection with all edges
 static float
-cast_ray(
-    pz_lighting *lighting, pz_vec2 origin, pz_vec2 direction, float max_dist)
+cast_ray(const edge *edges, int edge_count, pz_vec2 origin, pz_vec2 direction,
+    float max_dist)
 {
     float nearest_t = max_dist;
 
@@ -166,10 +167,10 @@ cast_ray(
     // pz_lighting_add_map_occluders). Using both caused issues with
     // inconsistent minimum distance handling.
 
-    for (int i = 0; i < lighting->edge_count; i++) {
+    for (int i = 0; i < edge_count; i++) {
         float t;
-        if (ray_segment_intersect(origin, direction, max_dist,
-                lighting->edges[i].a, lighting->edges[i].b, &t)) {
+        if (ray_segment_intersect(
+                origin, direction, max_dist, edges[i].a, edges[i].b, &t)) {
             if (t < nearest_t) {
                 nearest_t = t;
             }
@@ -177,6 +178,37 @@ cast_ray(
     }
 
     return nearest_t;
+}
+
+static float
+point_segment_distance_sq(pz_vec2 p, pz_vec2 a, pz_vec2 b)
+{
+    pz_vec2 ab = { b.x - a.x, b.y - a.y };
+    float denom = ab.x * ab.x + ab.y * ab.y;
+    if (denom <= 0.0f) {
+        float dx = p.x - a.x;
+        float dy = p.y - a.y;
+        return dx * dx + dy * dy;
+    }
+    float t = ((p.x - a.x) * ab.x + (p.y - a.y) * ab.y) / denom;
+    if (t < 0.0f) {
+        t = 0.0f;
+    } else if (t > 1.0f) {
+        t = 1.0f;
+    }
+    float cx = a.x + ab.x * t;
+    float cy = a.y + ab.y * t;
+    float dx = p.x - cx;
+    float dy = p.y - cy;
+    return dx * dx + dy * dy;
+}
+
+static int
+compare_floats(const void *a, const void *b)
+{
+    float fa = *(const float *)a;
+    float fb = *(const float *)b;
+    return (fa > fb) - (fa < fb);
 }
 
 // Calculate spotlight intensity at a given angle
@@ -553,7 +585,20 @@ generate_light_geometry(pz_lighting *lighting, const pz_light *light,
     // (This creates crisp shadow edges)
 
     // First pass: collect all interesting angles
-    int max_angles = ray_count + lighting->edge_count * 6 + 16;
+    edge filtered_edges[PZ_MAX_OCCLUDERS * PZ_MAX_EDGES_PER_OCCLUDER];
+    int filtered_edge_count = 0;
+    float max_dist = light->radius + MIN_RAY_DISTANCE;
+    float max_dist_sq = max_dist * max_dist;
+
+    for (int i = 0; i < lighting->edge_count; i++) {
+        float dist_sq = point_segment_distance_sq(
+            light->position, lighting->edges[i].a, lighting->edges[i].b);
+        if (dist_sq <= max_dist_sq) {
+            filtered_edges[filtered_edge_count++] = lighting->edges[i];
+        }
+    }
+
+    int max_angles = ray_count + filtered_edge_count * 6 + 16;
     float *angles = pz_alloc(sizeof(float) * (size_t)max_angles);
     if (!angles) {
         return 0;
@@ -576,19 +621,18 @@ generate_light_geometry(pz_lighting *lighting, const pz_light *light,
 
     // Add angles to all edge endpoints (with small offsets for shadow edges)
     // Only process edges that FACE the light (backface culling)
-    for (int i = 0; i < lighting->edge_count && angle_count + 6 < max_angles;
+    for (int i = 0; i < filtered_edge_count && angle_count + 6 < max_angles;
          i++) {
+        const edge *edge = &filtered_edges[i];
         // Check if this edge faces the light
         // Edge normal points perpendicular to edge direction (CCW winding)
-        pz_vec2 edge_dir = { lighting->edges[i].b.x - lighting->edges[i].a.x,
-            lighting->edges[i].b.y - lighting->edges[i].a.y };
+        pz_vec2 edge_dir = { edge->b.x - edge->a.x, edge->b.y - edge->a.y };
         // Normal is perpendicular (rotate 90 degrees CCW): (-dy, dx)
         pz_vec2 edge_normal = { -edge_dir.y, edge_dir.x };
 
         // Vector from edge midpoint to light
-        pz_vec2 edge_mid
-            = { (lighting->edges[i].a.x + lighting->edges[i].b.x) * 0.5f,
-                  (lighting->edges[i].a.y + lighting->edges[i].b.y) * 0.5f };
+        pz_vec2 edge_mid = { (edge->a.x + edge->b.x) * 0.5f,
+            (edge->a.y + edge->b.y) * 0.5f };
         pz_vec2 to_light = { light->position.x - edge_mid.x,
             light->position.y - edge_mid.y };
 
@@ -598,10 +642,10 @@ generate_light_geometry(pz_lighting *lighting, const pz_light *light,
             continue; // Skip backfacing edges
         }
 
-        pz_vec2 to_a = { lighting->edges[i].a.x - light->position.x,
-            lighting->edges[i].a.y - light->position.y };
-        pz_vec2 to_b = { lighting->edges[i].b.x - light->position.x,
-            lighting->edges[i].b.y - light->position.y };
+        pz_vec2 to_a
+            = { edge->a.x - light->position.x, edge->a.y - light->position.y };
+        pz_vec2 to_b
+            = { edge->b.x - light->position.x, edge->b.y - light->position.y };
 
         float angle_a = atan2f(to_a.y, to_a.x);
         float angle_b = atan2f(to_b.y, to_b.x);
@@ -637,15 +681,7 @@ generate_light_geometry(pz_lighting *lighting, const pz_light *light,
     }
 
     // Sort angles
-    for (int i = 0; i < angle_count - 1; i++) {
-        for (int j = i + 1; j < angle_count; j++) {
-            if (angles[j] < angles[i]) {
-                float tmp = angles[i];
-                angles[i] = angles[j];
-                angles[j] = tmp;
-            }
-        }
-    }
+    pz_sort_floats_cmp(angles, (size_t)angle_count, compare_floats);
 
     // Remove duplicates and out-of-range angles (for spotlights)
     float *unique_angles = pz_alloc(sizeof(float) * (size_t)angle_count);
@@ -694,7 +730,8 @@ generate_light_geometry(pz_lighting *lighting, const pz_light *light,
         pz_vec2 dir = { cosf(angle), sinf(angle) };
 
         // Cast ray
-        float t = cast_ray(lighting, light->position, dir, light->radius);
+        float t = cast_ray(filtered_edges, filtered_edge_count, light->position,
+            dir, light->radius);
 
         // Hit point in world space
         float hit_x = center_x + dir.x * t;
@@ -751,8 +788,8 @@ generate_light_geometry(pz_lighting *lighting, const pz_light *light,
         // Cast ray at angle 0 (first angle direction) to get first vertex
         float first_angle = unique_angles[0];
         pz_vec2 first_dir = { cosf(first_angle), sinf(first_angle) };
-        float first_t
-            = cast_ray(lighting, light->position, first_dir, light->radius);
+        float first_t = cast_ray(filtered_edges, filtered_edge_count,
+            light->position, first_dir, light->radius);
         float first_uv_x
             = (center_x + first_dir.x * first_t) / lighting->world_width + 0.5f;
         float first_uv_z
