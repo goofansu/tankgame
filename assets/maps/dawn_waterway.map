@@ -12,9 +12,9 @@ tile : mud_wet
 # Object tags
 tag P1 spawn angle=0.0 team=0
 tag P2 spawn angle=-1.57 team=0
-tag E1 enemy angle=3.14 level=1
-tag E2 enemy angle=-1.57 level=2
-tag E3 enemy angle=1.57 level=2
+tag E1 enemy angle=3.14 type=sentry
+tag E2 enemy angle=-1.57 type=skirmisher
+tag E3 enemy angle=1.57 type=skirmisher
 tag W1 powerup type=ricochet respawn=20
 
 

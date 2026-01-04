@@ -20,6 +20,8 @@ static const float PROJECTILE_VS_PROJECTILE_RADIUS = 0.18f;
 
 // Grace period before projectile can hit its owner (seconds)
 static const float SELF_DAMAGE_GRACE_PERIOD = 0.5f;
+// Grace period to prevent same-owner projectiles colliding immediately
+static const float SELF_PROJECTILE_GRACE_PERIOD = 0.05f;
 
 /* ============================================================================
  * Default Configuration
@@ -258,6 +260,9 @@ pz_projectile_update(pz_projectile_manager *mgr, const pz_map *map,
                 pz_projectile *other = &mgr->projectiles[j];
                 if (!other->active)
                     continue;
+                if (other->owner_id == proj->owner_id) {
+                    continue;
+                }
 
                 float dist = pz_vec2_len(pz_vec2_sub(target_pos, other->pos));
                 if (dist < PROJECTILE_VS_PROJECTILE_RADIUS * 2.0f) {

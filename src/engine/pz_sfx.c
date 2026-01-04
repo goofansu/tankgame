@@ -248,7 +248,7 @@ static const char *sfx_paths[PZ_SFX_COUNT] = {
     [PZ_SFX_ENGINE_MOVING] = "assets/sounds/engine1.wav",
     [PZ_SFX_GUN_FIRE] = "assets/sounds/gun1.wav",
     [PZ_SFX_BULLET_HIT] = "assets/sounds/gun3.wav",
-    [PZ_SFX_EXPLOSION_TANK] = "assets/sounds/explosion3.wav",
+    [PZ_SFX_EXPLOSION_TANK] = "assets/sounds/explosion2.wav",
     [PZ_SFX_EXPLOSION_FINAL] = "assets/sounds/explosion1.wav",
     [PZ_SFX_TANK_HIT] = "assets/sounds/hit1.wav",
 };

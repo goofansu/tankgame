@@ -25,37 +25,76 @@ static const pz_enemy_stats ENEMY_STATS[] = {
         .max_bounces = 1,
         .fire_cooldown = 1.0f,
         .aim_speed = 1.0f,
-        .body_color = { 0.5f, 0.5f, 0.5f, 1.0f } },
+        .body_color = { 0.5f, 0.5f, 0.5f, 1.0f },
+        .weapon_type = PZ_POWERUP_NONE,
+        .projectile_speed_scale = 1.0f,
+        .bounce_shot_range = 30.0f },
 
-    // Level 1: Basic enemy (stationary turret, fires often, uses bounce shots)
+    // Level 1: Sentry (stationary turret, fires often, uses bounce shots)
     { .health = 10,
         .max_bounces = 1,
         .fire_cooldown = 0.6f,
         .aim_speed = 1.2f,
-        .body_color = { 0.6f, 0.25f, 0.25f, 1.0f } }, // Dark red
+        .body_color = { 0.6f, 0.25f, 0.25f, 1.0f }, // Dark red
+        .weapon_type = PZ_POWERUP_NONE,
+        .projectile_speed_scale = 1.0f,
+        .bounce_shot_range = 30.0f },
 
-    // Level 2: Intermediate enemy (uses cover)
+    // Level 2: Skirmisher (uses cover)
     { .health = 15,
         .max_bounces = 1,
         .fire_cooldown = 0.8f,
         .aim_speed = 1.3f,
-        .body_color = { 0.7f, 0.4f, 0.1f, 1.0f } }, // Orange-brown
+        .body_color = { 0.7f, 0.4f, 0.1f, 1.0f }, // Orange-brown
+        .weapon_type = PZ_POWERUP_NONE,
+        .projectile_speed_scale = 1.0f,
+        .bounce_shot_range = 0.0f },
 
-    // Level 3: Aggressive hunter enemy
+    // Level 3: Hunter (aggressive, machine gun burst)
     { .health = 20,
-        .max_bounces = 2,
-        .fire_cooldown = 0.5f,
+        .max_bounces = 0,
+        .fire_cooldown = 0.2f,
         .aim_speed = 2.0f,
-        .body_color = { 0.2f, 0.5f, 0.2f, 1.0f } }, // Dark green (hunter)
+        .body_color = { 0.2f, 0.5f, 0.2f, 1.0f }, // Dark green (hunter)
+        .weapon_type = PZ_POWERUP_MACHINE_GUN,
+        .projectile_speed_scale = 1.0f,
+        .bounce_shot_range = 0.0f },
+
+    // Level 4: Sniper (stationary, long-range ricochet)
+    { .health = 12,
+        .max_bounces = 3,
+        .fire_cooldown = 1.1f,
+        .aim_speed = 0.9f,
+        .body_color = { 0.35f, 0.4f, 0.7f, 1.0f }, // Steel blue
+        .weapon_type = PZ_POWERUP_RICOCHET,
+        .projectile_speed_scale = 1.4f,
+        .bounce_shot_range = 60.0f },
 };
 
 const pz_enemy_stats *
 pz_enemy_get_stats(pz_enemy_level level)
 {
-    if (level < 1 || level > 3) {
+    if (level < 1 || level > PZ_ENEMY_LEVEL_SNIPER) {
         return &ENEMY_STATS[1]; // Default to level 1
     }
     return &ENEMY_STATS[level];
+}
+
+const char *
+pz_enemy_level_name(pz_enemy_level level)
+{
+    switch (level) {
+    case PZ_ENEMY_LEVEL_1:
+        return "sentry";
+    case PZ_ENEMY_LEVEL_2:
+        return "skirmisher";
+    case PZ_ENEMY_LEVEL_3:
+        return "hunter";
+    case PZ_ENEMY_LEVEL_SNIPER:
+        return "sniper";
+    default:
+        return "sentry";
+    }
 }
 
 /* ============================================================================
@@ -136,6 +175,9 @@ pz_ai_spawn_enemy(
     tank->max_health = stats->health;
     tank->body_angle = angle;
     tank->turret_angle = angle;
+    if (stats->weapon_type != PZ_POWERUP_NONE) {
+        pz_tank_add_weapon(tank, (int)stats->weapon_type);
+    }
 
     // Create AI controller
     pz_ai_controller *ctrl = &ai_mgr->controllers[ai_mgr->controller_count++];
@@ -145,8 +187,8 @@ pz_ai_spawn_enemy(
     ctrl->level = level;
     ctrl->current_aim_angle = angle;
     ctrl->target_aim_angle = angle;
-    ctrl->fire_timer
-        = stats->fire_cooldown; // Start with a delay before first shot
+    // Match player behavior: allow immediate fire, then use weapon cooldown.
+    ctrl->fire_timer = 0.0f;
     ctrl->can_see_player = false;
     ctrl->reaction_delay = 0.0f;
     ctrl->last_seen_time = 0.0f;
@@ -160,12 +202,17 @@ pz_ai_spawn_enemy(
     ctrl->cover_search_timer = 0.0f;
     ctrl->has_cover = false;
     ctrl->shots_fired = 0;
-    ctrl->max_shots_per_peek
-        = 2 + (level - 1); // Level 2 = 2 shots, Level 3 = 3
+    if (level == PZ_ENEMY_LEVEL_2) {
+        ctrl->max_shots_per_peek = 2;
+    } else if (level == PZ_ENEMY_LEVEL_3) {
+        ctrl->max_shots_per_peek = 3;
+    } else {
+        ctrl->max_shots_per_peek = 1;
+    }
 
     pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
-        "Spawned Level %d enemy at (%.1f, %.1f), tank_id=%d", level, pos.x,
-        pos.y, tank->id);
+        "Spawned %s enemy at (%.1f, %.1f), tank_id=%d",
+        pz_enemy_level_name(level), pos.x, pos.y, tank->id);
 
     return tank;
 }
@@ -260,14 +307,13 @@ is_position_valid(const pz_map *map, pz_vec2 pos, float radius)
 // This simulates firing a projectile and checking if it would hit the player
 // after bouncing off a wall.
 static bool
-find_bounce_shot(
-    const pz_map *map, pz_vec2 ai_pos, pz_vec2 player_pos, float *bounce_angle)
+find_bounce_shot(const pz_map *map, pz_vec2 ai_pos, pz_vec2 player_pos,
+    float max_ray_dist, float *bounce_angle)
 {
     if (!map) {
         return false;
     }
 
-    const float max_ray_dist = 30.0f; // Maximum distance to check
     const float player_hit_radius = 0.9f; // Tank collision radius
     const int num_angles = 36; // Sample 36 angles (every 10 degrees)
 
@@ -1071,7 +1117,9 @@ pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
             = check_line_of_sight(ai_mgr->map, tank->pos, player_pos);
 
         // Level 1: Consider bounce shots when player is not visible
-        if (ctrl->level == PZ_ENEMY_LEVEL_1) {
+        bool uses_bounce_shots = (ctrl->level == PZ_ENEMY_LEVEL_1
+            || ctrl->level == PZ_ENEMY_LEVEL_SNIPER);
+        if (uses_bounce_shots) {
             // Update bounce shot search timer
             if (ctrl->bounce_shot_search_timer > 0.0f) {
                 ctrl->bounce_shot_search_timer -= dt;
@@ -1086,8 +1134,12 @@ pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
                 if (!ctrl->has_bounce_shot
                     && ctrl->bounce_shot_search_timer <= 0.0f) {
                     float bounce_angle;
+                    float bounce_range = stats->bounce_shot_range;
+                    if (bounce_range <= 0.0f) {
+                        bounce_range = 30.0f;
+                    }
                     if (find_bounce_shot(ai_mgr->map, tank->pos, player_pos,
-                            &bounce_angle)) {
+                            bounce_range, &bounce_angle)) {
                         ctrl->has_bounce_shot = true;
                         ctrl->bounce_shot_angle = bounce_angle;
                         pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
@@ -1138,7 +1190,7 @@ pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
             update_level2_ai(
                 ctrl, tank, ai_mgr->tank_mgr, ai_mgr->map, player_pos, dt);
         } else {
-            // Level 1: Stationary turret only
+            // Stationary turret only (sentry, sniper)
             pz_tank_input input = {
                 .move_dir = { 0.0f, 0.0f },
                 .target_turret = ctrl->current_aim_angle,
@@ -1196,7 +1248,9 @@ pz_ai_fire(pz_ai_manager *ai_mgr, pz_projectile_manager *proj_mgr)
         // Level 1: Can fire if we see player OR have a bounce shot
         // Others: Need to see the player
         bool can_attempt_fire = ctrl->can_see_player;
-        if (ctrl->level == PZ_ENEMY_LEVEL_1 && ctrl->has_bounce_shot) {
+        bool uses_bounce_shots = (ctrl->level == PZ_ENEMY_LEVEL_1
+            || ctrl->level == PZ_ENEMY_LEVEL_SNIPER);
+        if (uses_bounce_shots && ctrl->has_bounce_shot) {
             can_attempt_fire = true;
         }
 
@@ -1217,8 +1271,8 @@ pz_ai_fire(pz_ai_manager *ai_mgr, pz_projectile_manager *proj_mgr)
         // Get enemy stats for weapon properties
         const pz_enemy_stats *stats = pz_enemy_get_stats(ctrl->level);
 
-        // Get weapon stats (default weapon for now)
-        const pz_weapon_stats *weapon = pz_weapon_get_stats(PZ_POWERUP_NONE);
+        // Get weapon stats for this enemy
+        const pz_weapon_stats *weapon = pz_weapon_get_stats(stats->weapon_type);
 
         // Check active projectile count
         int active = pz_projectile_count_by_owner(proj_mgr, tank->id);
@@ -1230,8 +1284,10 @@ pz_ai_fire(pz_ai_manager *ai_mgr, pz_projectile_manager *proj_mgr)
         pz_vec2 spawn_pos = pz_tank_get_barrel_tip(tank);
         pz_vec2 fire_dir = pz_tank_get_fire_direction(tank);
 
+        float projectile_speed
+            = weapon->projectile_speed * stats->projectile_speed_scale;
         pz_projectile_config proj_config = {
-            .speed = weapon->projectile_speed,
+            .speed = projectile_speed,
             .max_bounces = stats->max_bounces,
             .lifetime = -1.0f,
             .damage = weapon->damage,
@@ -1242,22 +1298,22 @@ pz_ai_fire(pz_ai_manager *ai_mgr, pz_projectile_manager *proj_mgr)
         pz_projectile_spawn(
             proj_mgr, spawn_pos, fire_dir, &proj_config, tank->id);
 
-        // Reset fire timer
-        ctrl->fire_timer = stats->fire_cooldown;
+        // Reset fire timer to the weapon's max fire rate (same as player).
+        ctrl->fire_timer = weapon->fire_cooldown;
         fired++;
 
         // Track shots for cover behavior
         ctrl->shots_fired++;
 
         // Level 1: After firing a bounce shot, search for a new one next time
-        if (ctrl->level == PZ_ENEMY_LEVEL_1 && ctrl->has_bounce_shot) {
+        if (uses_bounce_shots && ctrl->has_bounce_shot) {
             ctrl->has_bounce_shot = false;
             ctrl->bounce_shot_search_timer = 0.3f; // Brief delay before
                                                    // searching again
         }
 
-        pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME, "AI tank %d fired (level %d)",
-            tank->id, ctrl->level);
+        pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME, "AI tank %d fired (%s)", tank->id,
+            pz_enemy_level_name(ctrl->level));
     }
 
     return fired;
@@ -1298,7 +1354,8 @@ pz_ai_has_level3_alive(const pz_ai_manager *ai_mgr)
 
     for (int i = 0; i < ai_mgr->controller_count; i++) {
         const pz_ai_controller *ctrl = &ai_mgr->controllers[i];
-        if (ctrl->level == PZ_ENEMY_LEVEL_3) {
+        if (ctrl->level == PZ_ENEMY_LEVEL_3
+            || ctrl->level == PZ_ENEMY_LEVEL_SNIPER) {
             pz_tank *tank = pz_tank_get_by_id(ai_mgr->tank_mgr, ctrl->tank_id);
             if (tank && !(tank->flags & PZ_TANK_FLAG_DEAD)) {
                 return true;

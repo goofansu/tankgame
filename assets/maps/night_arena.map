@@ -14,10 +14,10 @@ tag P1 spawn angle=0.785 team=0
 tag P2 spawn angle=2.356 team=0
 tag P3 spawn angle=-0.785 team=0
 tag P4 spawn angle=-2.356 team=0
-tag E1 enemy angle=3.14 level=1
-tag E2 enemy angle=-0.785 level=2
-tag E3 enemy angle=1.57 level=2
-tag E4 enemy angle=0.0 level=1
+tag E1 enemy angle=3.14 type=sentry
+tag E2 enemy angle=-0.785 type=skirmisher
+tag E3 enemy angle=1.57 type=skirmisher
+tag E4 enemy angle=0.0 type=sentry
 tag B1 barrier tile=cobble health=20
 
 <grid>

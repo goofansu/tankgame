@@ -950,7 +950,51 @@ parse_spawn_tag(const char *params, pz_spawn_point *spawn)
     return true;
 }
 
-// Parse enemy tag: "enemy angle=<f> level=<i>"
+static int
+parse_enemy_level_value(const char *value)
+{
+    if (!value || !*value) {
+        return 1;
+    }
+
+    if (isdigit((unsigned char)value[0]) || value[0] == '-') {
+        return atoi(value);
+    }
+
+    if (pz_str_casecmp(value, "sentry") == 0) {
+        return 1;
+    }
+    if (pz_str_casecmp(value, "skirmisher") == 0) {
+        return 2;
+    }
+    if (pz_str_casecmp(value, "hunter") == 0) {
+        return 3;
+    }
+    if (pz_str_casecmp(value, "sniper") == 0) {
+        return 4;
+    }
+
+    return 1;
+}
+
+static const char *
+enemy_level_name(int level)
+{
+    switch (level) {
+    case 1:
+        return "sentry";
+    case 2:
+        return "skirmisher";
+    case 3:
+        return "hunter";
+    case 4:
+        return "sniper";
+    default:
+        return "sentry";
+    }
+}
+
+// Parse enemy tag: "enemy angle=<f> level=<i>" or "enemy angle=<f> type=<name>"
 static bool
 parse_enemy_tag(const char *params, pz_enemy_spawn *enemy)
 {
@@ -968,7 +1012,37 @@ parse_enemy_tag(const char *params, pz_enemy_spawn *enemy)
         if (strncmp(p, "angle=", 6) == 0) {
             enemy->angle = (float)atof(p + 6);
         } else if (strncmp(p, "level=", 6) == 0) {
-            enemy->level = atoi(p + 6);
+            const char *start = p + 6;
+            const char *end = start;
+            while (*end && !isspace((unsigned char)*end) && *end != ',') {
+                end++;
+            }
+            char value[32];
+            size_t len = (size_t)(end - start);
+            if (len >= sizeof(value)) {
+                len = sizeof(value) - 1;
+            }
+            strncpy(value, start, len);
+            value[len] = '\0';
+            enemy->level = parse_enemy_level_value(value);
+            p = end;
+            continue;
+        } else if (strncmp(p, "type=", 5) == 0) {
+            const char *start = p + 5;
+            const char *end = start;
+            while (*end && !isspace((unsigned char)*end) && *end != ',') {
+                end++;
+            }
+            char value[32];
+            size_t len = (size_t)(end - start);
+            if (len >= sizeof(value)) {
+                len = sizeof(value) - 1;
+            }
+            strncpy(value, start, len);
+            value[len] = '\0';
+            enemy->level = parse_enemy_level_value(value);
+            p = end;
+            continue;
         }
 
         while (*p && !isspace((unsigned char)*p) && *p != ',') {
@@ -1429,11 +1503,13 @@ pz_map_load(const char *path)
                 }
             }
         }
-        // Legacy enemy format: enemy x y angle level
+        // Legacy enemy format: enemy x y angle level|type
         else if (strncmp(p, "enemy ", 6) == 0) {
             float ex, ey, angle;
-            int level;
-            if (sscanf(p + 6, "%f %f %f %d", &ex, &ey, &angle, &level) == 4) {
+            char level_value[32];
+            if (sscanf(p + 6, "%f %f %f %31s", &ex, &ey, &angle, level_value)
+                == 4) {
+                int level = parse_enemy_level_value(level_value);
                 if (map->enemy_count < PZ_MAP_MAX_ENEMIES) {
                     map->enemies[map->enemy_count++] = (pz_enemy_spawn) {
                         .pos = { ex, ey },
@@ -1661,8 +1737,8 @@ pz_map_save(const pz_map *map, const char *path)
 
         for (int i = 0; i < map->enemy_count; i++) {
             const pz_enemy_spawn *es = &map->enemies[i];
-            written = snprintf(p, remaining, "enemy %.2f %.2f %.3f %d\n",
-                es->pos.x, es->pos.y, es->angle, es->level);
+            written = snprintf(p, remaining, "enemy %.2f %.2f %.3f %s\n",
+                es->pos.x, es->pos.y, es->angle, enemy_level_name(es->level));
             p += written;
             remaining -= written;
         }

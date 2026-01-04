@@ -13,11 +13,11 @@ tile ~ wood_oak_amber
 # Object tags
 tag P1 spawn angle=0.785 team=0
 tag P2 spawn angle=-0.785 team=0
-tag E1 enemy angle=3.14 level=2
-tag E2 enemy angle=1.57 level=3
-tag E3 enemy angle=-1.57 level=3
-tag E4 enemy angle=0.0 level=3
-tag E5 enemy angle=-2.356 level=2
+tag E1 enemy angle=3.14 type=skirmisher
+tag E2 enemy angle=1.57 type=hunter
+tag E3 enemy angle=-1.57 type=hunter
+tag E4 enemy angle=0.0 type=hunter
+tag E5 enemy angle=-2.356 type=skirmisher
 tag W1 powerup type=machine_gun respawn=20
 tag W2 powerup type=ricochet respawn=20
 

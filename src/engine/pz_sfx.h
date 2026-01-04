@@ -18,7 +18,7 @@ typedef enum {
     PZ_SFX_ENGINE_MOVING, // engine1.wav - tank moving loop
     PZ_SFX_GUN_FIRE, // gun1.wav - tank fires
     PZ_SFX_BULLET_HIT, // gun3.wav - bullet hits bullet
-    PZ_SFX_EXPLOSION_TANK, // explosion3.wav - tank explodes
+    PZ_SFX_EXPLOSION_TANK, // explosion2.wav - tank explodes
     PZ_SFX_EXPLOSION_FINAL, // explosion1.wav - last enemy explodes
     PZ_SFX_TANK_HIT, // hit1.wav - tank hit but not destroyed
     PZ_SFX_COUNT

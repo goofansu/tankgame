@@ -14,7 +14,7 @@ tag P1 spawn angle=0.785 team=0
 tag P2 spawn angle=2.356 team=0
 tag P3 spawn angle=-0.785 team=0
 tag P4 spawn angle=-2.356 team=0
-tag E1 enemy angle=3.14 level=1
+tag E1 enemy angle=3.14 type=sentry
 tag B1 barrier tile=cobble health=20
 
 

@@ -13,6 +13,7 @@
 #include <stdint.h>
 
 #include "../core/pz_math.h"
+#include "pz_powerup.h"
 #include "pz_tank.h"
 
 // Forward declarations
@@ -24,31 +25,38 @@ typedef struct pz_projectile_manager pz_projectile_manager;
  * Enemy Types
  * ============================================================================
  *
- * Level 1: Basic enemy
+ * Level 1: Sentry enemy
  *   - 10 HP
  *   - Default weapon (1 bounce)
  *   - Normal fire rate
  *   - Stationary (turret only)
  *
- * Level 2: Intermediate enemy
+ * Level 2: Skirmisher enemy
  *   - 15 HP
  *   - Default weapon (1 bounce)
  *   - Faster fire rate
  *   - Uses cover: hides behind walls, peeks out to fire
  *
- * Level 3: Aggressive enemy (Hunter)
+ * Level 3: Hunter enemy
  *   - 20 HP
- *   - Heavy weapon (2 bounces)
+ *   - Machine gun (no bounces)
  *   - Fast fire rate
  *   - Aggressively chases player
  *   - Evades incoming bullets
  *   - Seeks cover when low health or reloading
+ *
+ * Level 4: Sniper enemy
+ *   - 12 HP
+ *   - Ricochet weapon (3 bounces)
+ *   - Slow fire rate, long-range shots
+ *   - Mostly stationary (turret only)
  */
 
 typedef enum {
     PZ_ENEMY_LEVEL_1 = 1,
     PZ_ENEMY_LEVEL_2 = 2,
     PZ_ENEMY_LEVEL_3 = 3,
+    PZ_ENEMY_LEVEL_SNIPER = 4,
 } pz_enemy_level;
 
 // Enemy stats based on level
@@ -58,10 +66,14 @@ typedef struct pz_enemy_stats {
     float fire_cooldown; // Seconds between shots
     float aim_speed; // Turret rotation speed multiplier
     pz_vec4 body_color; // Tank body color
+    pz_powerup_type weapon_type; // Default weapon for this enemy
+    float projectile_speed_scale; // Multiplier applied to weapon speed
+    float bounce_shot_range; // Bounce-search range for stationary types
 } pz_enemy_stats;
 
 // Get stats for an enemy level
 const pz_enemy_stats *pz_enemy_get_stats(pz_enemy_level level);
+const char *pz_enemy_level_name(pz_enemy_level level);
 
 /* ============================================================================
  * AI Controller

@@ -32,7 +32,8 @@ struct pz_game_sfx {
 // Volume levels for different sounds
 #define GUNFIRE_VOLUME 1.0f
 #define BULLET_HIT_VOLUME 0.5f
-#define EXPLOSION_VOLUME 0.3f
+#define EXPLOSION_VOLUME 0.6f
+#define FINAL_EXPLOSION_VOLUME 0.4f
 #define ENGINE_VOLUME 0.55f
 
 // Speed threshold for moving vs idle
@@ -210,7 +211,7 @@ pz_game_sfx_play_tank_explosion(pz_game_sfx *gsfx, bool is_final)
     }
 
     if (is_final) {
-        pz_sfx_play(gsfx->sfx, PZ_SFX_EXPLOSION_FINAL, EXPLOSION_VOLUME);
+        pz_sfx_play(gsfx->sfx, PZ_SFX_EXPLOSION_FINAL, FINAL_EXPLOSION_VOLUME);
     } else {
         pz_sfx_play(gsfx->sfx, PZ_SFX_EXPLOSION_TANK, EXPLOSION_VOLUME);
     }

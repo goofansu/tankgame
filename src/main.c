@@ -331,7 +331,7 @@ map_session_load(map_session *session, const char *map_path)
         }
     }
     session->player_tank = pz_tank_spawn(session->tank_mgr, player_spawn_pos,
-        (pz_vec4) { 0.3f, 0.5f, 0.3f, 1.0f }, true);
+        (pz_vec4) { 0.2f, 0.4f, 0.9f, 1.0f }, true);
 
     // Create AI manager and spawn enemies
     session->ai_mgr = pz_ai_manager_create(session->tank_mgr, session->map);

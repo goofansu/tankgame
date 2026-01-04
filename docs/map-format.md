@@ -23,7 +23,7 @@ water_level -1
 
 # Spawn/enemy (alternative to tags)
 spawn X Y ANGLE TEAM TEAM_SPAWN
-enemy X Y ANGLE LEVEL
+enemy X Y ANGLE TYPE
 
 # Lighting
 sun_direction X Y Z
@@ -79,7 +79,7 @@ Define reusable objects, place them in grid cells:
 
 ```
 tag P1 spawn angle=0.785 team=0
-tag E1 enemy angle=3.14 level=3
+tag E1 enemy angle=3.14 type=hunter
 tag W1 powerup type=machine_gun respawn=15
 tag W2 powerup type=ricochet respawn=20
 tag B1 barrier tile=cobble health=20
@@ -90,7 +90,7 @@ tag B1 barrier tile=cobble health=20
 ```
 
 **Spawn params:** `angle`, `team`, `team_spawn`
-**Enemy params:** `angle`, `level` (1-3)
+**Enemy params:** `angle`, `type` (sentry, skirmisher, hunter, sniper)
 **Powerup params:** `type` (machine_gun, ricochet), `respawn` (seconds, default 15)
 **Barrier params:** `tile` (tile name for texture), `health` (default 20)
 
@@ -130,7 +130,7 @@ tile : mud
 
 tag P1 spawn angle=0.785 team=0
 tag P2 spawn angle=2.356 team=0
-tag E1 enemy angle=3.14 level=1
+tag E1 enemy angle=3.14 type=sentry
 
 <grid>
 2# 2# 2# 2# 2# 2#

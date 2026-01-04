@@ -1,9 +1,9 @@
+bugs:
 * You can still shoot though 45 degree corners
-* Player tank should have a different color
-* Rename tanks from numbers
-* Give tanks different weapons
-* destroyable objects on the map
-* kill init_default_tile_defs
 
+tech:
 * spatial audio panning/attenuation (M8.2)
+
+debt:
+* kill init_default_tile_defs
 * replace fallback texture with orange checkerboard

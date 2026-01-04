@@ -12,9 +12,9 @@ tag P1 spawn angle=0.785 team=0
 tag P2 spawn angle=2.356 team=0
 tag P3 spawn angle=-0.785 team=0
 tag P4 spawn angle=-2.356 team=0
-tag E1 enemy angle=0.0 level=3
-tag E2 enemy angle=3.14 level=3
-tag E3 enemy angle=1.57 level=3
+tag E1 enemy angle=0.0 type=hunter
+tag E2 enemy angle=3.14 type=hunter
+tag E3 enemy angle=1.57 type=hunter
 tag W1 powerup type=machine_gun respawn=20
 
 
