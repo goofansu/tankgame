@@ -52,6 +52,9 @@ pz_map_create(int width, int height, float tile_size)
     map->water_level = -100; // No water by default (far below any tile)
     map->has_water = false;
     map->water_color = (pz_vec3) { 0.2f, 0.4f, 0.6f }; // Default blue
+    map->fog_level = -100; // No fog by default (far below any tile)
+    map->has_fog = false;
+    map->fog_color = (pz_vec3) { 0.6f, 0.6f, 0.7f }; // Default cool gray
 
     // Allocate cells
     int num_cells = width * height;
@@ -1584,6 +1587,14 @@ pz_map_load(const char *path)
             if (sscanf(p + 12, "%f %f %f", &r, &g, &b) == 3) {
                 map->water_color = (pz_vec3) { r, g, b };
             }
+        } else if (strncmp(p, "fog_level ", 10) == 0) {
+            map->fog_level = atoi(p + 10);
+            map->has_fog = true;
+        } else if (strncmp(p, "fog_color ", 10) == 0) {
+            float r, g, b;
+            if (sscanf(p + 10, "%f %f %f", &r, &g, &b) == 3) {
+                map->fog_color = (pz_vec3) { r, g, b };
+            }
         }
         // Background settings
         else if (strncmp(p, "background_color ", 17) == 0) {
@@ -1697,6 +1708,18 @@ pz_map_save(const pz_map *map, const char *path)
 
         written = snprintf(p, remaining, "water_color %.2f %.2f %.2f\n",
             map->water_color.x, map->water_color.y, map->water_color.z);
+        p += written;
+        remaining -= written;
+    }
+
+    // Fog level
+    if (map->has_fog) {
+        written = snprintf(p, remaining, "\nfog_level %d\n", map->fog_level);
+        p += written;
+        remaining -= written;
+
+        written = snprintf(p, remaining, "fog_color %.2f %.2f %.2f\n",
+            map->fog_color.x, map->fog_color.y, map->fog_color.z);
         p += written;
         remaining -= written;
     }

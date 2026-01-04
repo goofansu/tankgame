@@ -54,6 +54,10 @@ struct pz_map_renderer {
     pz_pipeline_handle water_pipeline;
     pz_texture_handle water_caustic_texture;
 
+    // Fog shader and pipeline
+    pz_shader_handle fog_shader;
+    pz_pipeline_handle fog_pipeline;
+
     // Ground batches (one per tile type with geometry)
     ground_batch ground_batches[MAX_TILE_TEXTURES];
     int ground_batch_count;
@@ -65,6 +69,10 @@ struct pz_map_renderer {
     // Water vertex buffer
     pz_buffer_handle water_buffer;
     int water_vertex_count;
+
+    // Fog vertex buffer
+    pz_buffer_handle fog_buffer;
+    int fog_vertex_count;
 
     // Current map
     const pz_map *map;
@@ -87,6 +95,9 @@ struct pz_map_renderer {
 // Water plane Y offset - water surface is at this Y level relative to ground
 #define WATER_Y_OFFSET -0.5f
 
+// Fog plane Y offset - fog is half a block above its level
+#define FOG_Y_OFFSET 0.5f
+
 static void
 compute_tile_uv(int tile_x, int tile_y, int map_height, int scale, float *u0,
     float *v0, float *u1, float *v1)
@@ -100,9 +111,9 @@ compute_tile_uv(int tile_x, int tile_y, int map_height, int scale, float *u0,
     *v1 = (float)(tile_y + 1) * inv_scale;
 }
 
-// Create vertices for a single tile quad on water plane
+// Create vertices for a single tile quad on a flat plane
 static float *
-emit_water_quad(float *v, float x0, float z0, float x1, float z1, float y)
+emit_plane_quad(float *v, float x0, float z0, float x1, float z1, float y)
 {
     // Triangle 1 (CCW when viewed from above +Y)
     *v++ = x0;
@@ -745,6 +756,30 @@ pz_map_renderer_create(pz_renderer *renderer, pz_texture_manager *tex_manager,
             "Failed to load water caustic texture, water effect degraded");
     }
 
+    // Fog shader
+    mr->fog_shader = pz_renderer_load_shader(
+        renderer, "shaders/fog.vert", "shaders/fog.frag", "fog");
+    if (mr->fog_shader == PZ_INVALID_HANDLE) {
+        pz_log(PZ_LOG_ERROR, PZ_LOG_CAT_RENDER, "Failed to load fog shader");
+        pz_map_renderer_destroy(mr);
+        return NULL;
+    }
+
+    // Fog pipeline (same vertex layout as ground)
+    pz_pipeline_desc fog_desc = {
+        .shader = mr->fog_shader,
+        .vertex_layout = {
+            .attrs = ground_attrs,
+            .attr_count = 2,
+            .stride = 5 * sizeof(float),
+        },
+        .blend = PZ_BLEND_ALPHA,
+        .depth = PZ_DEPTH_READ,
+        .cull = PZ_CULL_BACK,
+        .primitive = PZ_PRIMITIVE_TRIANGLES,
+    };
+    mr->fog_pipeline = pz_renderer_create_pipeline(renderer, &fog_desc);
+
     // Initialize batch handles
     for (int i = 0; i < MAX_TILE_TEXTURES; i++) {
         mr->ground_batches[i].buffer = PZ_INVALID_HANDLE;
@@ -761,6 +796,8 @@ pz_map_renderer_create(pz_renderer *renderer, pz_texture_manager *tex_manager,
 
     mr->water_buffer = PZ_INVALID_HANDLE;
     mr->water_vertex_count = 0;
+    mr->fog_buffer = PZ_INVALID_HANDLE;
+    mr->fog_vertex_count = 0;
 
     // Debug line shader and pipeline
     mr->debug_line_shader
@@ -828,6 +865,9 @@ pz_map_renderer_destroy(pz_map_renderer *mr)
     if (mr->water_buffer != PZ_INVALID_HANDLE) {
         pz_renderer_destroy_buffer(mr->renderer, mr->water_buffer);
     }
+    if (mr->fog_buffer != PZ_INVALID_HANDLE) {
+        pz_renderer_destroy_buffer(mr->renderer, mr->fog_buffer);
+    }
 
     // Pipelines
     if (mr->ground_pipeline != PZ_INVALID_HANDLE) {
@@ -839,6 +879,9 @@ pz_map_renderer_destroy(pz_map_renderer *mr)
     if (mr->water_pipeline != PZ_INVALID_HANDLE) {
         pz_renderer_destroy_pipeline(mr->renderer, mr->water_pipeline);
     }
+    if (mr->fog_pipeline != PZ_INVALID_HANDLE) {
+        pz_renderer_destroy_pipeline(mr->renderer, mr->fog_pipeline);
+    }
 
     // Shaders
     if (mr->ground_shader != PZ_INVALID_HANDLE) {
@@ -849,6 +892,9 @@ pz_map_renderer_destroy(pz_map_renderer *mr)
     }
     if (mr->water_shader != PZ_INVALID_HANDLE) {
         pz_renderer_destroy_shader(mr->renderer, mr->water_shader);
+    }
+    if (mr->fog_shader != PZ_INVALID_HANDLE) {
+        pz_renderer_destroy_shader(mr->renderer, mr->fog_shader);
     }
 
     // Debug line resources
@@ -1123,7 +1169,7 @@ pz_map_renderer_set_map(pz_map_renderer *mr, const pz_map *map)
                         float z0 = y * map->tile_size - half_h;
                         float z1 = (y + 1) * map->tile_size - half_h;
 
-                        water_ptr = emit_water_quad(
+                        water_ptr = emit_plane_quad(
                             water_ptr, x0, z0, x1, z1, water_y);
                     }
                 }
@@ -1143,6 +1189,61 @@ pz_map_renderer_set_map(pz_map_renderer *mr, const pz_map *map)
         }
     }
 
+    // Generate fog mesh (for tiles at or below fog_level)
+    if (mr->fog_buffer != PZ_INVALID_HANDLE) {
+        pz_renderer_destroy_buffer(mr->renderer, mr->fog_buffer);
+        mr->fog_buffer = PZ_INVALID_HANDLE;
+    }
+    mr->fog_vertex_count = 0;
+
+    if (map->has_fog) {
+        int fog_tile_count = 0;
+        for (int y = 0; y < map->height; y++) {
+            for (int x = 0; x < map->width; x++) {
+                int8_t h = pz_map_get_height(map, x, y);
+                if (h <= map->fog_level) {
+                    fog_tile_count++;
+                }
+            }
+        }
+
+        if (fog_tile_count > 0) {
+            int num_verts = fog_tile_count * 6;
+            float *fog_verts_data = pz_alloc(num_verts * 5 * sizeof(float));
+            float *fog_ptr = fog_verts_data;
+
+            float fog_y = GROUND_Y_OFFSET + map->fog_level * WALL_HEIGHT_UNIT
+                + FOG_Y_OFFSET;
+
+            for (int y = 0; y < map->height; y++) {
+                for (int x = 0; x < map->width; x++) {
+                    int8_t h = pz_map_get_height(map, x, y);
+                    if (h <= map->fog_level) {
+                        float x0 = x * map->tile_size - half_w;
+                        float x1 = (x + 1) * map->tile_size - half_w;
+                        float z0 = y * map->tile_size - half_h;
+                        float z1 = (y + 1) * map->tile_size - half_h;
+
+                        fog_ptr
+                            = emit_plane_quad(fog_ptr, x0, z0, x1, z1, fog_y);
+                    }
+                }
+            }
+
+            mr->fog_vertex_count = num_verts;
+
+            pz_buffer_desc desc = {
+                .type = PZ_BUFFER_VERTEX,
+                .usage = PZ_BUFFER_STATIC,
+                .data = fog_verts_data,
+                .size = num_verts * 5 * sizeof(float),
+            };
+            mr->fog_buffer = pz_renderer_create_buffer(mr->renderer, &desc);
+
+            pz_free(fog_verts_data);
+        }
+    }
+
     // Count total wall verts for logging
     int total_wall_verts = 0;
     for (int i = 0; i < mr->wall_batch_count; i++) {
@@ -1151,9 +1252,9 @@ pz_map_renderer_set_map(pz_map_renderer *mr, const pz_map *map)
 
     pz_log(PZ_LOG_INFO, PZ_LOG_CAT_RENDER,
         "Map mesh generated: %d ground batches, %d wall batches (%d verts), %d "
-        "water verts",
+        "water verts, %d fog verts",
         mr->ground_batch_count, mr->wall_batch_count, total_wall_verts,
-        mr->water_vertex_count);
+        mr->water_vertex_count, mr->fog_vertex_count);
 }
 
 void
@@ -1382,6 +1483,90 @@ pz_map_renderer_draw_water(pz_map_renderer *mr, const pz_mat4 *view_projection,
     pz_renderer_draw(mr->renderer, &cmd);
 }
 
+static void
+pz_map_renderer_draw_fog(pz_map_renderer *mr, const pz_mat4 *view_projection,
+    const pz_map_render_params *params)
+{
+    if (!mr || !mr->map || mr->fog_vertex_count == 0) {
+        return;
+    }
+
+    pz_renderer_set_uniform_mat4(
+        mr->renderer, mr->fog_shader, "u_mvp", view_projection);
+
+    float time = params ? params->time : 0.0f;
+    pz_renderer_set_uniform_float(mr->renderer, mr->fog_shader, "u_time", time);
+
+    pz_renderer_set_uniform_vec3(
+        mr->renderer, mr->fog_shader, "u_fog_color", mr->map->fog_color);
+    pz_renderer_set_uniform_float(
+        mr->renderer, mr->fog_shader, "u_fog_alpha", 0.5f);
+
+    int disturb_count = 0;
+    float disturb_strength = 0.0f;
+    pz_vec4 disturb_slots[PZ_FOG_DISTURB_MAX] = { 0 };
+
+    if (params && params->fog_disturb_count > 0) {
+        disturb_count = params->fog_disturb_count;
+        if (disturb_count > PZ_FOG_DISTURB_MAX) {
+            disturb_count = PZ_FOG_DISTURB_MAX;
+        }
+        disturb_strength = params->fog_disturb_strength;
+        for (int i = 0; i < disturb_count; i++) {
+            disturb_slots[i] = (pz_vec4) { params->fog_disturb_pos[i].x,
+                params->fog_disturb_strengths[i], params->fog_disturb_pos[i].z,
+                params->fog_disturb_radius[i] };
+        }
+    }
+
+    pz_renderer_set_uniform_int(
+        mr->renderer, mr->fog_shader, "u_fog_disturb_count", disturb_count);
+    pz_renderer_set_uniform_float(mr->renderer, mr->fog_shader,
+        "u_fog_disturb_strength", disturb_strength);
+    pz_renderer_set_uniform_vec4(
+        mr->renderer, mr->fog_shader, "u_fog_disturb0", disturb_slots[0]);
+    pz_renderer_set_uniform_vec4(
+        mr->renderer, mr->fog_shader, "u_fog_disturb1", disturb_slots[1]);
+    pz_renderer_set_uniform_vec4(
+        mr->renderer, mr->fog_shader, "u_fog_disturb2", disturb_slots[2]);
+    pz_renderer_set_uniform_vec4(
+        mr->renderer, mr->fog_shader, "u_fog_disturb3", disturb_slots[3]);
+    pz_renderer_set_uniform_vec4(
+        mr->renderer, mr->fog_shader, "u_fog_disturb4", disturb_slots[4]);
+    pz_renderer_set_uniform_vec4(
+        mr->renderer, mr->fog_shader, "u_fog_disturb5", disturb_slots[5]);
+    pz_renderer_set_uniform_vec4(
+        mr->renderer, mr->fog_shader, "u_fog_disturb6", disturb_slots[6]);
+    pz_renderer_set_uniform_vec4(
+        mr->renderer, mr->fog_shader, "u_fog_disturb7", disturb_slots[7]);
+
+    if (params && params->track_texture != PZ_INVALID_HANDLE
+        && params->track_texture != 0
+        && (mr->map->fog_level == 0 || mr->map->fog_level == 1)) {
+        pz_renderer_bind_texture(mr->renderer, 0, params->track_texture);
+        pz_renderer_set_uniform_int(
+            mr->renderer, mr->fog_shader, "u_fog_track_texture", 0);
+        pz_renderer_set_uniform_int(
+            mr->renderer, mr->fog_shader, "u_use_tracks", 1);
+        pz_renderer_set_uniform_vec2(mr->renderer, mr->fog_shader,
+            "u_track_scale",
+            (pz_vec2) { params->track_scale_x, params->track_scale_z });
+        pz_renderer_set_uniform_vec2(mr->renderer, mr->fog_shader,
+            "u_track_offset",
+            (pz_vec2) { params->track_offset_x, params->track_offset_z });
+    } else {
+        pz_renderer_set_uniform_int(
+            mr->renderer, mr->fog_shader, "u_use_tracks", 0);
+    }
+
+    pz_draw_cmd cmd = {
+        .pipeline = mr->fog_pipeline,
+        .vertex_buffer = mr->fog_buffer,
+        .vertex_count = mr->fog_vertex_count,
+    };
+    pz_renderer_draw(mr->renderer, &cmd);
+}
+
 void
 pz_map_renderer_draw(pz_map_renderer *mr, const pz_mat4 *view_projection,
     const pz_map_render_params *params)
@@ -1389,6 +1574,7 @@ pz_map_renderer_draw(pz_map_renderer *mr, const pz_mat4 *view_projection,
     pz_map_renderer_draw_walls(mr, view_projection, params);
     pz_map_renderer_draw_ground(mr, view_projection, params);
     pz_map_renderer_draw_water(mr, view_projection, params);
+    pz_map_renderer_draw_fog(mr, view_projection, params);
 }
 
 void

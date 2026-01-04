@@ -152,6 +152,19 @@ typedef struct {
 } explosion_light;
 
 #define MAX_EXPLOSION_LIGHTS 16
+#define MAX_FOG_MARKS 128
+#define FOG_MARK_LIFETIME 3.0f
+#define FOG_MARK_TANK_MIN_DIST 0.6f
+#define FOG_MARK_PROJ_MIN_DIST 0.4f
+
+typedef struct fog_mark {
+    bool active;
+    pz_vec2 pos;
+    float timer;
+    float duration;
+    float radius;
+    float strength;
+} fog_mark;
 
 // Game states
 typedef enum {
@@ -187,6 +200,14 @@ typedef struct map_session {
     // Map gameplay state
     int initial_enemy_count;
     explosion_light explosion_lights[MAX_EXPLOSION_LIGHTS];
+
+    // Fog disturbance trail
+    fog_mark fog_marks[MAX_FOG_MARKS];
+    int fog_mark_count;
+    pz_vec2 fog_last_tank_pos[PZ_MAX_TANKS];
+    bool fog_has_tank_pos[PZ_MAX_TANKS];
+    pz_vec2 fog_last_projectile_pos[PZ_MAX_PROJECTILES];
+    bool fog_has_projectile_pos[PZ_MAX_PROJECTILES];
 } map_session;
 
 typedef struct app_state {
@@ -258,6 +279,7 @@ static const float LASER_MAX_DIST = 50.0f;
 // Forward declarations
 static void map_session_unload(map_session *session);
 static bool map_session_load(map_session *session, const char *map_path);
+static void fog_marks_clear(map_session *session);
 static void audio_callback(
     float *buffer, int num_frames, int num_channels, void *userdata);
 
@@ -454,6 +476,7 @@ map_session_load(map_session *session, const char *map_path)
 
     // Clear explosion lights
     memset(session->explosion_lights, 0, sizeof(session->explosion_lights));
+    fog_marks_clear(session);
 
     pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME, "Map session loaded: %s (%d enemies)",
         map_path, enemy_count);
@@ -559,7 +582,152 @@ map_session_reset(map_session *session)
         pz_tracks_clear(session->tracks);
     }
 
+    fog_marks_clear(session);
+
     pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME, "Map session reset");
+}
+
+static void
+fog_marks_clear(map_session *session)
+{
+    if (!session) {
+        return;
+    }
+
+    for (int i = 0; i < MAX_FOG_MARKS; i++) {
+        session->fog_marks[i].active = false;
+    }
+    session->fog_mark_count = 0;
+
+    for (int i = 0; i < PZ_MAX_TANKS; i++) {
+        session->fog_has_tank_pos[i] = false;
+    }
+    for (int i = 0; i < PZ_MAX_PROJECTILES; i++) {
+        session->fog_has_projectile_pos[i] = false;
+    }
+}
+
+static void
+fog_marks_update(map_session *session, float dt)
+{
+    if (!session || session->fog_mark_count == 0) {
+        return;
+    }
+
+    int active_count = 0;
+    for (int i = 0; i < MAX_FOG_MARKS; i++) {
+        fog_mark *mark = &session->fog_marks[i];
+        if (!mark->active) {
+            continue;
+        }
+
+        mark->timer -= dt;
+        if (mark->timer <= 0.0f) {
+            mark->active = false;
+            continue;
+        }
+
+        active_count++;
+    }
+
+    session->fog_mark_count = active_count;
+}
+
+static void
+fog_marks_add(map_session *session, pz_vec2 pos, float radius, float strength)
+{
+    if (!session) {
+        return;
+    }
+
+    int slot = -1;
+    for (int i = 0; i < MAX_FOG_MARKS; i++) {
+        if (!session->fog_marks[i].active) {
+            slot = i;
+            break;
+        }
+    }
+
+    if (slot < 0) {
+        float lowest_timer = 9999.0f;
+        for (int i = 0; i < MAX_FOG_MARKS; i++) {
+            if (session->fog_marks[i].timer < lowest_timer) {
+                lowest_timer = session->fog_marks[i].timer;
+                slot = i;
+            }
+        }
+    }
+
+    if (slot < 0) {
+        return;
+    }
+
+    fog_mark *mark = &session->fog_marks[slot];
+    if (!mark->active) {
+        session->fog_mark_count++;
+    }
+
+    mark->active = true;
+    mark->pos = pos;
+    mark->timer = FOG_MARK_LIFETIME;
+    mark->duration = FOG_MARK_LIFETIME;
+    mark->radius = radius;
+    mark->strength = strength;
+}
+
+static void
+fog_marks_emit(map_session *session)
+{
+    if (!session || !session->map || !session->map->has_fog) {
+        return;
+    }
+
+    if (session->map->fog_level != 0 && session->map->fog_level != 1) {
+        return;
+    }
+
+    if (session->tank_mgr) {
+        for (int i = 0; i < PZ_MAX_TANKS; i++) {
+            pz_tank *tank = &session->tank_mgr->tanks[i];
+            if (!(tank->flags & PZ_TANK_FLAG_ACTIVE)
+                || (tank->flags & PZ_TANK_FLAG_DEAD)) {
+                session->fog_has_tank_pos[i] = false;
+                continue;
+            }
+            if (pz_vec2_len(tank->vel) < 0.15f) {
+                continue;
+            }
+
+            pz_vec2 pos = tank->pos;
+            if (!session->fog_has_tank_pos[i]
+                || pz_vec2_len(pz_vec2_sub(pos, session->fog_last_tank_pos[i]))
+                    >= FOG_MARK_TANK_MIN_DIST) {
+                fog_marks_add(session, pos, 2.4f, 1.0f);
+                session->fog_last_tank_pos[i] = pos;
+                session->fog_has_tank_pos[i] = true;
+            }
+        }
+    }
+
+    if (session->projectile_mgr) {
+        for (int i = 0; i < PZ_MAX_PROJECTILES; i++) {
+            pz_projectile *proj = &session->projectile_mgr->projectiles[i];
+            if (!proj->active) {
+                session->fog_has_projectile_pos[i] = false;
+                continue;
+            }
+
+            pz_vec2 pos = proj->pos;
+            if (!session->fog_has_projectile_pos[i]
+                || pz_vec2_len(
+                       pz_vec2_sub(pos, session->fog_last_projectile_pos[i]))
+                    >= FOG_MARK_PROJ_MIN_DIST) {
+                fog_marks_add(session, pos, 1.3f, 0.85f);
+                session->fog_last_projectile_pos[i] = pos;
+                session->fog_has_projectile_pos[i] = true;
+            }
+        }
+    }
 }
 
 // ============================================================================
@@ -1182,6 +1350,9 @@ app_frame(void)
         pz_sim_end_tick(g_app.sim);
     }
 
+    fog_marks_update(&g_app.session, frame_dt);
+    fog_marks_emit(&g_app.session);
+
     {
         pz_projectile_hit hits[PZ_MAX_PROJECTILE_HITS];
         int hit_count = pz_projectile_get_hits(
@@ -1474,6 +1645,46 @@ app_frame(void)
         render_params.has_sun = map_light->has_sun;
         render_params.sun_direction = map_light->sun_direction;
         render_params.sun_color = map_light->sun_color;
+    }
+
+    render_params.fog_disturb_count = 0;
+    render_params.fog_disturb_strength = 1.0f;
+    if (g_app.session.map && g_app.session.map->has_fog
+        && (g_app.session.map->fog_level == 0
+            || g_app.session.map->fog_level == 1)) {
+        for (int i = 0; i < MAX_FOG_MARKS; i++) {
+            fog_mark *mark = &g_app.session.fog_marks[i];
+            if (!mark->active || mark->duration <= 0.0f) {
+                continue;
+            }
+
+            float t = pz_clampf(mark->timer / mark->duration, 0.0f, 1.0f);
+            float strength = mark->strength * t;
+            if (render_params.fog_disturb_count < PZ_FOG_DISTURB_MAX) {
+                int idx = render_params.fog_disturb_count++;
+                render_params.fog_disturb_pos[idx]
+                    = (pz_vec3) { mark->pos.x, 0.0f, mark->pos.y };
+                render_params.fog_disturb_radius[idx] = mark->radius;
+                render_params.fog_disturb_strengths[idx] = strength;
+                continue;
+            }
+
+            int weakest = 0;
+            float weakest_strength = render_params.fog_disturb_strengths[0];
+            for (int j = 1; j < render_params.fog_disturb_count; j++) {
+                if (render_params.fog_disturb_strengths[j] < weakest_strength) {
+                    weakest = j;
+                    weakest_strength = render_params.fog_disturb_strengths[j];
+                }
+            }
+
+            if (strength > weakest_strength) {
+                render_params.fog_disturb_pos[weakest]
+                    = (pz_vec3) { mark->pos.x, 0.0f, mark->pos.y };
+                render_params.fog_disturb_radius[weakest] = mark->radius;
+                render_params.fog_disturb_strengths[weakest] = strength;
+            }
+        }
     }
 
     // Time for water animation

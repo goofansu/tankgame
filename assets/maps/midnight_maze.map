@@ -45,3 +45,7 @@ background_gradient vertical 0.02 0.02 0.06 0.06 0.04 0.1
 
 # No water
 water_level -100
+
+# Ground fog - low midnight haze
+fog_level 0
+fog_color 0.18 0.22 0.3

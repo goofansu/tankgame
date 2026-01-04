@@ -1,5 +1,6 @@
 bugs:
-* You can still shoot though 45 degree corners
+* wall render bug, shown here: MAP=deep_sea.map
+* also the side walls shuold probably use a different texture?
 
 tech:
 * spatial audio panning/attenuation (M8.2)

@@ -130,6 +130,12 @@ typedef struct pz_map {
     bool has_water;
     pz_vec3 water_color; // Base water color (RGB 0-1)
 
+    // Ground fog level (height at which fog plane renders)
+    // Tiles at or below this height receive fog
+    int fog_level;
+    bool has_fog;
+    pz_vec3 fog_color; // Base fog color (RGB 0-1)
+
     // Spawn points (for player)
     pz_spawn_point spawns[PZ_MAP_MAX_SPAWNS];
     int spawn_count;

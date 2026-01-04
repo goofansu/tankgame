@@ -17,6 +17,10 @@ tag NAME type key=value...
 # Optional water level
 water_level -1
 
+# Optional ground fog level
+fog_level 0
+fog_color 0.25 0.3 0.4
+
 <grid>
 ... cells ...
 </grid>
@@ -101,6 +105,38 @@ water_level -1
 ```
 
 Water surface renders slightly below ground. Tiles at or below water_level are submerged.
+
+## Ground Fog
+
+```
+fog_level 0
+fog_color 0.25 0.3 0.4
+```
+
+Ground fog creates an atmospheric layer that obscures lower parts of the map:
+
+- **fog_level**: Height threshold for fog coverage (integer). Tiles at or below this level are covered.
+- **fog_color**: RGB color (0.0-1.0 each) that tints the fog layer.
+
+The fog plane renders at half a block above the specified level, creating a smooth transition. Use fog for:
+- Swamp/marsh atmosphere (low-lying green-gray fog)
+- Night ambiance (dark blue-gray fog at ground level)
+- Industrial/urban maps (brownish smog)
+
+Example combinations:
+```
+# Swamp fog
+fog_level -1
+fog_color 0.2 0.3 0.2
+
+# Night mist
+fog_level 0
+fog_color 0.15 0.15 0.25
+
+# Industrial smog
+fog_level 0
+fog_color 0.35 0.3 0.25
+```
 
 ## Lighting
 

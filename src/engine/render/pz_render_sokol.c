@@ -54,6 +54,7 @@ static const shader_desc_entry SHADER_DESC_TABLE[] = {
     { "textured", tankgame_textured_shader_desc },
     { "ground", tankgame_ground_shader_desc },
     { "water", tankgame_water_shader_desc },
+    { "fog", tankgame_fog_shader_desc },
     { "wall", tankgame_wall_shader_desc },
     { "entity", tankgame_entity_shader_desc },
     { "tank", tankgame_tank_shader_desc },
@@ -92,6 +93,7 @@ static const char *SHADER_BLOCKS_GROUND[]
     = { "ground_vs_params", "ground_fs_params" };
 static const char *SHADER_BLOCKS_WATER[]
     = { "water_vs_params", "water_fs_params" };
+static const char *SHADER_BLOCKS_FOG[] = { "fog_vs_params", "fog_fs_params" };
 static const char *SHADER_BLOCKS_WALL[]
     = { "wall_vs_params", "wall_fs_params" };
 static const char *SHADER_BLOCKS_ENTITY[]
@@ -127,6 +129,10 @@ static const shader_reflection SHADER_REFLECTION_TABLE[] = {
         tankgame_water_uniformblock_slot, tankgame_water_uniformblock_size,
         SHADER_BLOCKS_WATER,
         (int)(sizeof(SHADER_BLOCKS_WATER) / sizeof(SHADER_BLOCKS_WATER[0])) },
+    { "fog", tankgame_fog_uniform_offset, tankgame_fog_uniform_desc,
+        tankgame_fog_uniformblock_slot, tankgame_fog_uniformblock_size,
+        SHADER_BLOCKS_FOG,
+        (int)(sizeof(SHADER_BLOCKS_FOG) / sizeof(SHADER_BLOCKS_FOG[0])) },
     { "wall", tankgame_wall_uniform_offset, tankgame_wall_uniform_desc,
         tankgame_wall_uniformblock_slot, tankgame_wall_uniformblock_size,
         SHADER_BLOCKS_WALL,

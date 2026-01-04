@@ -30,6 +30,8 @@ void pz_map_renderer_destroy(pz_map_renderer *mr);
 void pz_map_renderer_set_map(pz_map_renderer *mr, const pz_map *map);
 
 // Lighting parameters for rendering
+#define PZ_FOG_DISTURB_MAX 8
+
 typedef struct pz_map_render_params {
     // Track texture (optional)
     pz_texture_handle track_texture;
@@ -46,7 +48,14 @@ typedef struct pz_map_render_params {
     pz_vec3 sun_direction;
     pz_vec3 sun_color;
 
-    // Animation time (for water)
+    // Fog disturbance points (positions in world space)
+    int fog_disturb_count;
+    pz_vec3 fog_disturb_pos[PZ_FOG_DISTURB_MAX];
+    float fog_disturb_radius[PZ_FOG_DISTURB_MAX];
+    float fog_disturb_strength;
+    float fog_disturb_strengths[PZ_FOG_DISTURB_MAX];
+
+    // Animation time (for water/fog)
     float time;
 } pz_map_render_params;
 
