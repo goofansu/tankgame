@@ -160,15 +160,24 @@ layout(location=1) in vec2 a_texcoord;
 
 layout(std140, binding=0) uniform water_vs_params {
     mat4 u_mvp;
+    float u_wave_time;
 };
 
 layout(location=0) out vec2 v_texcoord;
 layout(location=1) out vec3 v_world_pos;
 
 void main() {
-    gl_Position = u_mvp * vec4(a_position, 1.0);
+    float wave = 0.0;
+    wave += sin(a_position.x * 0.7 + u_wave_time * 0.9) * 0.12;
+    wave += sin(a_position.z * 1.1 + u_wave_time * 1.2) * 0.10;
+    wave += sin((a_position.x + a_position.z) * 0.4 + u_wave_time * 0.6) * 0.07;
+
+    vec3 displaced_pos = a_position;
+    displaced_pos.y += wave;
+
+    gl_Position = u_mvp * vec4(displaced_pos, 1.0);
     v_texcoord = a_texcoord;
-    v_world_pos = a_position;
+    v_world_pos = displaced_pos;
 }
 @end
 

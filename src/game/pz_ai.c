@@ -1319,7 +1319,12 @@ pz_ai_fire(pz_ai_manager *ai_mgr, pz_projectile_manager *proj_mgr)
 
         float aim_error = fabsf(
             normalize_angle(ctrl->target_aim_angle - ctrl->current_aim_angle));
-        if (aim_error > 0.26f) { // ~15 degrees
+        float aim_tolerance = 0.26f; // ~15 degrees
+        if (ctrl->level == PZ_ENEMY_LEVEL_3) {
+            // Machine gun hunters can fire with looser alignment.
+            aim_tolerance = 0.52f; // ~30 degrees
+        }
+        if (aim_error > aim_tolerance) {
             continue;
         }
 
@@ -1378,7 +1383,13 @@ pz_ai_fire(pz_ai_manager *ai_mgr, pz_projectile_manager *proj_mgr)
         }
 
         // Reset fire timer to the weapon's max fire rate (same as player).
-        ctrl->fire_timer = weapon->fire_cooldown;
+        float fire_cooldown = weapon->fire_cooldown;
+        if (ctrl->level == PZ_ENEMY_LEVEL_3) {
+            // Keep the hunter firing aggressively without affecting other
+            // types.
+            fire_cooldown *= 0.8f;
+        }
+        ctrl->fire_timer = fire_cooldown;
         fired++;
 
         // Track shots for cover behavior
