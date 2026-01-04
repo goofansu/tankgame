@@ -28,33 +28,87 @@
 - [x] M3.4: 3D wall geometry from height map with lighting
 - [x] M3.5: map hot-reload
 
-## Quality Improvements (pre-Phase 4)
+## Quality Improvements
 - [x] Wider map (24x14) for better 16:9 fit
 - [x] MSAA (4x multisampling) for anti-aliased edges
 - [x] Mipmapping on terrain textures for cleaner distant tiles
 - [x] Camera auto-fit to show entire map
 - [x] Fixed map parser to correctly load terrain types
 
-## Phase 4: First Entity - The Tank (complete)
+## Phase 4: First Entity - The Tank
 - [x] M4.1: tank body mesh, turret mesh, entity shader, renders at origin
 - [x] M4.2: entity system (specialized managers: pz_tank_manager, pz_projectile_manager, pz_ai_manager)
 - [x] M4.3: tank entity structure (pz_tank with health, loadout, rendering params)
-- [x] M4.4: input system (WASD + mouse aiming) - frontloaded
+- [x] M4.4: input system (WASD + mouse aiming)
 - [x] M4.5: simulation timestep + determinism harness (pz_sim with fixed timestep, RNG, state hashing)
-- [x] M4.6: tank movement (WASD control, mouse turret aim) - frontloaded
-- [x] M4.7: tank-wall collision (separate axis, sliding along walls) - frontloaded
+- [x] M4.6: tank movement (WASD control, mouse turret aim)
+- [x] M4.7: tank-wall collision (separate axis, sliding along walls)
 
-## Phase 6: Weapons and Projectiles (frontloaded)
+## Phase 5: Physics and Collision
+- [ ] M5.1: collision shapes (circle, rect as reusable API)
+- [ ] M5.2: collision world (spatial queries)
+- [x] M5.3: raycast (DDA algorithm with normals, used for projectiles and AI LOS)
+- [ ] M5.4: tank-tank collision (tanks currently pass through each other)
+
+## Phase 6: Weapons and Projectiles
 - [x] M6.1: projectile entity, mesh, movement, lifetime
 - [x] M6.2: tank firing (left mouse button, cooldown, spawn at turret tip)
 - [x] M6.3: projectile-wall collision with bouncing (1 bounce)
-- [x] M6.4: projectile-tank collision (damage, flash, tank system refactor)
-- [ ] M6.5: tank death and respawn
+- [x] M6.4: projectile-tank collision (damage, flash)
+- [x] M6.5: tank death and respawn (player respawns, enemies stay dead)
 
-## Phase 7: Track Accumulation (frontloaded)
+## Phase 7: Track Accumulation
 - [x] M7.1: FBO accumulation texture, track rendering pipeline
 - [x] M7.2: ground shader samples track texture using world coordinates
 - [x] M7.3: track marks placed at distance intervals for each tread
+
+## Phase 7B: Enemy AI and Campaign
+- [x] M7B.1: enemy types and spawn data (Level 1/2/3 enemies)
+- [x] M7B.2: Level 1 enemy AI (stationary, aim + fire at player)
+- [x] M7B.2+: Level 2 enemy AI (uses cover, peeks to fire, retreats)
+- [x] M7B.3: enemy death (no respawn)
+- [x] M7B.4: campaign maps (13 maps in main.campaign)
+- [x] M7B.5: win condition (all enemies defeated)
+- [x] A* pathfinding system (pz_pathfinding.c)
+
+## Phase 8: Audio Foundation
+- [x] M8.1: sokol_audio + MIDI music layers
+- [x] M8.2: sound effects system (WAV loading, mixing, looping)
+- [x] M8.3: game SFX integration (engine sounds, gunfire, explosions)
+
+## Phase 9: Mines and Pickups (partial)
+- [ ] M9.1: mine entity
+- [ ] M9.2: mine triggering (proximity, timed)
+- [ ] M9.3: shooting mines
+- [x] M9.4: pickup entity (pz_powerup with floating animation)
+- [x] M9.5: pickup collection (tank-powerup collision, effect applied)
+- [x] M9.6: weapon switching (machine gun, ricochet weapons with ammo)
+
+## Phase 10: Destructibles (partial)
+- [x] M10.1: destructible entity (pz_barrier system)
+- [x] M10.2: destructible collision (blocks movement and projectiles)
+- [x] M10.3: destroying destructibles (HP tracking, destruction)
+- [ ] M10.4: crate placing (pickup gives crate placer)
+
+## Phase 11: Map Editor
+- [ ] M11.1: editor mode toggle (F1)
+- [ ] M11.2: tile painting
+- [ ] M11.3: wall height editing
+- [ ] M11.4: entity placement
+- [x] M11.5: map format + saving (text format exists, used by map_tool.py)
+- [ ] M11.6: game mode objects
+
+## Phase 12: Game Modes
+- [ ] M12.1: mode framework
+- [ ] M12.2: deathmatch mode
+- [ ] M12.3: capture the flag mode
+- [ ] M12.4: domination mode
+
+## Phase 16: Polish and Game Feel (partial)
+- [ ] M16.1: screen shake
+- [x] M16.2: particle system (smoke, fog, impact particles)
+- [x] M16.3: hit feedback (damage flash, sound)
+- [ ] M16.4: UI polish (main menu, etc.)
 
 ## Dynamic Lighting System
 - [x] 2D light map with shadow casting from walls and tanks
@@ -64,26 +118,12 @@
 - [x] Light map applied to ground, wall sides, tanks, and projectiles
 - [x] Wall tops remain unlit by dynamic lights (ambient only)
 
-## Bug Fixes
-- [x] Fixed pz_map_set_tile to auto-set height for WALL tiles (test_map fix)
-
 ## UI/HUD System
 - [x] SDF font rendering system (pz_font.h/c) using stb_truetype
 - [x] Russo One and Caveat Brush fonts loaded
 - [x] Player health display (bottom-right, color-coded by health %)
-
----
-
-## Enemy AI System
-- [x] M7B.1: Enemy types and spawn data (Level 1/2/3 enemies)
-- [x] M7B.2: Level 1 enemy AI (stationary, aim + fire at player)
-- [x] M7B.2+: Level 2 enemy AI (uses cover, peeks to fire, retreats)
-- [x] M7B.3: Enemy death (no respawn)
-- [ ] M7B.4: Campaign map 1 (1x Level 1 enemy)
-- [x] M7B.5: Win condition (all enemies defeated)
-
-## Phase 6 Completion
-- [x] M6.5: Tank death and respawn (player respawns, enemies stay dead)
+- [x] Level/lives/enemies HUD
+- [x] State overlays (Level Complete, Game Over, Campaign Complete)
 
 ## Campaign System
 - [x] Campaign file format (plain text, NAME/MAP/LIVES commands)
@@ -91,21 +131,27 @@
 - [x] Map session system (encapsulates all map-dependent state)
 - [x] Level transitions (SPACE to advance, R to restart)
 - [x] Lives system (lose life on death, game over when 0)
-- [x] HUD updates (Level X/Y, Lives: N, enemies count)
-- [x] State overlays (Level Complete, Game Over, Campaign Complete)
-- [x] Main campaign with night_arena → day_arena
+- [x] 13-level main campaign
 
-## Phase 8: Audio Foundation
-- [x] M8.1: sokol_audio + MIDI music layers
-- [x] M8.2: Sound effects system (WAV loading, mixing, looping)
-- [x] M8.3: Game SFX integration (engine sounds, gunfire, explosions)
+---
 
-## Next Up
-- [ ] Phase 5: Physics and Collision (M5.1-M5.4)
-- [ ] Phase 8: Audio Foundation (M8.2-M8.3)
+## Remaining Work
+
+### High Priority (gameplay gaps)
+- [ ] M5.4: tank-tank collision (tanks pass through each other)
+- [ ] M9.1-9.3: mines (not implemented)
+
+### Medium Priority (content/polish)
+- [ ] M16.1: screen shake on explosions
+- [ ] M16.4: main menu, UI polish
+
+### Lower Priority (extra features)
+- [ ] Phase 11: map editor (map_tool.py exists for CLI editing)
+- [ ] Phase 12: game modes (deathmatch, CTF, domination)
+- [ ] M5.1-5.2: formal collision API (current inline collision works)
 
 ## Plan Changes
-- Networking phases (13-15) deferred
-- Focus on single-player campaign with enemy AI
+- Networking phases (13-15) deferred indefinitely
+- Focus on single-player campaign (complete)
 - Enemies defined in map files (type, position)
 - 3 enemy types with different stats/behaviors
