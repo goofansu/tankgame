@@ -404,8 +404,7 @@ emit_wall_sides(float *v, float x0, float z0, float x1, float z1,
     compute_tile_uv(
         tile_x, tile_y, map->height, scale, &u0, &v0_uv, &u1, &v1_uv);
 
-    int top_level = h > 0 ? h : 0; // For AO calculation
-    int bottom_level = (int)((y_bottom - GROUND_Y_OFFSET) / WALL_HEIGHT_UNIT);
+    int top_level = h > 0 ? h : 0; // For AO calculation on top face
 
     // Top face (only for raised walls, not pits)
     if (emit_top) {
@@ -433,64 +432,52 @@ emit_wall_sides(float *v, float x0, float z0, float x1, float z1,
     float v_uv_for_bottom
         = y_bottom_units * inv_scale; // v1_uv in emit_wall_face
 
+    // Side faces use uniform AO computed at ground level (0) to avoid
+    // gradient artifacts when adjacent walls have different heights.
+    // The AO represents occlusion from horizontal neighbors at the base.
+
     // Back face (-Z)
     if (back_exposed) {
-        float ao0 = compute_wall_corner_ao(
-            map, tile_x, bottom_level, tile_y, 0, 0, -1);
-        float ao1
-            = compute_wall_corner_ao(map, tile_x, top_level, tile_y, 0, 0, -1);
-        float ao2 = compute_wall_corner_ao(
-            map, tile_x + 1, top_level, tile_y, 0, 0, -1);
-        float ao3 = compute_wall_corner_ao(
-            map, tile_x + 1, bottom_level, tile_y, 0, 0, -1);
+        float ao_left
+            = compute_wall_corner_ao(map, tile_x, 0, tile_y, 0, 0, -1);
+        float ao_right
+            = compute_wall_corner_ao(map, tile_x + 1, 0, tile_y, 0, 0, -1);
         v = emit_wall_face(v, x0, y_bottom, z0, x0, y_top, z0, x1, y_top, z0,
             x1, y_bottom, z0, 0.0f, 0.0f, -1.0f, u0, v_uv_for_top, u1,
-            v_uv_for_bottom, ao0, ao1, ao2, ao3);
+            v_uv_for_bottom, ao_left, ao_left, ao_right, ao_right);
     }
 
     // Front face (+Z)
     if (front_exposed) {
-        float ao0 = compute_wall_corner_ao(
-            map, tile_x + 1, bottom_level, tile_y + 1, 0, 0, 1);
-        float ao1 = compute_wall_corner_ao(
-            map, tile_x + 1, top_level, tile_y + 1, 0, 0, 1);
-        float ao2 = compute_wall_corner_ao(
-            map, tile_x, top_level, tile_y + 1, 0, 0, 1);
-        float ao3 = compute_wall_corner_ao(
-            map, tile_x, bottom_level, tile_y + 1, 0, 0, 1);
+        float ao_right
+            = compute_wall_corner_ao(map, tile_x + 1, 0, tile_y + 1, 0, 0, 1);
+        float ao_left
+            = compute_wall_corner_ao(map, tile_x, 0, tile_y + 1, 0, 0, 1);
         v = emit_wall_face(v, x1, y_bottom, z1, x1, y_top, z1, x0, y_top, z1,
             x0, y_bottom, z1, 0.0f, 0.0f, 1.0f, u1, v_uv_for_top, u0,
-            v_uv_for_bottom, ao0, ao1, ao2, ao3);
+            v_uv_for_bottom, ao_right, ao_right, ao_left, ao_left);
     }
 
     // Left face (-X)
     if (left_exposed) {
-        float ao0 = compute_wall_corner_ao(
-            map, tile_x, bottom_level, tile_y + 1, -1, 0, 0);
-        float ao1 = compute_wall_corner_ao(
-            map, tile_x, top_level, tile_y + 1, -1, 0, 0);
-        float ao2
-            = compute_wall_corner_ao(map, tile_x, top_level, tile_y, -1, 0, 0);
-        float ao3 = compute_wall_corner_ao(
-            map, tile_x, bottom_level, tile_y, -1, 0, 0);
+        float ao_front
+            = compute_wall_corner_ao(map, tile_x, 0, tile_y + 1, -1, 0, 0);
+        float ao_back
+            = compute_wall_corner_ao(map, tile_x, 0, tile_y, -1, 0, 0);
         v = emit_wall_face(v, x0, y_bottom, z1, x0, y_top, z1, x0, y_top, z0,
             x0, y_bottom, z0, -1.0f, 0.0f, 0.0f, v1_uv, v_uv_for_top, v0_uv,
-            v_uv_for_bottom, ao0, ao1, ao2, ao3);
+            v_uv_for_bottom, ao_front, ao_front, ao_back, ao_back);
     }
 
     // Right face (+X)
     if (right_exposed) {
-        float ao0 = compute_wall_corner_ao(
-            map, tile_x + 1, bottom_level, tile_y, 1, 0, 0);
-        float ao1 = compute_wall_corner_ao(
-            map, tile_x + 1, top_level, tile_y, 1, 0, 0);
-        float ao2 = compute_wall_corner_ao(
-            map, tile_x + 1, top_level, tile_y + 1, 1, 0, 0);
-        float ao3 = compute_wall_corner_ao(
-            map, tile_x + 1, bottom_level, tile_y + 1, 1, 0, 0);
+        float ao_back
+            = compute_wall_corner_ao(map, tile_x + 1, 0, tile_y, 1, 0, 0);
+        float ao_front
+            = compute_wall_corner_ao(map, tile_x + 1, 0, tile_y + 1, 1, 0, 0);
         v = emit_wall_face(v, x1, y_bottom, z0, x1, y_top, z0, x1, y_top, z1,
             x1, y_bottom, z1, 1.0f, 0.0f, 0.0f, v0_uv, v_uv_for_top, v1_uv,
-            v_uv_for_bottom, ao0, ao1, ao2, ao3);
+            v_uv_for_bottom, ao_back, ao_back, ao_front, ao_front);
     }
 
     return v;
