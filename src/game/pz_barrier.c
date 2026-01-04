@@ -714,7 +714,7 @@ pz_barrier_render(pz_barrier_manager *mgr, pz_renderer *renderer,
 
         // Dynamic lighting
         if (params->light_texture != PZ_INVALID_HANDLE) {
-            pz_renderer_bind_texture(renderer, params->light_texture, 2);
+            pz_renderer_bind_texture(renderer, 2, params->light_texture);
             pz_renderer_set_uniform_int(
                 renderer, mgr->shader, "u_light_texture", 2);
             pz_renderer_set_uniform_int(
@@ -738,12 +738,12 @@ pz_barrier_render(pz_barrier_manager *mgr, pz_renderer *renderer,
     // Note: Wall shader uses slot 0 for top texture, slot 1 for side texture
     // For simplicity, we use the same texture for both
     if (texture != PZ_INVALID_HANDLE) {
-        pz_renderer_bind_texture(renderer, texture, 0);
-        pz_renderer_set_uniform_int(renderer, mgr->shader, "u_texture", 0);
+        pz_renderer_bind_texture(renderer, 0, texture);
+        pz_renderer_set_uniform_int(renderer, mgr->shader, "u_texture_top", 0);
     }
     if (side_texture != PZ_INVALID_HANDLE) {
-        pz_renderer_bind_texture(renderer, side_texture, 1);
-        pz_renderer_set_uniform_int(renderer, mgr->shader, "u_side_texture", 1);
+        pz_renderer_bind_texture(renderer, 1, side_texture);
+        pz_renderer_set_uniform_int(renderer, mgr->shader, "u_texture_side", 1);
     }
 
     // Draw using pz_draw_cmd

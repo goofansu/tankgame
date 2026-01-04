@@ -162,6 +162,8 @@ typedef struct app_state {
     float mouse_y;
     bool mouse_left_down;
     bool mouse_left_just_pressed;
+    bool space_down;
+    bool space_just_pressed;
     float scroll_accumulator;
     bool key_f_just_pressed;
     bool key_down[SAPP_KEYCODE_COUNT];
@@ -701,6 +703,8 @@ app_init(void)
     g_app.mouse_y = (float)height * 0.5f;
     g_app.mouse_left_down = false;
     g_app.mouse_left_just_pressed = false;
+    g_app.space_down = false;
+    g_app.space_just_pressed = false;
     g_app.scroll_accumulator = 0.0f;
     g_app.key_f_just_pressed = false;
 }
@@ -861,7 +865,7 @@ app_frame(void)
         float aim_dx = mouse_world.x - g_app.session.player_tank->pos.x;
         float aim_dz = mouse_world.z - g_app.session.player_tank->pos.y;
         player_input.target_turret = atan2f(aim_dx, aim_dz);
-        player_input.fire = g_app.mouse_left_down;
+        player_input.fire = g_app.mouse_left_down || g_app.space_down;
     }
 
     // Handle weapon cycling (once per frame, not per sim tick)
@@ -918,9 +922,10 @@ app_frame(void)
             const pz_weapon_stats *weapon
                 = pz_weapon_get_stats((pz_powerup_type)current_weapon);
 
-            bool should_fire = weapon->auto_fire
-                ? g_app.mouse_left_down
-                : g_app.mouse_left_just_pressed;
+            bool fire_held = g_app.mouse_left_down || g_app.space_down;
+            bool fire_pressed
+                = g_app.mouse_left_just_pressed || g_app.space_just_pressed;
+            bool should_fire = weapon->auto_fire ? fire_held : fire_pressed;
 
             int active_projectiles = pz_projectile_count_by_owner(
                 g_app.session.projectile_mgr, g_app.session.player_tank->id);
@@ -1682,6 +1687,7 @@ app_frame(void)
     }
 
     g_app.mouse_left_just_pressed = false;
+    g_app.space_just_pressed = false;
     g_app.key_f_just_pressed = false;
 }
 
@@ -1723,7 +1729,9 @@ app_event(const sapp_event *event)
             } else if (event->key_code == SAPP_KEYCODE_F) {
                 g_app.key_f_just_pressed = true;
             } else if (event->key_code == SAPP_KEYCODE_SPACE) {
-                // SPACE advances to next level (only in level complete state)
+                // SPACE fires during gameplay, advances level when complete
+                g_app.space_down = true;
+                g_app.space_just_pressed = true;
                 if (g_app.state == GAME_STATE_LEVEL_COMPLETE
                     && g_app.state_timer > 1.5f) {
                     if (g_app.campaign_mgr && g_app.campaign_mgr->loaded) {
@@ -1797,6 +1805,9 @@ app_event(const sapp_event *event)
     case SAPP_EVENTTYPE_KEY_UP:
         if (event->key_code >= 0 && event->key_code < SAPP_KEYCODE_COUNT) {
             g_app.key_down[event->key_code] = false;
+        }
+        if (event->key_code == SAPP_KEYCODE_SPACE) {
+            g_app.space_down = false;
         }
         break;
     case SAPP_EVENTTYPE_MOUSE_MOVE:
