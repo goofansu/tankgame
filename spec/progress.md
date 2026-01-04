@@ -77,9 +77,9 @@
 - [x] M8.3: game SFX integration (engine sounds, gunfire, explosions)
 
 ## Phase 9: Mines and Pickups (partial)
-- [ ] M9.1: mine entity
-- [ ] M9.2: mine triggering (proximity, timed)
-- [ ] M9.3: shooting mines
+- [x] M9.1: mine entity (pz_mine.h/c, mesh, rendering)
+- [x] M9.2: mine triggering (proximity to tanks, arm delay)
+- [x] M9.3: shooting mines (projectile-mine collision)
 - [x] M9.4: pickup entity (pz_powerup with floating animation)
 - [x] M9.5: pickup collection (tank-powerup collision, effect applied)
 - [x] M9.6: weapon switching (machine gun, ricochet weapons with ammo)
@@ -138,7 +138,7 @@
 ## Remaining Work
 
 ### High Priority (gameplay gaps)
-- [ ] M9.1-9.3: mines (not implemented)
+- [x] M9.1-9.3: mines (player can drop mines with right-click/G, max 2)
 
 ### Medium Priority (content/polish)
 - [ ] M16.1: screen shake on explosions

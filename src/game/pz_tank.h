@@ -69,6 +69,9 @@ typedef struct pz_tank {
     float invuln_timer; // Invulnerability time remaining
     pz_vec2 spawn_pos; // Where to respawn
 
+    // Mines
+    int mine_count; // Number of mines the tank is carrying
+
     // Visual feedback
     float damage_flash; // Timer for damage flash effect (0 = no flash)
     float recoil; // Visual recoil amount (decays over time)

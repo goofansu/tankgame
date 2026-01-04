@@ -35,6 +35,7 @@
 #include "game/pz_map.h"
 #include "game/pz_map_render.h"
 #include "game/pz_mesh.h"
+#include "game/pz_mine.h"
 #include "game/pz_particle.h"
 #include "game/pz_powerup.h"
 #include "game/pz_projectile.h"
@@ -203,6 +204,7 @@ typedef struct map_session {
     pz_particle_manager *particle_mgr;
     pz_powerup_manager *powerup_mgr;
     pz_barrier_manager *barrier_mgr;
+    pz_mine_manager *mine_mgr;
 
     // Map gameplay state
     int initial_enemy_count;
@@ -272,10 +274,12 @@ typedef struct app_state {
     float mouse_y;
     bool mouse_left_down;
     bool mouse_left_just_pressed;
+    bool mouse_right_just_pressed;
     bool space_down;
     bool space_just_pressed;
     float scroll_accumulator;
     bool key_f_just_pressed;
+    bool key_g_just_pressed;
     bool key_down[SAPP_KEYCODE_COUNT];
 } app_state;
 
@@ -312,6 +316,9 @@ map_session_unload(map_session *session)
 
     pz_barrier_manager_destroy(session->barrier_mgr, g_app.renderer);
     session->barrier_mgr = NULL;
+
+    pz_mine_manager_destroy(session->mine_mgr, g_app.renderer);
+    session->mine_mgr = NULL;
 
     pz_particle_manager_destroy(session->particle_mgr, g_app.renderer);
     session->particle_mgr = NULL;
@@ -435,6 +442,7 @@ map_session_load(map_session *session, const char *map_path)
     session->powerup_mgr = pz_powerup_manager_create(g_app.renderer);
     session->barrier_mgr = pz_barrier_manager_create(
         g_app.renderer, g_app.tile_registry, session->map->tile_size);
+    session->mine_mgr = pz_mine_manager_create(g_app.renderer);
 
     // Spawn player at first spawn point
     pz_vec2 player_spawn_pos = { 0.0f, 0.0f };
@@ -520,6 +528,7 @@ map_session_reset(map_session *session)
     if (session->player_tank) {
         pz_tank_respawn(session->player_tank);
         pz_tank_reset_loadout(session->player_tank);
+        session->player_tank->mine_count = PZ_MINE_MAX_PER_TANK;
     }
 
     // Clear and respawn enemies
@@ -583,6 +592,11 @@ map_session_reset(map_session *session)
                     session->barrier_mgr, bs->pos, bs->tile_name, bs->health);
             }
         }
+    }
+
+    // Clear mines
+    if (session->mine_mgr) {
+        pz_mine_clear_all(session->mine_mgr);
     }
 
     // Clear explosion lights
@@ -964,10 +978,12 @@ app_init(void)
     g_app.mouse_y = (float)height * 0.5f;
     g_app.mouse_left_down = false;
     g_app.mouse_left_just_pressed = false;
+    g_app.mouse_right_just_pressed = false;
     g_app.space_down = false;
     g_app.space_just_pressed = false;
     g_app.scroll_accumulator = 0.0f;
     g_app.key_f_just_pressed = false;
+    g_app.key_g_just_pressed = false;
 }
 
 // Render music debug overlay (called when debug overlay is visible)
@@ -1238,6 +1254,29 @@ app_frame(void)
                 // Play gunfire sound
                 pz_game_sfx_play_gunfire(g_app.game_sfx);
             }
+
+            // Mine placement (right-click or G key)
+            bool place_mine
+                = g_app.mouse_right_just_pressed || g_app.key_g_just_pressed;
+            if (place_mine && g_app.session.player_tank->mine_count > 0
+                && g_app.session.mine_mgr) {
+                // Place mine behind the tank
+                float behind_dist = 1.2f;
+                pz_vec2 back_dir
+                    = { -sinf(g_app.session.player_tank->body_angle),
+                          -cosf(g_app.session.player_tank->body_angle) };
+                pz_vec2 mine_pos = pz_vec2_add(g_app.session.player_tank->pos,
+                    pz_vec2_scale(back_dir, behind_dist));
+
+                int slot = pz_mine_place(g_app.session.mine_mgr, mine_pos,
+                    g_app.session.player_tank->id);
+                if (slot >= 0) {
+                    g_app.session.player_tank->mine_count--;
+                    pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
+                        "Mine placed, %d remaining",
+                        g_app.session.player_tank->mine_count);
+                }
+            }
         }
 
         // Update all tanks (respawn timers, etc.)
@@ -1287,10 +1326,14 @@ app_frame(void)
             }
         }
 
-        // Powerup, barrier, and projectile updates
+        // Powerup, barrier, mine, and projectile updates
         pz_powerup_update(g_app.session.powerup_mgr, dt);
         if (g_app.session.barrier_mgr) {
             pz_barrier_update(g_app.session.barrier_mgr, dt);
+        }
+        if (g_app.session.mine_mgr) {
+            pz_mine_update(g_app.session.mine_mgr, g_app.session.tank_mgr,
+                g_app.session.projectile_mgr, dt);
         }
         pz_projectile_update(g_app.session.projectile_mgr, g_app.session.map,
             g_app.session.tank_mgr, dt);
@@ -1364,6 +1407,23 @@ app_frame(void)
             }
         }
 
+        // Check projectile-mine collisions
+        if (g_app.session.mine_mgr && g_app.session.projectile_mgr) {
+            for (int i = 0; i < PZ_MAX_PROJECTILES; i++) {
+                pz_projectile *proj
+                    = &g_app.session.projectile_mgr->projectiles[i];
+                if (!proj->active)
+                    continue;
+
+                if (pz_mine_check_projectile_hit(g_app.session.mine_mgr,
+                        proj->pos, 0.15f, g_app.session.tank_mgr)) {
+                    // Projectile hit a mine - destroy the projectile
+                    proj->active = false;
+                    g_app.session.projectile_mgr->active_count--;
+                }
+            }
+        }
+
         // Hash game state for determinism verification
         if (g_app.session.player_tank) {
             pz_sim_hash_vec2(g_app.sim, g_app.session.player_tank->pos.x,
@@ -1422,6 +1482,50 @@ app_frame(void)
                     g_app.session.explosion_lights[j].timer
                         = g_app.session.explosion_lights[j].duration;
                     break;
+                }
+            }
+        }
+    }
+
+    // Process mine explosion events
+    if (g_app.session.mine_mgr) {
+        pz_mine_explosion explosions[PZ_MAX_MINE_EXPLOSIONS];
+        int explosion_count = pz_mine_get_explosions(
+            g_app.session.mine_mgr, explosions, PZ_MAX_MINE_EXPLOSIONS);
+
+        for (int i = 0; i < explosion_count; i++) {
+            pz_vec3 exp_pos
+                = { explosions[i].pos.x, 0.5f, explosions[i].pos.y };
+
+            // Spawn explosion particles
+            pz_smoke_config explosion = PZ_SMOKE_TANK_EXPLOSION;
+            explosion.position = exp_pos;
+            explosion.count = 15;
+            explosion.spread = 1.5f;
+            pz_particle_spawn_smoke(g_app.session.particle_mgr, &explosion);
+
+            // Add explosion light
+            for (int j = 0; j < MAX_EXPLOSION_LIGHTS; j++) {
+                if (g_app.session.explosion_lights[j].timer <= 0.0f) {
+                    g_app.session.explosion_lights[j].pos = explosions[i].pos;
+                    g_app.session.explosion_lights[j].is_tank = false;
+                    g_app.session.explosion_lights[j].duration = 0.35f;
+                    g_app.session.explosion_lights[j].timer = 0.35f;
+                    break;
+                }
+            }
+
+            // Play explosion sound
+            pz_game_sfx_play_tank_explosion(g_app.game_sfx, false);
+
+            // Replenish mine to owner (if they're still alive)
+            if (explosions[i].owner_id >= 0) {
+                pz_tank *owner = pz_tank_get_by_id(
+                    g_app.session.tank_mgr, explosions[i].owner_id);
+                if (owner && !(owner->flags & PZ_TANK_FLAG_DEAD)) {
+                    if (owner->mine_count < PZ_MINE_MAX_PER_TANK) {
+                        owner->mine_count++;
+                    }
                 }
             }
         }
@@ -1664,6 +1768,20 @@ app_frame(void)
                 powerup_color, 1.0f * flicker, 3.5f);
         }
 
+        // Add mine lights (yellow glow)
+        if (g_app.session.mine_mgr) {
+            for (int i = 0; i < PZ_MAX_MINES; i++) {
+                pz_mine *mine = &g_app.session.mine_mgr->mines[i];
+                if (!mine->active)
+                    continue;
+
+                pz_vec3 mine_color = { 0.9f, 0.85f, 0.3f }; // Yellow
+                float intensity = mine->arm_timer > 0.0f ? 0.6f : 1.0f;
+                pz_lighting_add_point_light(g_app.session.lighting, mine->pos,
+                    mine_color, intensity, 2.5f);
+            }
+        }
+
         pz_lighting_render(g_app.session.lighting);
     }
     uint64_t lighting_end_us = pz_time_now_us();
@@ -1777,6 +1895,20 @@ app_frame(void)
     pz_tank_render(g_app.session.tank_mgr, g_app.renderer, vp, &tank_params);
 
     pz_powerup_render(g_app.session.powerup_mgr, g_app.renderer, vp);
+
+    // Render mines
+    if (g_app.session.mine_mgr) {
+        pz_mine_render_params mine_params = { 0 };
+        if (g_app.session.lighting) {
+            mine_params.light_texture
+                = pz_lighting_get_texture(g_app.session.lighting);
+            pz_lighting_get_uv_transform(g_app.session.lighting,
+                &mine_params.light_scale_x, &mine_params.light_scale_z,
+                &mine_params.light_offset_x, &mine_params.light_offset_z);
+        }
+        pz_mine_render(
+            g_app.session.mine_mgr, g_app.renderer, vp, &mine_params);
+    }
 
     if (g_app.laser_pipeline != PZ_INVALID_HANDLE && g_app.session.map
         && g_app.session.player_tank
@@ -1908,10 +2040,12 @@ app_frame(void)
         health_style.outline_width = 5.0f;
         health_style.outline_color = pz_vec4_new(0.0f, 0.0f, 0.0f, 1.0f);
 
-        // Player health (bottom-right)
+        // Player health and mines (bottom-right)
         if (g_app.session.player_tank) {
             pz_font_drawf(g_app.font_mgr, &health_style, vp_width - 20.0f,
-                vp_height - 20.0f, "HP: %d", g_app.session.player_tank->health);
+                vp_height - 20.0f, "HP: %d  Mines: %d",
+                g_app.session.player_tank->health,
+                g_app.session.player_tank->mine_count);
         }
 
         // Lives display (bottom-left) - only in campaign mode
@@ -2134,8 +2268,10 @@ app_frame(void)
     }
 
     g_app.mouse_left_just_pressed = false;
+    g_app.mouse_right_just_pressed = false;
     g_app.space_just_pressed = false;
     g_app.key_f_just_pressed = false;
+    g_app.key_g_just_pressed = false;
 }
 
 static void
@@ -2175,6 +2311,8 @@ app_event(const sapp_event *event)
                 }
             } else if (event->key_code == SAPP_KEYCODE_F) {
                 g_app.key_f_just_pressed = true;
+            } else if (event->key_code == SAPP_KEYCODE_G) {
+                g_app.key_g_just_pressed = true;
             } else if (event->key_code == SAPP_KEYCODE_SPACE) {
                 // SPACE fires during gameplay, advances level when complete
                 g_app.space_down = true;
@@ -2267,6 +2405,8 @@ app_event(const sapp_event *event)
         if (event->mouse_button == SAPP_MOUSEBUTTON_LEFT) {
             g_app.mouse_left_down = true;
             g_app.mouse_left_just_pressed = true;
+        } else if (event->mouse_button == SAPP_MOUSEBUTTON_RIGHT) {
+            g_app.mouse_right_just_pressed = true;
         }
         break;
     case SAPP_EVENTTYPE_MOUSE_UP:

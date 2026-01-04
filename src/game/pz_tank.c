@@ -427,6 +427,9 @@ pz_tank_spawn(pz_tank_manager *mgr, pz_vec2 pos, pz_vec4 color, bool is_player)
     tank->loadout_count = 1;
     tank->loadout_index = 0;
 
+    // Initialize mines (player tanks start with max mines)
+    tank->mine_count = is_player ? 2 : 0;
+
     tank->body_color = color;
     // Turret color matches current weapon's projectile color
     update_turret_color(tank);

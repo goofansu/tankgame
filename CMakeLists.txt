@@ -89,8 +89,8 @@ set(GAME_SOURCES
     src/game/pz_pathfinding.c
     src/game/pz_campaign.c
     src/game/pz_musicset.c
+    src/game/pz_mine.c
     # src/game/pz_game.c
-    # src/game/pz_mine.c
     # src/game/pz_pickup.c
     # src/game/pz_physics.c
     # src/game/modes/pz_mode.c

@@ -800,3 +800,179 @@ pz_mesh_create_powerup(void)
 
     return mesh;
 }
+
+pz_mesh *
+pz_mesh_create_mine(void)
+{
+    pz_mesh *mesh = pz_mesh_create();
+
+    // Mine is a dome (half-sphere) sitting on a flat bottom
+    float radius = 0.3f;
+    int slices = 16; // Around the dome
+    int stacks = 8; // Up the dome (half sphere)
+
+    // Calculate vertices needed:
+    // Dome: slices * stacks * 6 (2 triangles per quad)
+    // Bottom cap: slices * 3
+    int dome_verts = slices * stacks * 6;
+    int bottom_verts = slices * 3;
+    int total_verts = dome_verts + bottom_verts;
+
+    mesh->vertices = pz_alloc(total_verts * sizeof(pz_mesh_vertex));
+    pz_mesh_vertex *v = mesh->vertices;
+
+    // Generate dome (upper hemisphere)
+    for (int i = 0; i < stacks; i++) {
+        // Phi goes from 0 (top) to PI/2 (equator)
+        float phi0 = (float)i / stacks * (PZ_PI / 2.0f);
+        float phi1 = (float)(i + 1) / stacks * (PZ_PI / 2.0f);
+
+        float y0 = cosf(phi0) * radius;
+        float y1 = cosf(phi1) * radius;
+        float r0 = sinf(phi0) * radius;
+        float r1 = sinf(phi1) * radius;
+
+        for (int j = 0; j < slices; j++) {
+            float theta0 = (float)j / slices * 2.0f * PZ_PI;
+            float theta1 = (float)(j + 1) / slices * 2.0f * PZ_PI;
+
+            // Four corners of the quad
+            float x00 = r0 * cosf(theta0);
+            float z00 = r0 * sinf(theta0);
+            float x01 = r0 * cosf(theta1);
+            float z01 = r0 * sinf(theta1);
+            float x10 = r1 * cosf(theta0);
+            float z10 = r1 * sinf(theta0);
+            float x11 = r1 * cosf(theta1);
+            float z11 = r1 * sinf(theta1);
+
+            // Normals point outward (same as position normalized)
+            float nx00 = sinf(phi0) * cosf(theta0);
+            float ny00 = cosf(phi0);
+            float nz00 = sinf(phi0) * sinf(theta0);
+            float nx01 = sinf(phi0) * cosf(theta1);
+            float ny01 = cosf(phi0);
+            float nz01 = sinf(phi0) * sinf(theta1);
+            float nx10 = sinf(phi1) * cosf(theta0);
+            float ny10 = cosf(phi1);
+            float nz10 = sinf(phi1) * sinf(theta0);
+            float nx11 = sinf(phi1) * cosf(theta1);
+            float ny11 = cosf(phi1);
+            float nz11 = sinf(phi1) * sinf(theta1);
+
+            // Triangle 1
+            v->x = x00;
+            v->y = y0;
+            v->z = z00;
+            v->nx = nx00;
+            v->ny = ny00;
+            v->nz = nz00;
+            v->u = 0;
+            v->v = 0;
+            v++;
+
+            v->x = x10;
+            v->y = y1;
+            v->z = z10;
+            v->nx = nx10;
+            v->ny = ny10;
+            v->nz = nz10;
+            v->u = 0;
+            v->v = 1;
+            v++;
+
+            v->x = x11;
+            v->y = y1;
+            v->z = z11;
+            v->nx = nx11;
+            v->ny = ny11;
+            v->nz = nz11;
+            v->u = 1;
+            v->v = 1;
+            v++;
+
+            // Triangle 2
+            v->x = x00;
+            v->y = y0;
+            v->z = z00;
+            v->nx = nx00;
+            v->ny = ny00;
+            v->nz = nz00;
+            v->u = 0;
+            v->v = 0;
+            v++;
+
+            v->x = x11;
+            v->y = y1;
+            v->z = z11;
+            v->nx = nx11;
+            v->ny = ny11;
+            v->nz = nz11;
+            v->u = 1;
+            v->v = 1;
+            v++;
+
+            v->x = x01;
+            v->y = y0;
+            v->z = z01;
+            v->nx = nx01;
+            v->ny = ny01;
+            v->nz = nz01;
+            v->u = 1;
+            v->v = 0;
+            v++;
+        }
+    }
+
+    // Bottom cap (flat circle at y=0)
+    float bottom_y = cosf(PZ_PI / 2.0f) * radius; // Should be ~0
+    float bottom_r = sinf(PZ_PI / 2.0f) * radius; // Should be radius
+    for (int j = 0; j < slices; j++) {
+        float theta0 = (float)j / slices * 2.0f * PZ_PI;
+        float theta1 = (float)(j + 1) / slices * 2.0f * PZ_PI;
+
+        float x0 = bottom_r * cosf(theta0);
+        float z0 = bottom_r * sinf(theta0);
+        float x1 = bottom_r * cosf(theta1);
+        float z1 = bottom_r * sinf(theta1);
+
+        // Center
+        v->x = 0;
+        v->y = bottom_y;
+        v->z = 0;
+        v->nx = 0;
+        v->ny = -1;
+        v->nz = 0;
+        v->u = 0.5f;
+        v->v = 0.5f;
+        v++;
+
+        // Edge vertices (reversed winding for bottom face)
+        v->x = x1;
+        v->y = bottom_y;
+        v->z = z1;
+        v->nx = 0;
+        v->ny = -1;
+        v->nz = 0;
+        v->u = 0.5f + cosf(theta1) * 0.5f;
+        v->v = 0.5f + sinf(theta1) * 0.5f;
+        v++;
+
+        v->x = x0;
+        v->y = bottom_y;
+        v->z = z0;
+        v->nx = 0;
+        v->ny = -1;
+        v->nz = 0;
+        v->u = 0.5f + cosf(theta0) * 0.5f;
+        v->v = 0.5f + sinf(theta0) * 0.5f;
+        v++;
+    }
+
+    mesh->vertex_count = (int)(v - mesh->vertices);
+
+    pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME, "Mine mesh: %d vertices",
+        mesh->vertex_count);
+
+    return mesh;
+}
