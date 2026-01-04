@@ -244,9 +244,9 @@ update_turret_color(pz_tank *tank)
 const pz_tank_manager_config PZ_TANK_DEFAULT_CONFIG = {
     .accel = 40.0f,
     .friction = 25.0f,
-    .max_speed = 5.0f,
-    .body_turn_speed = 5.0f,
-    .turret_turn_speed = 8.0f,
+    .max_speed = 3.5f,
+    .body_turn_speed = 3.5f,
+    .turret_turn_speed = 5.6f,
     .collision_radius = 0.9f,
 };
 
