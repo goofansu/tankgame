@@ -22,6 +22,13 @@ static const float BARREL_LENGTH = 1.65f;
 // Turret height offset above ground
 static const float TURRET_Y_OFFSET = 0.65f;
 
+// Shadow dimensions and offset
+static const float SHADOW_WIDTH = 1.7f;
+static const float SHADOW_LENGTH = 2.5f;
+static const float SHADOW_Y_OFFSET = 0.02f;
+static const float SHADOW_ALPHA = 0.35f;
+static const float SHADOW_SOFTNESS = 0.09f;
+
 // Time before respawn after death
 static const float RESPAWN_DELAY = 3.0f;
 
@@ -33,6 +40,23 @@ static const float INVULN_DURATION = 1.5f;
 
 // Default health
 static const int DEFAULT_HEALTH = 10;
+
+static pz_mesh *
+create_shadow_mesh(void)
+{
+    float half_w = SHADOW_WIDTH * 0.5f;
+    float half_l = SHADOW_LENGTH * 0.5f;
+    pz_mesh_vertex verts[6] = {
+        { -half_w, 0.0f, -half_l, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f },
+        { half_w, 0.0f, -half_l, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f },
+        { half_w, 0.0f, half_l, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f },
+        { -half_w, 0.0f, -half_l, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f },
+        { half_w, 0.0f, half_l, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f },
+        { -half_w, 0.0f, half_l, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f },
+    };
+
+    return pz_mesh_create_from_data(verts, 6);
+}
 
 static bool
 circle_overlaps_tile(pz_vec2 center, float radius, float min_x, float min_y,
@@ -249,12 +273,16 @@ pz_tank_manager_create(
     // Create meshes
     mgr->body_mesh = pz_mesh_create_tank_body();
     mgr->turret_mesh = pz_mesh_create_tank_turret();
+    mgr->shadow_mesh = create_shadow_mesh();
 
     if (mgr->body_mesh) {
         pz_mesh_upload(mgr->body_mesh, renderer);
     }
     if (mgr->turret_mesh) {
         pz_mesh_upload(mgr->turret_mesh, renderer);
+    }
+    if (mgr->shadow_mesh) {
+        pz_mesh_upload(mgr->shadow_mesh, renderer);
     }
 
     // Load shader
@@ -271,6 +299,14 @@ pz_tank_manager_create(
             .primitive = PZ_PRIMITIVE_TRIANGLES,
         };
         mgr->pipeline = pz_renderer_create_pipeline(renderer, &desc);
+
+        pz_pipeline_desc shadow_desc = desc;
+        shadow_desc.blend = PZ_BLEND_ALPHA;
+        shadow_desc.depth = PZ_DEPTH_READ;
+        shadow_desc.cull = PZ_CULL_NONE;
+        mgr->shadow_pipeline
+            = pz_renderer_create_pipeline(renderer, &shadow_desc);
+
         mgr->render_ready = (mgr->pipeline != PZ_INVALID_HANDLE);
     }
 
@@ -292,6 +328,9 @@ pz_tank_manager_destroy(pz_tank_manager *mgr, pz_renderer *renderer)
     if (mgr->pipeline != PZ_INVALID_HANDLE) {
         pz_renderer_destroy_pipeline(renderer, mgr->pipeline);
     }
+    if (mgr->shadow_pipeline != PZ_INVALID_HANDLE) {
+        pz_renderer_destroy_pipeline(renderer, mgr->shadow_pipeline);
+    }
     if (mgr->shader != PZ_INVALID_HANDLE) {
         pz_renderer_destroy_shader(renderer, mgr->shader);
     }
@@ -300,6 +339,9 @@ pz_tank_manager_destroy(pz_tank_manager *mgr, pz_renderer *renderer)
     }
     if (mgr->turret_mesh) {
         pz_mesh_destroy(mgr->turret_mesh, renderer);
+    }
+    if (mgr->shadow_mesh) {
+        pz_mesh_destroy(mgr->shadow_mesh, renderer);
     }
 
     pz_free(mgr);
@@ -785,6 +827,7 @@ pz_tank_render(pz_tank_manager *mgr, pz_renderer *renderer,
     pz_vec3 light_dir = { 0.5f, 1.0f, 0.3f };
     pz_vec3 light_color = { 0.6f, 0.55f, 0.5f };
     pz_vec3 ambient = { 0.15f, 0.18f, 0.2f };
+    pz_vec4 shadow_color = { 0.0f, 0.0f, 0.0f, SHADOW_ALPHA };
 
     // Set shared uniforms
     pz_renderer_set_uniform_vec3(
@@ -792,6 +835,8 @@ pz_tank_render(pz_tank_manager *mgr, pz_renderer *renderer,
     pz_renderer_set_uniform_vec3(
         renderer, mgr->shader, "u_light_color", light_color);
     pz_renderer_set_uniform_vec3(renderer, mgr->shader, "u_ambient", ambient);
+    pz_renderer_set_uniform_vec2(
+        renderer, mgr->shader, "u_shadow_params", (pz_vec2) { 0.0f, 0.0f });
 
     // Set light map uniforms
     if (params && params->light_texture != PZ_INVALID_HANDLE
@@ -831,6 +876,41 @@ pz_tank_render(pz_tank_manager *mgr, pz_renderer *renderer,
             turret_color.y = pz_lerpf(turret_color.y, 1.0f, flash_t);
             turret_color.z = pz_lerpf(turret_color.z, 1.0f, flash_t);
         }
+
+        if (mgr->shadow_pipeline != PZ_INVALID_HANDLE && mgr->shadow_mesh
+            && mgr->shadow_mesh->uploaded) {
+            pz_renderer_set_uniform_vec2(renderer, mgr->shader,
+                "u_shadow_params", (pz_vec2) { SHADOW_SOFTNESS, 1.0f });
+            pz_mat4 shadow_model = pz_mat4_identity();
+            shadow_model = pz_mat4_mul(shadow_model,
+                pz_mat4_translate(
+                    (pz_vec3) { tank->pos.x, SHADOW_Y_OFFSET, tank->pos.y }));
+            shadow_model
+                = pz_mat4_mul(shadow_model, pz_mat4_rotate_y(tank->body_angle));
+
+            pz_mat4 shadow_mvp = pz_mat4_mul(*view_projection, shadow_model);
+
+            pz_renderer_set_uniform_mat4(
+                renderer, mgr->shader, "u_mvp", &shadow_mvp);
+            pz_renderer_set_uniform_mat4(
+                renderer, mgr->shader, "u_model", &shadow_model);
+            pz_renderer_set_uniform_vec4(
+                renderer, mgr->shader, "u_color", shadow_color);
+
+            pz_draw_cmd shadow_cmd = {
+                .pipeline = mgr->shadow_pipeline,
+                .vertex_buffer = mgr->shadow_mesh->buffer,
+                .index_buffer = PZ_INVALID_HANDLE,
+                .vertex_count = mgr->shadow_mesh->vertex_count,
+                .index_count = 0,
+                .vertex_offset = 0,
+                .index_offset = 0,
+            };
+            pz_renderer_draw(renderer, &shadow_cmd);
+        }
+
+        pz_renderer_set_uniform_vec2(
+            renderer, mgr->shader, "u_shadow_params", (pz_vec2) { 0.0f, 0.0f });
 
         // Draw body
         pz_mat4 body_model = pz_mat4_identity();

@@ -1,3 +1,4 @@
+* You can still shoot though 45 degree corners
 * Player tank should have a different color
 * Rename tanks from numbers
 * Give tanks different weapons

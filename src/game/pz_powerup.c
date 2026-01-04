@@ -310,6 +310,8 @@ pz_powerup_render(pz_powerup_manager *mgr, pz_renderer *renderer,
     pz_renderer_set_uniform_vec3(
         renderer, mgr->shader, "u_light_color", light_color);
     pz_renderer_set_uniform_vec3(renderer, mgr->shader, "u_ambient", ambient);
+    pz_renderer_set_uniform_vec2(
+        renderer, mgr->shader, "u_shadow_params", (pz_vec2) { 0.0f, 0.0f });
 
     for (int i = 0; i < PZ_MAX_POWERUPS; i++) {
         pz_powerup *powerup = &mgr->powerups[i];

@@ -404,6 +404,7 @@ layout(std140, binding=1) uniform entity_fs_params {
     int u_use_lighting;
     vec2 u_light_scale;
     vec2 u_light_offset;
+    vec2 u_shadow_params; // x = softness, y = use_falloff
 };
 
 layout(location=0) in vec3 v_normal;
@@ -445,7 +446,15 @@ void main() {
         lighting = u_ambient + diffuse;
     }
 
-    frag_color = vec4(u_color.rgb * lighting, u_color.a);
+    float shadow_alpha = u_color.a;
+    if (u_shadow_params.y > 0.5) {
+        float edge = min(min(v_texcoord.x, 1.0 - v_texcoord.x),
+            min(v_texcoord.y, 1.0 - v_texcoord.y));
+        float falloff = smoothstep(0.0, u_shadow_params.x, edge);
+        shadow_alpha *= falloff;
+    }
+
+    frag_color = vec4(u_color.rgb * lighting, shadow_alpha);
 }
 @end
 

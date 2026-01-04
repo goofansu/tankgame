@@ -374,6 +374,8 @@ pz_projectile_render(pz_projectile_manager *mgr, pz_renderer *renderer,
     pz_renderer_set_uniform_vec3(
         renderer, mgr->shader, "u_light_color", light_color);
     pz_renderer_set_uniform_vec3(renderer, mgr->shader, "u_ambient", ambient);
+    pz_renderer_set_uniform_vec2(
+        renderer, mgr->shader, "u_shadow_params", (pz_vec2) { 0.0f, 0.0f });
 
     // Set light map uniforms
     if (params && params->light_texture != PZ_INVALID_HANDLE

@@ -95,8 +95,10 @@ typedef struct pz_tank_manager {
     // Shared rendering resources
     pz_mesh *body_mesh;
     pz_mesh *turret_mesh;
+    pz_mesh *shadow_mesh;
     pz_shader_handle shader;
     pz_pipeline_handle pipeline;
+    pz_pipeline_handle shadow_pipeline;
     bool render_ready;
 
     // Movement parameters (shared by all tanks)
