@@ -111,6 +111,39 @@ spawn_tank_fog(
     }
 }
 
+static void
+spawn_projectile_fog(pz_particle_manager *particle_mgr,
+    pz_projectile_manager *projectile_mgr, float dt)
+{
+    if (!particle_mgr || !projectile_mgr)
+        return;
+
+    for (int i = 0; i < PZ_MAX_PROJECTILES; i++) {
+        pz_projectile *proj = &projectile_mgr->projectiles[i];
+        if (!proj->active)
+            continue;
+
+        float speed = pz_vec2_len(proj->velocity);
+        float speed_factor = pz_clampf(speed / 12.0f, 0.0f, 1.0f);
+        float spawn_interval = pz_lerpf(0.07f, 0.025f, speed_factor);
+
+        proj->fog_timer -= dt;
+        if (proj->fog_timer <= 0.0f) {
+            pz_vec2 forward = { 0.0f, 1.0f };
+            if (speed > 0.001f) {
+                forward = pz_vec2_scale(proj->velocity, 1.0f / speed);
+            }
+
+            float trail_offset = pz_lerpf(0.12f, 0.18f, speed_factor);
+            pz_vec3 fog_pos = { proj->pos.x - forward.x * trail_offset, 0.85f,
+                proj->pos.y - forward.y * trail_offset };
+
+            pz_particle_spawn_bullet_fog(particle_mgr, fog_pos);
+            proj->fog_timer = spawn_interval;
+        }
+    }
+}
+
 typedef struct {
     pz_vec2 pos;
     float timer; // Remaining time
@@ -1281,6 +1314,8 @@ app_frame(void)
 
     spawn_tank_fog(
         g_app.session.particle_mgr, g_app.session.tank_mgr, frame_dt);
+    spawn_projectile_fog(
+        g_app.session.particle_mgr, g_app.session.projectile_mgr, frame_dt);
 
     pz_particle_update(g_app.session.particle_mgr, frame_dt);
 

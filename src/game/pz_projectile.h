@@ -59,6 +59,8 @@ typedef struct pz_projectile {
 
     float scale; // Visual scale
     pz_vec4 color; // Projectile color
+
+    float fog_timer; // Spawn timer for fog trail
 } pz_projectile;
 
 // Projectile manager

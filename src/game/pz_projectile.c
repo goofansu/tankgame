@@ -169,6 +169,7 @@ pz_projectile_spawn(pz_projectile_manager *mgr, pz_vec2 pos, pz_vec2 direction,
     proj->damage = config->damage;
     proj->scale = config->scale;
     proj->color = config->color;
+    proj->fog_timer = 0.0f;
 
     mgr->active_count++;
 

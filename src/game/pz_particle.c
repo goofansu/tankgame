@@ -525,6 +525,55 @@ pz_particle_spawn_fog(
     pz_particle_spawn(mgr, &p);
 }
 
+void
+pz_particle_spawn_bullet_fog(pz_particle_manager *mgr, pz_vec3 position)
+{
+    if (!mgr)
+        return;
+
+    pz_vec3 base_colors[] = {
+        { 0.68f, 0.70f, 0.72f },
+        { 0.60f, 0.62f, 0.65f },
+        { 0.54f, 0.56f, 0.60f },
+        { 0.48f, 0.50f, 0.54f },
+    };
+
+    pz_particle p = { 0 };
+    p.type = PZ_PARTICLE_FOG;
+
+    // Tight spread around the trail position
+    p.pos.x = position.x + randf_range(-0.12f, 0.12f);
+    p.pos.y = position.y + randf_range(0.0f, 0.12f);
+    p.pos.z = position.z + randf_range(-0.12f, 0.12f);
+
+    // Gentle drift, slower to keep the trail cohesive
+    p.velocity.x = randf_range(-0.08f, 0.08f);
+    p.velocity.y = randf_range(0.05f, 0.16f);
+    p.velocity.z = randf_range(-0.08f, 0.08f);
+
+    // Soft rotation
+    p.rotation = randf() * 2.0f * PZ_PI;
+    p.rotation_speed = randf_range(-0.4f, 0.4f);
+
+    float base_scale = randf_range(0.55f, 0.85f);
+    p.scale_start = base_scale * 0.45f;
+    p.scale_end = base_scale * 1.6f;
+    p.scale = p.scale_start;
+
+    p.alpha_start = randf_range(0.32f, 0.48f);
+    p.alpha_end = 0.0f;
+    p.alpha = p.alpha_start;
+
+    p.color = base_colors[rand() % 4];
+
+    p.lifetime = 2.0f + randf_range(-0.5f, 0.5f);
+    p.age = 0.0f;
+
+    p.variant = rand() % 4;
+
+    pz_particle_spawn(mgr, &p);
+}
+
 /* ============================================================================
  * Update
  * ============================================================================

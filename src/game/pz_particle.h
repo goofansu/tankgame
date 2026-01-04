@@ -15,7 +15,7 @@
 #include "../engine/render/pz_renderer.h"
 
 // Maximum particles active at once
-#define PZ_MAX_PARTICLES 256
+#define PZ_MAX_PARTICLES 2048
 
 // Particle types
 typedef enum pz_particle_type {
@@ -103,6 +103,9 @@ void pz_particle_spawn_smoke(
 // Spawn a single fog particle (used for tank trails)
 void pz_particle_spawn_fog(
     pz_particle_manager *mgr, pz_vec3 position, float idle_factor);
+
+// Spawn a smaller, longer-lived fog particle (used for bullet trails)
+void pz_particle_spawn_bullet_fog(pz_particle_manager *mgr, pz_vec3 position);
 
 // Spawn a single particle (for custom effects)
 void pz_particle_spawn(pz_particle_manager *mgr, const pz_particle *template);
