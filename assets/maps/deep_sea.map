@@ -41,5 +41,6 @@ sun_color 0.9 0.95 1.0
 ambient_color 0.3 0.4 0.5
 ambient_darkness 0.2
 background_gradient vertical 0.1 0.2 0.4 0.2 0.4 0.6
-water_level -1
+water_level 0
 water_color 0.1 0.35 0.45
+wave_strength 4.0

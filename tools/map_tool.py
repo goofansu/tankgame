@@ -63,6 +63,7 @@ class Map:
     # Water
     water_level: Optional[int] = None
     water_color: Optional[tuple[float, float, float]] = None
+    wave_strength: Optional[float] = None
     
     # Fog
     fog_level: Optional[int] = None
@@ -242,6 +243,8 @@ def parse_map(content: str) -> Map:
             vals = [float(x) for x in rest.split()]
             if len(vals) == 3:
                 m.water_color = tuple(vals)
+        elif cmd == 'wave_strength':
+            m.wave_strength = float(rest)
         elif cmd == 'fog_level':
             m.fog_level = int(rest)
         elif cmd == 'fog_color':
@@ -310,6 +313,8 @@ def serialize_map(m: Map) -> str:
         lines.append(f"water_level {m.water_level}")
     if m.water_color:
         lines.append(f"water_color {m.water_color[0]} {m.water_color[1]} {m.water_color[2]}")
+    if m.wave_strength is not None and m.wave_strength != 1.0:
+        lines.append(f"wave_strength {m.wave_strength}")
     
     # Fog
     if m.fog_level is not None:
@@ -387,7 +392,7 @@ CLASSES:
         The main map container with cells, definitions, and properties.
         Properties: name, tile_size, width, height, cells, tile_defs, tag_defs
         Lighting: sun_direction, sun_color, ambient_color, ambient_darkness
-        Effects: water_level, water_color, fog_level, fog_color, background_gradient
+        Effects: water_level, water_color, wave_strength, fog_level, fog_color, background_gradient
 
 MAP METHODS:
     get_cell(x, y) -> Cell           Get cell at position (or None)

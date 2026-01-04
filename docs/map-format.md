@@ -102,9 +102,15 @@ tag B1 barrier tile=cobble health=20
 
 ```
 water_level -1
+water_color 0.2 0.4 0.6
+wave_strength 1.0
 ```
 
 Water surface renders slightly below ground. Tiles at or below water_level are submerged.
+
+- **water_level**: Height threshold for water coverage (integer)
+- **water_color**: RGB color (0.0-1.0 each) for the water surface
+- **wave_strength**: Multiplier for wave amplitude (default 1.0, use higher for stormy seas)
 
 ## Ground Fog
 

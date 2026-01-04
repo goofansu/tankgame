@@ -161,6 +161,7 @@ layout(location=1) in vec2 a_texcoord;
 layout(std140, binding=0) uniform water_vs_params {
     mat4 u_mvp;
     float u_wave_time;
+    float u_wave_strength;
 };
 
 layout(location=0) out vec2 v_texcoord;
@@ -171,6 +172,7 @@ void main() {
     wave += sin(a_position.x * 0.7 + u_wave_time * 0.9) * 0.12;
     wave += sin(a_position.z * 1.1 + u_wave_time * 1.2) * 0.10;
     wave += sin((a_position.x + a_position.z) * 0.4 + u_wave_time * 0.6) * 0.07;
+    wave *= u_wave_strength;
 
     vec3 displaced_pos = a_position;
     displaced_pos.y += wave;

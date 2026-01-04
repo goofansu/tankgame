@@ -52,6 +52,7 @@ pz_map_create(int width, int height, float tile_size)
     map->water_level = -100; // No water by default (far below any tile)
     map->has_water = false;
     map->water_color = (pz_vec3) { 0.2f, 0.4f, 0.6f }; // Default blue
+    map->wave_strength = 1.0f; // Default wave strength
     map->fog_level = -100; // No fog by default (far below any tile)
     map->has_fog = false;
     map->fog_color = (pz_vec3) { 0.6f, 0.6f, 0.7f }; // Default cool gray
@@ -1587,6 +1588,8 @@ pz_map_load(const char *path)
             if (sscanf(p + 12, "%f %f %f", &r, &g, &b) == 3) {
                 map->water_color = (pz_vec3) { r, g, b };
             }
+        } else if (strncmp(p, "wave_strength ", 14) == 0) {
+            map->wave_strength = (float)atof(p + 14);
         } else if (strncmp(p, "fog_level ", 10) == 0) {
             map->fog_level = atoi(p + 10);
             map->has_fog = true;
@@ -1710,6 +1713,14 @@ pz_map_save(const pz_map *map, const char *path)
             map->water_color.x, map->water_color.y, map->water_color.z);
         p += written;
         remaining -= written;
+
+        // Only write wave_strength if not default (1.0)
+        if (map->wave_strength != 1.0f) {
+            written = snprintf(
+                p, remaining, "wave_strength %.1f\n", map->wave_strength);
+            p += written;
+            remaining -= written;
+        }
     }
 
     // Fog level

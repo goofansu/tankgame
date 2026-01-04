@@ -129,6 +129,7 @@ typedef struct pz_map {
     int water_level;
     bool has_water;
     pz_vec3 water_color; // Base water color (RGB 0-1)
+    float wave_strength; // Wave amplitude multiplier (default 1.0)
 
     // Ground fog level (height at which fog plane renders)
     // Tiles at or below this height receive fog

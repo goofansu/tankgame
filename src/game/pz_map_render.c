@@ -1368,6 +1368,8 @@ pz_map_renderer_draw_water(pz_map_renderer *mr, const pz_mat4 *view_projection,
         mr->renderer, mr->water_shader, "u_time", time);
     pz_renderer_set_uniform_float(
         mr->renderer, mr->water_shader, "u_wave_time", time);
+    pz_renderer_set_uniform_float(mr->renderer, mr->water_shader,
+        "u_wave_strength", mr->map->wave_strength);
 
     // Water colors - calculate dark and highlight from base color
     pz_vec3 base_color = mr->map->water_color;
