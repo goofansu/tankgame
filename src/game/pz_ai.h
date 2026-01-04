@@ -22,6 +22,7 @@ typedef struct pz_map pz_map;
 typedef struct pz_rng pz_rng;
 typedef struct pz_tank_manager pz_tank_manager;
 typedef struct pz_projectile_manager pz_projectile_manager;
+typedef struct pz_mine_manager pz_mine_manager;
 
 /* ============================================================================
  * Enemy Types
@@ -148,6 +149,11 @@ typedef struct pz_ai_controller {
     float defense_aim_angle; // Aim angle for projectile defense
     float defense_check_timer; // Timer for reevaluating defense targets
 
+    // Mine awareness
+    bool targeting_mine; // Whether we're aiming at a mine instead of player
+    pz_vec2 mine_target_pos; // Mine position we're targeting
+    float mine_target_dist; // Distance to targeted mine
+
     // A* Pathfinding (Level 2/3)
     pz_path path; // Current path being followed
     pz_vec2 path_goal; // Goal position for current path
@@ -190,7 +196,8 @@ pz_tank *pz_ai_spawn_enemy(
 // proj_mgr is optional - used by Level 3 to detect incoming projectiles
 // rng is used for AI decision-making randomness (deterministic)
 void pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
-    pz_projectile_manager *proj_mgr, pz_rng *rng, float dt);
+    pz_projectile_manager *proj_mgr, pz_mine_manager *mine_mgr, pz_rng *rng,
+    float dt);
 
 // Fire projectiles for AI tanks that want to fire
 // This should be called after pz_ai_update

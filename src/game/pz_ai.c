@@ -11,6 +11,7 @@
 #include "../core/pz_mem.h"
 #include "../core/pz_sim.h"
 #include "pz_map.h"
+#include "pz_mine.h"
 #include "pz_powerup.h"
 #include "pz_projectile.h"
 
@@ -200,6 +201,9 @@ pz_ai_spawn_enemy(
     ctrl->defending_projectile = false;
     ctrl->defense_aim_angle = angle;
     ctrl->defense_check_timer = 0.0f;
+    ctrl->targeting_mine = false;
+    ctrl->mine_target_pos = pos;
+    ctrl->mine_target_dist = 0.0f;
 
     // Initialize cover behavior for level 2+
     ctrl->state = PZ_AI_STATE_IDLE;
@@ -353,6 +357,15 @@ find_projectile_defense_target(const pz_projectile_manager *proj_mgr,
     return true;
 }
 
+// Tank collision radius for pathfinding
+#define AI_TANK_RADIUS 0.9f
+// Mine avoidance behavior tuning
+#define AI_MINE_AVOID_RADIUS 4.0f
+#define AI_MINE_PANIC_RADIUS (PZ_MINE_DAMAGE_RADIUS + 0.4f)
+#define AI_MINE_SAFE_SHOOT_RADIUS (PZ_MINE_DAMAGE_RADIUS + 0.6f)
+#define AI_MINE_TARGET_RANGE 8.0f
+#define AI_MINE_POSITION_SAFE_RADIUS (PZ_MINE_DAMAGE_RADIUS + 0.7f)
+
 // Check if a position is valid (not inside a wall)
 static bool
 is_position_valid(const pz_map *map, pz_vec2 pos, float radius)
@@ -394,6 +407,103 @@ is_position_valid(const pz_map *map, pz_vec2 pos, float radius)
     }
 
     return true;
+}
+
+static bool
+is_position_safe_from_mines(
+    const pz_mine_manager *mine_mgr, pz_vec2 pos, float radius)
+{
+    if (!mine_mgr) {
+        return true;
+    }
+
+    float safe_radius = AI_MINE_POSITION_SAFE_RADIUS + radius;
+    float safe_radius_sq = safe_radius * safe_radius;
+
+    for (int i = 0; i < PZ_MAX_MINES; i++) {
+        const pz_mine *mine = &mine_mgr->mines[i];
+        if (!mine->active) {
+            continue;
+        }
+
+        float dx = pos.x - mine->pos.x;
+        float dz = pos.y - mine->pos.y;
+        float dist_sq = dx * dx + dz * dz;
+        if (dist_sq < safe_radius_sq) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static bool
+is_position_safe(const pz_map *map, const pz_mine_manager *mine_mgr,
+    pz_vec2 pos, float radius)
+{
+    if (!is_position_valid(map, pos, radius)) {
+        return false;
+    }
+
+    return is_position_safe_from_mines(mine_mgr, pos, radius);
+}
+
+static pz_vec2
+steer_away_from_mines(const pz_mine_manager *mine_mgr, pz_vec2 pos,
+    pz_vec2 move_dir, float avoid_radius, float panic_radius)
+{
+    if (!mine_mgr) {
+        return move_dir;
+    }
+
+    pz_vec2 repel = { 0.0f, 0.0f };
+    bool panic = false;
+
+    for (int i = 0; i < PZ_MAX_MINES; i++) {
+        const pz_mine *mine = &mine_mgr->mines[i];
+        if (!mine->active) {
+            continue;
+        }
+
+        float dx = pos.x - mine->pos.x;
+        float dz = pos.y - mine->pos.y;
+        float dist = sqrtf(dx * dx + dz * dz);
+        if (dist < 0.001f) {
+            continue;
+        }
+
+        float armed_scale = mine->arm_timer <= 0.0f ? 1.0f : 0.35f;
+        if (mine->arm_timer <= 0.0f && dist < panic_radius) {
+            panic = true;
+        }
+
+        if (dist < avoid_radius) {
+            float strength = (avoid_radius - dist) / avoid_radius;
+            strength *= armed_scale;
+            pz_vec2 away = { dx / dist, dz / dist };
+            repel = pz_vec2_add(repel, pz_vec2_scale(away, strength));
+        }
+    }
+
+    if (pz_vec2_len(repel) < 0.01f) {
+        return move_dir;
+    }
+
+    if (panic || pz_vec2_len(move_dir) < 0.01f) {
+        float repel_len = pz_vec2_len(repel);
+        if (repel_len < 0.001f) {
+            return move_dir;
+        }
+        return pz_vec2_scale(repel, 1.0f / repel_len);
+    }
+
+    pz_vec2 blended = pz_vec2_add(move_dir, pz_vec2_scale(repel, 1.4f));
+    float blended_len = pz_vec2_len(blended);
+    if (blended_len < 0.001f) {
+        return move_dir;
+    }
+
+    return pz_vec2_scale(blended, 1.0f / blended_len);
 }
 
 static bool
@@ -559,7 +669,7 @@ find_ricochet_shot(const pz_map *map, pz_vec2 ai_pos, pz_vec2 player_pos,
 // The AI will hide behind cover, then move out to peek and fire
 static bool
 find_cover_position(const pz_map *map, pz_vec2 ai_pos, pz_vec2 player_pos,
-    pz_vec2 *cover_pos, pz_vec2 *peek_pos)
+    const pz_mine_manager *mine_mgr, pz_vec2 *cover_pos, pz_vec2 *peek_pos)
 {
     if (!map) {
         return false;
@@ -589,7 +699,7 @@ find_cover_position(const pz_map *map, pz_vec2 ai_pos, pz_vec2 player_pos,
             pz_vec2 test_cover = { ai_pos.x + dx, ai_pos.y + dy };
 
             // Skip if position is in a wall
-            if (!is_position_valid(map, test_cover, tank_radius)) {
+            if (!is_position_safe(map, mine_mgr, test_cover, tank_radius)) {
                 continue;
             }
 
@@ -607,7 +717,7 @@ find_cover_position(const pz_map *map, pz_vec2 ai_pos, pz_vec2 player_pos,
                     test_cover, pz_vec2_scale(dir_to_player, peek_step));
 
                 // Peek position must be valid
-                if (!is_position_valid(map, test_peek, tank_radius)) {
+                if (!is_position_safe(map, mine_mgr, test_peek, tank_radius)) {
                     continue;
                 }
 
@@ -659,9 +769,6 @@ find_cover_position(const pz_map *map, pz_vec2 ai_pos, pz_vec2 player_pos,
  * Pathfinding Helpers
  * ============================================================================
  */
-
-// Tank collision radius for pathfinding
-#define AI_TANK_RADIUS 0.9f
 
 // How often to update paths (seconds)
 #define AI_PATH_UPDATE_INTERVAL 0.5f
@@ -767,7 +874,7 @@ ai_should_repath(pz_ai_controller *ctrl, pz_vec2 new_goal, float dt)
 static void
 update_level2_ai(pz_ai_controller *ctrl, pz_tank *tank,
     pz_tank_manager *tank_mgr, const pz_map *map, pz_vec2 player_pos,
-    pz_rng *rng, float dt)
+    const pz_mine_manager *mine_mgr, pz_rng *rng, float dt)
 {
     const float move_speed = 3.0f; // Movement speed for AI
     const float arrive_threshold = 0.5f; // How close to target to stop
@@ -788,7 +895,7 @@ update_level2_ai(pz_ai_controller *ctrl, pz_tank *tank,
         // Initial state - look for cover
         pz_path_clear(&ctrl->path);
         if (!ctrl->has_cover && ctrl->cover_search_timer <= 0.0f) {
-            if (find_cover_position(map, tank->pos, player_pos,
+            if (find_cover_position(map, tank->pos, player_pos, mine_mgr,
                     &ctrl->cover_pos, &ctrl->peek_pos)) {
                 ctrl->has_cover = true;
                 ctrl->state = PZ_AI_STATE_SEEKING_COVER;
@@ -937,6 +1044,9 @@ update_level2_ai(pz_ai_controller *ctrl, pz_tank *tank,
         break;
     }
 
+    move_dir = steer_away_from_mines(mine_mgr, tank->pos, move_dir,
+        AI_MINE_AVOID_RADIUS, AI_MINE_PANIC_RADIUS);
+
     // Apply movement
     pz_tank_input input = {
         .move_dir = pz_vec2_scale(move_dir, move_speed),
@@ -1033,8 +1143,8 @@ check_incoming_projectiles(pz_ai_controller *ctrl, pz_tank *tank,
 
 // Find a flanking position to approach player from the side
 static bool
-find_flank_position(
-    const pz_map *map, pz_vec2 ai_pos, pz_vec2 player_pos, pz_vec2 *flank_pos)
+find_flank_position(const pz_map *map, const pz_mine_manager *mine_mgr,
+    pz_vec2 ai_pos, pz_vec2 player_pos, pz_vec2 *flank_pos)
 {
     const float tank_radius = 0.9f;
     const float flank_distance = 8.0f; // How far to the side
@@ -1067,7 +1177,7 @@ find_flank_position(
     bool found = false;
 
     for (int i = 0; i < 2; i++) {
-        if (!is_position_valid(map, candidates[i], tank_radius)) {
+        if (!is_position_safe(map, mine_mgr, candidates[i], tank_radius)) {
             continue;
         }
 
@@ -1082,10 +1192,71 @@ find_flank_position(
     return found;
 }
 
+static bool
+find_mine_target(const pz_mine_manager *mine_mgr, const pz_map *map,
+    const pz_tank *tank, pz_vec2 player_pos, bool can_see_player,
+    pz_vec2 *out_pos, float *out_dist)
+{
+    if (!mine_mgr || !tank || !out_pos) {
+        return false;
+    }
+
+    float best_score = 0.0f;
+    pz_vec2 best_pos = tank->pos;
+    float best_dist = 0.0f;
+
+    for (int i = 0; i < PZ_MAX_MINES; i++) {
+        const pz_mine *mine = &mine_mgr->mines[i];
+        if (!mine->active) {
+            continue;
+        }
+
+        float dist = pz_vec2_dist(tank->pos, mine->pos);
+        if (dist > AI_MINE_TARGET_RANGE) {
+            continue;
+        }
+
+        if (dist < AI_MINE_SAFE_SHOOT_RADIUS) {
+            continue;
+        }
+
+        if (map && !check_line_of_sight(map, tank->pos, mine->pos)) {
+            continue;
+        }
+
+        float player_dist = pz_vec2_dist(player_pos, mine->pos);
+        float near_player
+            = pz_clampf(PZ_MINE_DAMAGE_RADIUS + 0.6f - player_dist, 0.0f, 2.0f);
+        float near_self = pz_clampf(AI_MINE_AVOID_RADIUS - dist, 0.0f, 2.0f);
+
+        float score = near_self * 1.2f + near_player * 2.2f;
+        if (!can_see_player) {
+            score += 0.4f;
+        }
+
+        if (score > best_score) {
+            best_score = score;
+            best_pos = mine->pos;
+            best_dist = dist;
+        }
+    }
+
+    if (best_score <= 0.0f) {
+        return false;
+    }
+
+    *out_pos = best_pos;
+    if (out_dist) {
+        *out_dist = best_dist;
+    }
+    return true;
+}
+
 static void
 update_level3_ai(pz_ai_controller *ctrl, pz_tank *tank,
     pz_tank_manager *tank_mgr, const pz_map *map, pz_vec2 player_pos,
-    pz_projectile_manager *proj_mgr, pz_rng *rng, float dt)
+    pz_projectile_manager *proj_mgr, const pz_mine_manager *mine_mgr,
+    pz_rng *rng, float dt)
 {
     const float move_speed = 6.0f; // Fast and aggressive
     const float arrive_threshold = 0.5f;
@@ -1178,8 +1349,8 @@ update_level3_ai(pz_ai_controller *ctrl, pz_tank *tank,
 
         // Try to flank frequently
         if (ctrl->aggression_timer <= 0.0f && dist_to_player < chase_distance) {
-            if (find_flank_position(
-                    map, tank->pos, player_pos, &ctrl->flank_target)) {
+            if (find_flank_position(map, mine_mgr, tank->pos, player_pos,
+                    &ctrl->flank_target)) {
                 ctrl->state = PZ_AI_STATE_FLANKING;
                 ctrl->aggression_timer = 2.0f;
                 // Request path to flank position
@@ -1307,7 +1478,7 @@ update_level3_ai(pz_ai_controller *ctrl, pz_tank *tank,
     case PZ_AI_STATE_SEEKING_COVER: {
         // Find cover if we don't have it
         if (!ctrl->has_cover && ctrl->cover_search_timer <= 0.0f) {
-            if (find_cover_position(map, tank->pos, player_pos,
+            if (find_cover_position(map, tank->pos, player_pos, mine_mgr,
                     &ctrl->cover_pos, &ctrl->peek_pos)) {
                 ctrl->has_cover = true;
                 ctrl->move_target = ctrl->cover_pos;
@@ -1452,6 +1623,13 @@ update_level3_ai(pz_ai_controller *ctrl, pz_tank *tank,
         break;
     }
 
+    if (ctrl->targeting_mine && ctrl->state != PZ_AI_STATE_EVADING) {
+        ctrl->wants_to_fire = true;
+    }
+
+    move_dir = steer_away_from_mines(mine_mgr, tank->pos, move_dir,
+        AI_MINE_AVOID_RADIUS, AI_MINE_PANIC_RADIUS);
+
     // Apply movement
     pz_tank_input input = {
         .move_dir = pz_vec2_scale(move_dir, move_speed),
@@ -1469,7 +1647,8 @@ update_level3_ai(pz_ai_controller *ctrl, pz_tank *tank,
 
 void
 pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
-    pz_projectile_manager *proj_mgr, pz_rng *rng, float dt)
+    pz_projectile_manager *proj_mgr, pz_mine_manager *mine_mgr, pz_rng *rng,
+    float dt)
 {
     if (!ai_mgr || !ai_mgr->tank_mgr) {
         return;
@@ -1528,12 +1707,31 @@ pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
             ctrl->defending_projectile = false;
         }
 
+        ctrl->targeting_mine = false;
+        ctrl->mine_target_dist = 0.0f;
+        if (mine_mgr) {
+            pz_vec2 mine_pos = tank->pos;
+            float mine_dist = 0.0f;
+            if (find_mine_target(mine_mgr, ai_mgr->map, tank, player_pos,
+                    ctrl->can_see_player, &mine_pos, &mine_dist)) {
+                ctrl->targeting_mine = true;
+                ctrl->mine_target_pos = mine_pos;
+                ctrl->mine_target_dist = mine_dist;
+            }
+        }
+
         // Stationary enemies use ricochet shots when player is not visible.
         bool uses_bounce_shots = (ctrl->level == PZ_ENEMY_LEVEL_1
             || ctrl->level == PZ_ENEMY_LEVEL_2
             || ctrl->level == PZ_ENEMY_LEVEL_SNIPER);
         if (ctrl->defending_projectile) {
             ctrl->target_aim_angle = ctrl->defense_aim_angle;
+            ctrl->has_bounce_shot = false;
+        } else if (ctrl->targeting_mine) {
+            pz_vec2 to_mine = pz_vec2_sub(ctrl->mine_target_pos, tank->pos);
+            if (pz_vec2_len(to_mine) > 0.01f) {
+                ctrl->target_aim_angle = atan2f(to_mine.x, to_mine.y);
+            }
             ctrl->has_bounce_shot = false;
         } else if (uses_bounce_shots) {
             // Update bounce shot search timer
@@ -1612,11 +1810,11 @@ pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
         if (ctrl->level == PZ_ENEMY_LEVEL_3) {
             // Level 3: Aggressive hunter
             update_level3_ai(ctrl, tank, ai_mgr->tank_mgr, ai_mgr->map,
-                player_pos, proj_mgr, rng, dt);
+                player_pos, proj_mgr, mine_mgr, rng, dt);
         } else if (ctrl->level == PZ_ENEMY_LEVEL_2) {
             // Level 2: Cover-based
-            update_level2_ai(
-                ctrl, tank, ai_mgr->tank_mgr, ai_mgr->map, player_pos, rng, dt);
+            update_level2_ai(ctrl, tank, ai_mgr->tank_mgr, ai_mgr->map,
+                player_pos, mine_mgr, rng, dt);
         } else {
             // Stationary turret only (sentry, sniper)
             pz_tank_input input = {
@@ -1624,6 +1822,12 @@ pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
                 .target_turret = ctrl->current_aim_angle,
                 .fire = false,
             };
+            if (ctrl->targeting_mine) {
+                pz_vec2 away = steer_away_from_mines(mine_mgr, tank->pos,
+                    (pz_vec2) { 0.0f, 0.0f }, AI_MINE_AVOID_RADIUS,
+                    AI_MINE_PANIC_RADIUS);
+                input.move_dir = pz_vec2_scale(away, 3.0f);
+            }
             pz_tank_update(ai_mgr->tank_mgr, tank, &input, ai_mgr->map, dt);
         }
 
@@ -1698,12 +1902,12 @@ pz_ai_fire(pz_ai_manager *ai_mgr, pz_projectile_manager *proj_mgr)
         // Level-specific firing conditions
         if (ctrl->level == PZ_ENEMY_LEVEL_3) {
             // Level 3: Use wants_to_fire flag set by state machine
-            if (!ctrl->wants_to_fire) {
+            if (!ctrl->wants_to_fire && !ctrl->targeting_mine) {
                 continue;
             }
         } else if (ctrl->level == PZ_ENEMY_LEVEL_2) {
-            // Level 2: Fire whenever not behind cover
-            if (ctrl->state == PZ_AI_STATE_IN_COVER) {
+            // Level 2: Fire whenever not behind cover (unless clearing mines)
+            if (ctrl->state == PZ_AI_STATE_IN_COVER && !ctrl->targeting_mine) {
                 continue;
             }
         }
@@ -1713,7 +1917,7 @@ pz_ai_fire(pz_ai_manager *ai_mgr, pz_projectile_manager *proj_mgr)
         // Check if we can fire
         // Level 1: Can fire if we see player OR have a bounce shot
         // Others: Need to see the player
-        bool can_attempt_fire = ctrl->can_see_player;
+        bool can_attempt_fire = ctrl->can_see_player || ctrl->targeting_mine;
         bool uses_bounce_shots = (ctrl->level == PZ_ENEMY_LEVEL_1
             || ctrl->level == PZ_ENEMY_LEVEL_2
             || ctrl->level == PZ_ENEMY_LEVEL_SNIPER);
