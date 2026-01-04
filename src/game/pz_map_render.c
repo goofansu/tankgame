@@ -7,6 +7,7 @@
 
 #include "pz_map_render.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -1382,6 +1383,14 @@ pz_map_renderer_draw_water(pz_map_renderer *mr, const pz_mat4 *view_projection,
         mr->renderer, mr->water_shader, "u_water_dark", dark_color);
     pz_renderer_set_uniform_vec3(
         mr->renderer, mr->water_shader, "u_water_highlight", highlight_color);
+
+    // Wind direction and strength for caustic movement
+    float wind_dir_x = cosf(mr->map->wind_direction);
+    float wind_dir_z = sinf(mr->map->wind_direction);
+    pz_renderer_set_uniform_vec2(mr->renderer, mr->water_shader, "u_wind_dir",
+        (pz_vec2) { wind_dir_x, wind_dir_z });
+    pz_renderer_set_uniform_float(mr->renderer, mr->water_shader,
+        "u_wind_strength", mr->map->wind_strength);
 
     // Caustic texture
     if (mr->water_caustic_texture != PZ_INVALID_HANDLE) {

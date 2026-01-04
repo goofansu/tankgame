@@ -197,6 +197,8 @@ layout(std140, binding=1) uniform water_fs_params {
     vec3 u_water_color;
     vec3 u_water_dark;
     vec3 u_water_highlight;
+    vec2 u_wind_dir;  // Normalized wind direction (x, z)
+    float u_wind_strength;  // Wind strength multiplier
 };
 
 layout(location=0) in vec2 v_texcoord;
@@ -213,9 +215,13 @@ float calculateSurface(float x, float z, float t) {
 }
 
 void main() {
+    // Wind-driven UV offset - texture moves in wind direction
+    float wind_speed = 0.05 * u_wind_strength;
+    vec2 wind_offset = u_wind_dir * u_time * wind_speed;
+    
     // Upper layer UV (bright caustics) - animated distortion like reference shader
     // Scale 0.23 (0.15 / 0.65) gives smaller caustic cells (65% of previous size)
-    vec2 uv = v_world_pos.xz * 0.23 + vec2(u_time * -0.02);
+    vec2 uv = v_world_pos.xz * 0.23 + wind_offset;
     
     uv.y += 0.01 * (sin(uv.x * 3.5 + u_time * 0.35) + sin(uv.x * 4.8 + u_time * 1.05) + sin(uv.x * 7.3 + u_time * 0.45)) / 3.0;
     uv.x += 0.12 * (sin(uv.y * 4.0 + u_time * 0.5) + sin(uv.y * 6.8 + u_time * 0.75) + sin(uv.y * 11.3 + u_time * 0.2)) / 3.0;

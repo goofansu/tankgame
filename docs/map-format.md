@@ -104,6 +104,8 @@ tag B1 barrier tile=cobble health=20
 water_level -1
 water_color 0.2 0.4 0.6
 wave_strength 1.0
+wind_direction 3.93
+wind_strength 1.5
 ```
 
 Water surface renders slightly below ground. Tiles at or below water_level are submerged.
@@ -111,6 +113,8 @@ Water surface renders slightly below ground. Tiles at or below water_level are s
 - **water_level**: Height threshold for water coverage (integer)
 - **water_color**: RGB color (0.0-1.0 each) for the water surface
 - **wave_strength**: Multiplier for wave amplitude (default 1.0, use higher for stormy seas)
+- **wind_direction**: Direction wind blows in radians (0 = +X/east, π/2 = +Z/south, π = -X/west, 3π/2 = -Z/north). Default 0.0. Controls caustic texture drift direction.
+- **wind_strength**: Speed multiplier for wind-driven water movement (default 1.0)
 
 ## Ground Fog
 

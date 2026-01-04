@@ -44,3 +44,5 @@ background_gradient vertical 0.1 0.2 0.4 0.2 0.4 0.6
 water_level 0
 water_color 0.1 0.35 0.45
 wave_strength 4.0
+wind_direction 2.36
+wind_strength 3.0
