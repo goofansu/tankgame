@@ -599,7 +599,8 @@ pz_particle_update(pz_particle_manager *mgr, float dt)
 
 void
 pz_particle_render(pz_particle_manager *mgr, pz_renderer *renderer,
-    const pz_mat4 *view_projection, pz_vec3 camera_right, pz_vec3 camera_up)
+    const pz_mat4 *view_projection, pz_vec3 camera_right, pz_vec3 camera_up,
+    const pz_particle_render_params *params)
 {
     if (!mgr || !renderer || !view_projection)
         return;
@@ -607,9 +608,38 @@ pz_particle_render(pz_particle_manager *mgr, pz_renderer *renderer,
     if (!mgr->render_ready || mgr->active_count == 0)
         return;
 
-    // Bind texture once
+    // Bind smoke texture
     pz_renderer_bind_texture(renderer, 0, mgr->smoke_texture);
     pz_renderer_set_uniform_int(renderer, mgr->shader, "u_texture", 0);
+
+    // Set up lighting uniforms (once for all particles)
+    bool use_lighting = params && params->light_texture != PZ_INVALID_HANDLE;
+
+    // Default ambient (used when no dynamic lighting)
+    pz_vec3 ambient = { 1.0f, 1.0f, 1.0f };
+    pz_vec2 light_scale = { 0.0f, 0.0f };
+    pz_vec2 light_offset = { 0.0f, 0.0f };
+
+    if (use_lighting) {
+        // Night mode with dynamic lighting - darker ambient
+        ambient = pz_vec3_new(0.15f, 0.15f, 0.2f);
+
+        pz_renderer_bind_texture(renderer, 2, params->light_texture);
+        pz_renderer_set_uniform_int(
+            renderer, mgr->shader, "u_light_texture", 2);
+
+        light_scale = pz_vec2_new(params->light_scale_x, params->light_scale_z);
+        light_offset
+            = pz_vec2_new(params->light_offset_x, params->light_offset_z);
+    }
+
+    pz_renderer_set_uniform_vec3(renderer, mgr->shader, "u_ambient", ambient);
+    pz_renderer_set_uniform_int(
+        renderer, mgr->shader, "u_use_lighting", use_lighting ? 1 : 0);
+    pz_renderer_set_uniform_vec2(
+        renderer, mgr->shader, "u_light_scale", light_scale);
+    pz_renderer_set_uniform_vec2(
+        renderer, mgr->shader, "u_light_offset", light_offset);
 
     // Sort particles by distance for proper blending?
     // For now, render in order (smoke is fairly forgiving)
@@ -658,8 +688,10 @@ pz_particle_render(pz_particle_manager *mgr, pz_renderer *renderer,
 
         pz_mat4 mvp = pz_mat4_mul(*view_projection, billboard);
 
-        // Set uniforms
+        // Set per-particle uniforms
         pz_renderer_set_uniform_mat4(renderer, mgr->shader, "u_mvp", &mvp);
+        pz_renderer_set_uniform_vec3(
+            renderer, mgr->shader, "u_world_pos", p->pos);
         pz_renderer_set_uniform_float(
             renderer, mgr->shader, "u_alpha", p->alpha);
         pz_renderer_set_uniform_vec3(

@@ -98,7 +98,8 @@ static const char *SHADER_BLOCKS_ENTITY[]
     = { "entity_vs_params", "entity_fs_params" };
 static const char *SHADER_BLOCKS_TRACK[] = { "track_fs_params" };
 static const char *SHADER_BLOCKS_LIGHTMAP[] = { "lightmap_fs_params" };
-static const char *SHADER_BLOCKS_PARTICLE[] = { "particle_vs_params" };
+static const char *SHADER_BLOCKS_PARTICLE[]
+    = { "particle_vs_params", "particle_fs_params" };
 static const char *SHADER_BLOCKS_LASER[]
     = { "laser_vs_params", "laser_fs_params" };
 static const char *SHADER_BLOCKS_DEBUG_TEXT[] = { "debug_text_vs_params" };

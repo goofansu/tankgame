@@ -110,10 +110,18 @@ void pz_particle_spawn(pz_particle_manager *mgr, const pz_particle *template);
 // Update all particles
 void pz_particle_update(pz_particle_manager *mgr, float dt);
 
+// Lighting parameters for particle rendering
+typedef struct pz_particle_render_params {
+    pz_texture_handle light_texture;
+    float light_scale_x, light_scale_z;
+    float light_offset_x, light_offset_z;
+} pz_particle_render_params;
+
 // Render all particles (call after opaque geometry, before UI)
 // camera_right and camera_up are needed for billboarding
 void pz_particle_render(pz_particle_manager *mgr, pz_renderer *renderer,
-    const pz_mat4 *view_projection, pz_vec3 camera_right, pz_vec3 camera_up);
+    const pz_mat4 *view_projection, pz_vec3 camera_right, pz_vec3 camera_up,
+    const pz_particle_render_params *params);
 
 // Get number of active particles
 int pz_particle_count(const pz_particle_manager *mgr);

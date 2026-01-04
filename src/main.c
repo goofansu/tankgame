@@ -1573,8 +1573,19 @@ app_frame(void)
         const pz_mat4 *view = pz_camera_get_view(&g_app.camera);
         pz_vec3 cam_right = { view->m[0], view->m[4], view->m[8] };
         pz_vec3 cam_up = { view->m[1], view->m[5], view->m[9] };
-        pz_particle_render(
-            g_app.session.particle_mgr, g_app.renderer, vp, cam_right, cam_up);
+
+        pz_particle_render_params particle_params = { 0 };
+        if (g_app.session.lighting) {
+            particle_params.light_texture
+                = pz_lighting_get_texture(g_app.session.lighting);
+            pz_lighting_get_uv_transform(g_app.session.lighting,
+                &particle_params.light_scale_x, &particle_params.light_scale_z,
+                &particle_params.light_offset_x,
+                &particle_params.light_offset_z);
+        }
+
+        pz_particle_render(g_app.session.particle_mgr, g_app.renderer, vp,
+            cam_right, cam_up, &particle_params);
     }
 
     // Render HUD
