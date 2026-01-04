@@ -531,6 +531,7 @@ emit_pit_box(float *v, float x0, float z0, float x1, float z1, float depth,
 
     // V coords for vertical extent - scale by height difference per face
     float v_bottom = 0.0f;
+    int bottom_level = 0;
 
     // Pit walls face INWARD so they're visible when looking down into the pit
     // This is opposite to regular walls which face outward
@@ -541,13 +542,25 @@ emit_pit_box(float *v, float x0, float z0, float x1, float z1, float depth,
         float neighbor_y
             = GROUND_Y_OFFSET - (back_h < 0 ? -back_h : 0) * WALL_HEIGHT_UNIT;
         float v_top = (back_h - h) * inv_scale; // Scale V by height difference
+        int face_height = back_h - h;
+        if (face_height < 1) {
+            face_height = 1;
+        }
         // Use same winding as regular front face (+Z normal)
         // U goes left-to-right (x1 to x0), V goes bottom-to-top
+        float ao0 = compute_wall_corner_ao(
+            map, tile_x + 1, bottom_level, tile_y, 0, 0, 1);
+        float ao1 = compute_wall_corner_ao(
+            map, tile_x + 1, face_height, tile_y, 0, 0, 1);
+        float ao2
+            = compute_wall_corner_ao(map, tile_x, face_height, tile_y, 0, 0, 1);
+        float ao3 = compute_wall_corner_ao(
+            map, tile_x, bottom_level, tile_y, 0, 0, 1);
         v = emit_wall_face(v, x1, y1, z0, // bottom right
             x1, neighbor_y, z0, // top right
             x0, neighbor_y, z0, // top left
             x0, y1, z0, // bottom left
-            0.0f, 0.0f, 1.0f, u1, v_bottom, u0, v_top, 1.0f, 1.0f, 1.0f, 1.0f);
+            0.0f, 0.0f, -1.0f, u1, v_bottom, u0, v_top, ao0, ao1, ao2, ao3);
     }
 
     // Front wall (+Z edge of pit): faces -Z (into pit)
@@ -556,12 +569,24 @@ emit_pit_box(float *v, float x0, float z0, float x1, float z1, float depth,
         float neighbor_y
             = GROUND_Y_OFFSET - (front_h < 0 ? -front_h : 0) * WALL_HEIGHT_UNIT;
         float v_top = (front_h - h) * inv_scale; // Scale V by height difference
+        int face_height = front_h - h;
+        if (face_height < 1) {
+            face_height = 1;
+        }
         // Use same winding as regular back face (-Z normal)
+        float ao0 = compute_wall_corner_ao(
+            map, tile_x, bottom_level, tile_y + 1, 0, 0, -1);
+        float ao1 = compute_wall_corner_ao(
+            map, tile_x, face_height, tile_y + 1, 0, 0, -1);
+        float ao2 = compute_wall_corner_ao(
+            map, tile_x + 1, face_height, tile_y + 1, 0, 0, -1);
+        float ao3 = compute_wall_corner_ao(
+            map, tile_x + 1, bottom_level, tile_y + 1, 0, 0, -1);
         v = emit_wall_face(v, x0, y1, z1, // bottom left
             x0, neighbor_y, z1, // top left
             x1, neighbor_y, z1, // top right
             x1, y1, z1, // bottom right
-            0.0f, 0.0f, -1.0f, u0, v_bottom, u1, v_top, 1.0f, 1.0f, 1.0f, 1.0f);
+            0.0f, 0.0f, 1.0f, u0, v_bottom, u1, v_top, ao0, ao1, ao2, ao3);
     }
 
     // Left wall (-X edge of pit): faces +X (into pit)
@@ -570,14 +595,25 @@ emit_pit_box(float *v, float x0, float z0, float x1, float z1, float depth,
         float neighbor_y
             = GROUND_Y_OFFSET - (left_h < 0 ? -left_h : 0) * WALL_HEIGHT_UNIT;
         float v_top = (left_h - h) * inv_scale; // Scale V by height difference
+        int face_height = left_h - h;
+        if (face_height < 1) {
+            face_height = 1;
+        }
         // Use same winding as regular right face (+X normal)
         // U goes along Z axis
+        float ao0 = compute_wall_corner_ao(
+            map, tile_x, bottom_level, tile_y, 1, 0, 0);
+        float ao1
+            = compute_wall_corner_ao(map, tile_x, face_height, tile_y, 1, 0, 0);
+        float ao2 = compute_wall_corner_ao(
+            map, tile_x, face_height, tile_y + 1, 1, 0, 0);
+        float ao3 = compute_wall_corner_ao(
+            map, tile_x, bottom_level, tile_y + 1, 1, 0, 0);
         v = emit_wall_face(v, x0, y1, z0, // bottom back
             x0, neighbor_y, z0, // top back
             x0, neighbor_y, z1, // top front
             x0, y1, z1, // bottom front
-            1.0f, 0.0f, 0.0f, v0_z, v_bottom, v1_z, v_top, 1.0f, 1.0f, 1.0f,
-            1.0f);
+            -1.0f, 0.0f, 0.0f, v0_z, v_bottom, v1_z, v_top, ao0, ao1, ao2, ao3);
     }
 
     // Right wall (+X edge of pit): faces -X (into pit)
@@ -586,13 +622,24 @@ emit_pit_box(float *v, float x0, float z0, float x1, float z1, float depth,
         float neighbor_y
             = GROUND_Y_OFFSET - (right_h < 0 ? -right_h : 0) * WALL_HEIGHT_UNIT;
         float v_top = (right_h - h) * inv_scale; // Scale V by height difference
+        int face_height = right_h - h;
+        if (face_height < 1) {
+            face_height = 1;
+        }
         // Use same winding as regular left face (-X normal)
+        float ao0 = compute_wall_corner_ao(
+            map, tile_x + 1, bottom_level, tile_y + 1, -1, 0, 0);
+        float ao1 = compute_wall_corner_ao(
+            map, tile_x + 1, face_height, tile_y + 1, -1, 0, 0);
+        float ao2 = compute_wall_corner_ao(
+            map, tile_x + 1, face_height, tile_y, -1, 0, 0);
+        float ao3 = compute_wall_corner_ao(
+            map, tile_x + 1, bottom_level, tile_y, -1, 0, 0);
         v = emit_wall_face(v, x1, y1, z1, // bottom front
             x1, neighbor_y, z1, // top front
             x1, neighbor_y, z0, // top back
             x1, y1, z0, // bottom back
-            -1.0f, 0.0f, 0.0f, v1_z, v_bottom, v0_z, v_top, 1.0f, 1.0f, 1.0f,
-            1.0f);
+            1.0f, 0.0f, 0.0f, v1_z, v_bottom, v0_z, v_top, ao0, ao1, ao2, ao3);
     }
 
     return v;
@@ -682,6 +729,7 @@ emit_pit_faces_to_neighbors(float x0, float z0, float x1, float z1, int tile_x,
 {
     int8_t h = pz_map_get_height(map, tile_x, tile_y); // negative
     float y_bottom = GROUND_Y_OFFSET + h * WALL_HEIGHT_UNIT; // Bottom of pit
+    int bottom_level = 0;
 
     // Check each neighbor and emit faces to their buffers
     // Left neighbor (-X)
@@ -700,11 +748,23 @@ emit_pit_faces_to_neighbors(float x0, float z0, float x1, float z1, int tile_x,
                 compute_tile_uv(
                     tile_x, tile_y, map->height, scale, &u0, &v0_z, &u1, &v1_z);
 
+                int face_height = left_h - h;
+                if (face_height < 1) {
+                    face_height = 1;
+                }
+                float ao0 = compute_wall_corner_ao(
+                    map, tile_x, bottom_level, tile_y, -1, 0, 0);
+                float ao1 = compute_wall_corner_ao(
+                    map, tile_x, face_height, tile_y, -1, 0, 0);
+                float ao2 = compute_wall_corner_ao(
+                    map, tile_x, face_height, tile_y + 1, -1, 0, 0);
+                float ao3 = compute_wall_corner_ao(
+                    map, tile_x, bottom_level, tile_y + 1, -1, 0, 0);
                 // Left wall faces +X (into pit)
                 wall_ptrs[idx] = emit_wall_face(wall_ptrs[idx], x0, y_bottom,
                     z0, x0, neighbor_y, z0, x0, neighbor_y, z1, x0, y_bottom,
-                    z1, 1.0f, 0.0f, 0.0f, v0_z, v_bottom, v1_z, v_top, 1.0f,
-                    1.0f, 1.0f, 1.0f);
+                    z1, -1.0f, 0.0f, 0.0f, v0_z, v_bottom, v1_z, v_top, ao0,
+                    ao1, ao2, ao3);
             }
         }
     }
@@ -725,11 +785,23 @@ emit_pit_faces_to_neighbors(float x0, float z0, float x1, float z1, int tile_x,
                 compute_tile_uv(
                     tile_x, tile_y, map->height, scale, &u0, &v0_z, &u1, &v1_z);
 
+                int face_height = right_h - h;
+                if (face_height < 1) {
+                    face_height = 1;
+                }
+                float ao0 = compute_wall_corner_ao(
+                    map, tile_x + 1, bottom_level, tile_y + 1, 1, 0, 0);
+                float ao1 = compute_wall_corner_ao(
+                    map, tile_x + 1, face_height, tile_y + 1, 1, 0, 0);
+                float ao2 = compute_wall_corner_ao(
+                    map, tile_x + 1, face_height, tile_y, 1, 0, 0);
+                float ao3 = compute_wall_corner_ao(
+                    map, tile_x + 1, bottom_level, tile_y, 1, 0, 0);
                 // Right wall faces -X (into pit)
                 wall_ptrs[idx] = emit_wall_face(wall_ptrs[idx], x1, y_bottom,
                     z1, x1, neighbor_y, z1, x1, neighbor_y, z0, x1, y_bottom,
-                    z0, -1.0f, 0.0f, 0.0f, v1_z, v_bottom, v0_z, v_top, 1.0f,
-                    1.0f, 1.0f, 1.0f);
+                    z0, 1.0f, 0.0f, 0.0f, v1_z, v_bottom, v0_z, v_top, ao0, ao1,
+                    ao2, ao3);
             }
         }
     }
@@ -750,11 +822,23 @@ emit_pit_faces_to_neighbors(float x0, float z0, float x1, float z1, int tile_x,
                 compute_tile_uv(
                     tile_x, tile_y, map->height, scale, &u0, &v0_z, &u1, &v1_z);
 
+                int face_height = back_h - h;
+                if (face_height < 1) {
+                    face_height = 1;
+                }
+                float ao0 = compute_wall_corner_ao(
+                    map, tile_x + 1, bottom_level, tile_y, 0, 0, -1);
+                float ao1 = compute_wall_corner_ao(
+                    map, tile_x + 1, face_height, tile_y, 0, 0, -1);
+                float ao2 = compute_wall_corner_ao(
+                    map, tile_x, face_height, tile_y, 0, 0, -1);
+                float ao3 = compute_wall_corner_ao(
+                    map, tile_x, bottom_level, tile_y, 0, 0, -1);
                 // Back wall faces +Z (into pit)
                 wall_ptrs[idx] = emit_wall_face(wall_ptrs[idx], x1, y_bottom,
                     z0, x1, neighbor_y, z0, x0, neighbor_y, z0, x0, y_bottom,
-                    z0, 0.0f, 0.0f, 1.0f, u1, v_bottom, u0, v_top, 1.0f, 1.0f,
-                    1.0f, 1.0f);
+                    z0, 0.0f, 0.0f, -1.0f, u1, v_bottom, u0, v_top, ao0, ao1,
+                    ao2, ao3);
             }
         }
     }
@@ -775,11 +859,23 @@ emit_pit_faces_to_neighbors(float x0, float z0, float x1, float z1, int tile_x,
                 compute_tile_uv(
                     tile_x, tile_y, map->height, scale, &u0, &v0_z, &u1, &v1_z);
 
+                int face_height = front_h - h;
+                if (face_height < 1) {
+                    face_height = 1;
+                }
+                float ao0 = compute_wall_corner_ao(
+                    map, tile_x, bottom_level, tile_y + 1, 0, 0, 1);
+                float ao1 = compute_wall_corner_ao(
+                    map, tile_x, face_height, tile_y + 1, 0, 0, 1);
+                float ao2 = compute_wall_corner_ao(
+                    map, tile_x + 1, face_height, tile_y + 1, 0, 0, 1);
+                float ao3 = compute_wall_corner_ao(
+                    map, tile_x + 1, bottom_level, tile_y + 1, 0, 0, 1);
                 // Front wall faces -Z (into pit)
                 wall_ptrs[idx] = emit_wall_face(wall_ptrs[idx], x0, y_bottom,
                     z1, x0, neighbor_y, z1, x1, neighbor_y, z1, x1, y_bottom,
-                    z1, 0.0f, 0.0f, -1.0f, u0, v_bottom, u1, v_top, 1.0f, 1.0f,
-                    1.0f, 1.0f);
+                    z1, 0.0f, 0.0f, 1.0f, u0, v_bottom, u1, v_top, ao0, ao1,
+                    ao2, ao3);
             }
         }
     }

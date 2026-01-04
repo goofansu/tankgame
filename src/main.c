@@ -2058,6 +2058,8 @@ app_event(const sapp_event *event)
                 g_app.space_just_pressed = true;
                 if (g_app.state == GAME_STATE_LEVEL_COMPLETE
                     && g_app.state_timer > 1.5f) {
+                    // Consume the space press so it doesn't fire on new level
+                    g_app.space_just_pressed = false;
                     if (g_app.campaign_mgr && g_app.campaign_mgr->loaded) {
                         if (pz_campaign_advance(g_app.campaign_mgr)) {
                             // Load next map
