@@ -75,6 +75,7 @@ parse_tile_file(const char *path, pz_tile_config *config)
     config->friction = 1.0f;
     config->ground_texture_scale = 1;
     config->wall_texture_scale = 1;
+    config->blend = false;
     config->valid = false;
     config->ground_texture = PZ_INVALID_HANDLE;
     config->wall_texture = PZ_INVALID_HANDLE;
@@ -164,6 +165,9 @@ parse_tile_file(const char *path, pz_tile_config *config)
         } else if (strcmp(key, "wall_texture_scale") == 0) {
             int scale = atoi(value);
             config->wall_texture_scale = scale > 0 ? scale : 1;
+        } else if (strcmp(key, "blend") == 0) {
+            config->blend = (strcmp(value, "true") == 0
+                || strcmp(value, "1") == 0 || strcmp(value, "yes") == 0);
         }
         // Ignore unknown keys (forward compatibility)
 
@@ -434,10 +438,10 @@ pz_tile_registry_print(const pz_tile_registry *registry)
         const pz_tile_config *t = &registry->tiles[i];
         pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
             "  [%d] %s: ground=%s, wall=%s, side=%s, speed=%.1f, "
-            "friction=%.1f, gscale=%d, wscale=%d%s",
+            "friction=%.1f, gscale=%d, wscale=%d, blend=%s%s",
             i, t->name, t->ground_texture_path, t->wall_texture_path,
             t->wall_side_texture_path, t->speed_multiplier, t->friction,
             t->ground_texture_scale, t->wall_texture_scale,
-            t->valid ? "" : " [INVALID]");
+            t->blend ? "yes" : "no", t->valid ? "" : " [INVALID]");
     }
 }

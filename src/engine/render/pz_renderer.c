@@ -155,6 +155,20 @@ pz_renderer_destroy_texture(pz_renderer *r, pz_texture_handle handle)
     r->vtable->destroy_texture(r, handle);
 }
 
+pz_texture_handle
+pz_renderer_create_texture_array(pz_renderer *r, int width, int height,
+    int layers, const void **data_per_layer, pz_texture_filter filter,
+    pz_texture_wrap wrap)
+{
+    if (!r || !r->vtable->create_texture_array) {
+        pz_log(PZ_LOG_ERROR, PZ_LOG_CAT_RENDER,
+            "Texture arrays not supported by this backend");
+        return PZ_INVALID_HANDLE;
+    }
+    return r->vtable->create_texture_array(
+        r, width, height, layers, data_per_layer, filter, wrap);
+}
+
 /* ============================================================================
  * Buffers
  * ============================================================================

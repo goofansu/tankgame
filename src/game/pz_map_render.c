@@ -37,14 +37,25 @@ typedef struct wall_batch {
     int vertex_count;
 } wall_batch;
 
+// Blended ground vertex: position(3) + uv(2) + terrain_idx(1) + neighbors(4)
+#define BLEND_GROUND_VERTEX_SIZE 10
+
 struct pz_map_renderer {
     pz_renderer *renderer;
     pz_texture_manager *tex_manager;
     const pz_tile_registry *tile_registry;
 
-    // Ground shader and pipeline
+    // Ground shader and pipeline (legacy, for walls on top)
     pz_shader_handle ground_shader;
     pz_pipeline_handle ground_pipeline;
+
+    // Blended ground shader and pipeline
+    pz_shader_handle ground_blend_shader;
+    pz_pipeline_handle ground_blend_pipeline;
+    pz_texture_handle ground_texture_array; // All ground textures packed
+    pz_buffer_handle ground_blend_buffer; // Unified ground mesh
+    int ground_blend_vertex_count;
+    int ground_texture_array_size; // Size of textures in array (uniform)
 
     // Wall shader and pipeline
     pz_shader_handle wall_shader;
@@ -59,7 +70,7 @@ struct pz_map_renderer {
     pz_shader_handle fog_shader;
     pz_pipeline_handle fog_pipeline;
 
-    // Ground batches (one per tile type with geometry)
+    // Ground batches (legacy - kept for wall tops)
     ground_batch ground_batches[MAX_TILE_TEXTURES];
     int ground_batch_count;
 
@@ -589,6 +600,46 @@ pz_map_renderer_create(pz_renderer *renderer, pz_texture_manager *tex_manager,
     };
     mr->ground_pipeline = pz_renderer_create_pipeline(renderer, &ground_desc);
 
+    // Blended ground shader
+    mr->ground_blend_shader
+        = pz_renderer_load_shader(renderer, "shaders/ground_blend.vert",
+            "shaders/ground_blend.frag", "ground_blend");
+    if (mr->ground_blend_shader == PZ_INVALID_HANDLE) {
+        pz_log(PZ_LOG_ERROR, PZ_LOG_CAT_RENDER,
+            "Failed to load ground_blend shader");
+        pz_map_renderer_destroy(mr);
+        return NULL;
+    }
+
+    // Blended ground pipeline
+    pz_vertex_attr ground_blend_attrs[] = {
+        { .name = "a_position", .type = PZ_ATTR_FLOAT3, .offset = 0 },
+        { .name = "a_texcoord",
+            .type = PZ_ATTR_FLOAT2,
+            .offset = 3 * sizeof(float) },
+        { .name = "a_terrain_idx",
+            .type = PZ_ATTR_FLOAT,
+            .offset = 5 * sizeof(float) },
+        { .name = "a_neighbor_idx",
+            .type = PZ_ATTR_FLOAT4,
+            .offset = 6 * sizeof(float) },
+    };
+
+    pz_pipeline_desc ground_blend_desc = {
+        .shader = mr->ground_blend_shader,
+        .vertex_layout = {
+            .attrs = ground_blend_attrs,
+            .attr_count = 4,
+            .stride = BLEND_GROUND_VERTEX_SIZE * sizeof(float),
+        },
+        .blend = PZ_BLEND_NONE,
+        .depth = PZ_DEPTH_READ_WRITE,
+        .cull = PZ_CULL_BACK,
+        .primitive = PZ_PRIMITIVE_TRIANGLES,
+    };
+    mr->ground_blend_pipeline
+        = pz_renderer_create_pipeline(renderer, &ground_blend_desc);
+
     // Wall shader
     mr->wall_shader = pz_renderer_load_shader(
         renderer, "shaders/wall.vert", "shaders/wall.frag", "wall");
@@ -694,6 +745,11 @@ pz_map_renderer_create(pz_renderer *renderer, pz_texture_manager *tex_manager,
     mr->ground_batch_count = 0;
     mr->wall_batch_count = 0;
 
+    mr->ground_blend_buffer = PZ_INVALID_HANDLE;
+    mr->ground_blend_vertex_count = 0;
+    mr->ground_texture_array = PZ_INVALID_HANDLE;
+    mr->ground_texture_array_size = 0;
+
     mr->water_buffer = PZ_INVALID_HANDLE;
     mr->water_vertex_count = 0;
     mr->fog_buffer = PZ_INVALID_HANDLE;
@@ -769,9 +825,20 @@ pz_map_renderer_destroy(pz_map_renderer *mr)
         pz_renderer_destroy_buffer(mr->renderer, mr->fog_buffer);
     }
 
+    // Destroy blended ground resources
+    if (mr->ground_blend_buffer != PZ_INVALID_HANDLE) {
+        pz_renderer_destroy_buffer(mr->renderer, mr->ground_blend_buffer);
+    }
+    if (mr->ground_texture_array != PZ_INVALID_HANDLE) {
+        pz_renderer_destroy_texture(mr->renderer, mr->ground_texture_array);
+    }
+
     // Pipelines
     if (mr->ground_pipeline != PZ_INVALID_HANDLE) {
         pz_renderer_destroy_pipeline(mr->renderer, mr->ground_pipeline);
+    }
+    if (mr->ground_blend_pipeline != PZ_INVALID_HANDLE) {
+        pz_renderer_destroy_pipeline(mr->renderer, mr->ground_blend_pipeline);
     }
     if (mr->wall_pipeline != PZ_INVALID_HANDLE) {
         pz_renderer_destroy_pipeline(mr->renderer, mr->wall_pipeline);
@@ -786,6 +853,9 @@ pz_map_renderer_destroy(pz_map_renderer *mr)
     // Shaders
     if (mr->ground_shader != PZ_INVALID_HANDLE) {
         pz_renderer_destroy_shader(mr->renderer, mr->ground_shader);
+    }
+    if (mr->ground_blend_shader != PZ_INVALID_HANDLE) {
+        pz_renderer_destroy_shader(mr->renderer, mr->ground_blend_shader);
     }
     if (mr->wall_shader != PZ_INVALID_HANDLE) {
         pz_renderer_destroy_shader(mr->renderer, mr->wall_shader);
@@ -826,6 +896,18 @@ pz_map_renderer_set_map(pz_map_renderer *mr, const pz_map *map)
         pz_renderer_destroy_buffer(mr->renderer, mr->debug_line_buffer);
         mr->debug_line_buffer = PZ_INVALID_HANDLE;
         mr->debug_line_vertex_count = 0;
+    }
+
+    // Destroy old blended ground resources
+    if (mr->ground_blend_buffer != PZ_INVALID_HANDLE) {
+        pz_renderer_destroy_buffer(mr->renderer, mr->ground_blend_buffer);
+        mr->ground_blend_buffer = PZ_INVALID_HANDLE;
+        mr->ground_blend_vertex_count = 0;
+    }
+    if (mr->ground_texture_array != PZ_INVALID_HANDLE) {
+        pz_renderer_destroy_texture(mr->renderer, mr->ground_texture_array);
+        mr->ground_texture_array = PZ_INVALID_HANDLE;
+        mr->ground_texture_array_size = 0;
     }
 
     // Destroy old ground batches
@@ -894,12 +976,14 @@ pz_map_renderer_set_map(pz_map_renderer *mr, const pz_map *map)
     float half_w = map->world_width / 2.0f;
     float half_h = map->world_height / 2.0f;
 
-    // Pre-compute texture scales for each tile type
+    // Pre-compute texture scales and blend flags for each tile type
     int ground_scales[MAX_TILE_TEXTURES];
     int wall_scales[MAX_TILE_TEXTURES];
+    bool tile_blends[MAX_TILE_TEXTURES];
     for (int i = 0; i < MAX_TILE_TEXTURES; i++) {
         ground_scales[i] = 1;
         wall_scales[i] = 1;
+        tile_blends[i] = false;
     }
     for (int i = 0; i < map->tile_def_count && i < MAX_TILE_TEXTURES; i++) {
         const pz_tile_def *def = &map->tile_defs[i];
@@ -907,9 +991,11 @@ pz_map_renderer_set_map(pz_map_renderer *mr, const pz_map *map)
         if (config) {
             ground_scales[i] = config->ground_texture_scale;
             wall_scales[i] = config->wall_texture_scale;
+            tile_blends[i] = config->blend;
             pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_RENDER,
-                "Tile %d (%s): ground_scale=%d, wall_scale=%d", i, def->name,
-                ground_scales[i], wall_scales[i]);
+                "Tile %d (%s): ground_scale=%d, wall_scale=%d, blend=%s", i,
+                def->name, ground_scales[i], wall_scales[i],
+                tile_blends[i] ? "yes" : "no");
         }
     }
 
@@ -1065,6 +1151,236 @@ pz_map_renderer_set_map(pz_map_renderer *mr, const pz_map *map)
         }
     }
 
+    // ========================================================================
+    // Generate blended ground mesh with texture array
+    // ========================================================================
+
+    // Step 1: Build texture array from all ground textures used by this map
+    // We need consistent texture sizes, so find the first valid texture size
+    int tex_array_width = 0;
+    int tex_array_height = 0;
+
+    // First pass: find texture dimensions from first valid texture
+    for (int i = 0; i < map->tile_def_count && i < MAX_TILE_TEXTURES; i++) {
+        const pz_tile_def *def = &map->tile_defs[i];
+        const pz_tile_config *config = get_tile_config(mr, def->name);
+        if (config && config->ground_texture != PZ_INVALID_HANDLE) {
+            int w, h;
+            if (pz_texture_get_size(
+                    mr->tex_manager, config->ground_texture, &w, &h)) {
+                tex_array_width = w;
+                tex_array_height = h;
+                break;
+            }
+        }
+    }
+
+    // If we found valid textures, create the texture array
+    if (tex_array_width > 0 && tex_array_height > 0
+        && map->tile_def_count > 0) {
+        int num_layers = map->tile_def_count;
+        const void **layer_data = pz_alloc(num_layers * sizeof(void *));
+        unsigned char **loaded_images = pz_alloc(num_layers * sizeof(void *));
+
+        for (int i = 0; i < num_layers; i++) {
+            layer_data[i] = NULL;
+            loaded_images[i] = NULL;
+
+            const pz_tile_def *def = &map->tile_defs[i];
+            const pz_tile_config *config = get_tile_config(mr, def->name);
+            if (config && config->ground_texture_path[0] != '\0') {
+                // Load the texture directly into RGBA data
+                int w, h, ch;
+                unsigned char *img_data
+                    = pz_image_load(config->ground_texture_path, &w, &h, &ch);
+                if (img_data) {
+                    // Check if size matches
+                    if (w == tex_array_width && h == tex_array_height) {
+                        layer_data[i] = img_data;
+                        loaded_images[i] = img_data;
+                    } else {
+                        pz_log(PZ_LOG_WARN, PZ_LOG_CAT_RENDER,
+                            "Texture %s size mismatch (%dx%d vs %dx%d)",
+                            config->ground_texture_path, w, h, tex_array_width,
+                            tex_array_height);
+                        pz_image_free(img_data);
+                    }
+                }
+            }
+        }
+
+        // Create the texture array
+        mr->ground_texture_array = pz_renderer_create_texture_array(
+            mr->renderer, tex_array_width, tex_array_height, num_layers,
+            layer_data, PZ_FILTER_LINEAR, PZ_WRAP_REPEAT);
+        mr->ground_texture_array_size = tex_array_width;
+
+        // Free loaded images
+        for (int i = 0; i < num_layers; i++) {
+            if (loaded_images[i]) {
+                pz_image_free(loaded_images[i]);
+            }
+        }
+        pz_free(loaded_images);
+        pz_free(layer_data);
+
+        if (mr->ground_texture_array != PZ_INVALID_HANDLE) {
+            pz_log(PZ_LOG_INFO, PZ_LOG_CAT_RENDER,
+                "Created ground texture array: %dx%d, %d layers",
+                tex_array_width, tex_array_height, num_layers);
+        }
+    }
+
+    // Step 2: Create unified blended ground mesh
+    // Count total ground tiles
+    int total_ground_tiles = 0;
+    for (int y = 0; y < map->height; y++) {
+        for (int x = 0; x < map->width; x++) {
+            total_ground_tiles++;
+        }
+    }
+
+    if (total_ground_tiles > 0
+        && mr->ground_texture_array != PZ_INVALID_HANDLE) {
+        int num_verts = total_ground_tiles * 6;
+        float *blend_verts
+            = pz_alloc(num_verts * BLEND_GROUND_VERTEX_SIZE * sizeof(float));
+        float *bv = blend_verts;
+
+        for (int y = 0; y < map->height; y++) {
+            for (int x = 0; x < map->width; x++) {
+                uint8_t idx = pz_map_get_tile_index(map, x, y);
+                int8_t h = pz_map_get_height(map, x, y);
+
+                float x0 = x * map->tile_size - half_w;
+                float x1 = (x + 1) * map->tile_size - half_w;
+                float z0 = y * map->tile_size - half_h;
+                float z1 = (y + 1) * map->tile_size - half_h;
+
+                float ground_y = GROUND_Y_OFFSET;
+                if (h < 0) {
+                    ground_y = GROUND_Y_OFFSET + h * WALL_HEIGHT_UNIT;
+                } else if (h > 0) {
+                    // Elevated tile - render at top of wall
+                    ground_y = GROUND_Y_OFFSET + h * WALL_HEIGHT_UNIT;
+                }
+
+                // Get texture scale for UVs
+                // Add 0.5 tile offset to shift texture wrap away from tile
+                // boundaries This makes any texture seams fall in the middle
+                // of tiles rather than at edges
+                int scale = ground_scales[idx];
+                float inv_scale = 1.0f / (float)scale;
+                float uv_offset = 0.5f * inv_scale;
+                float u0 = (float)x * inv_scale + uv_offset;
+                float u1 = (float)(x + 1) * inv_scale + uv_offset;
+                float v0 = (float)y * inv_scale + uv_offset;
+                float v1 = (float)(y + 1) * inv_scale + uv_offset;
+
+                // Determine neighbor indices for blending
+                // -1 means "no blend" (same terrain or height differs)
+                // Blending occurs when at least one of the two adjacent tiles
+                // has blend=true.
+                float n_north = -1.0f;
+                float n_east = -1.0f;
+                float n_south = -1.0f;
+                float n_west = -1.0f;
+
+                bool this_blends = tile_blends[idx];
+
+                // North neighbor (y - 1)
+                if (pz_map_in_bounds(map, x, y - 1)) {
+                    int8_t n_h = pz_map_get_height(map, x, y - 1);
+                    uint8_t n_idx = pz_map_get_tile_index(map, x, y - 1);
+                    bool neighbor_blends
+                        = (n_idx < MAX_TILE_TEXTURES) && tile_blends[n_idx];
+                    if (n_h == h && n_idx != idx
+                        && (this_blends || neighbor_blends)) {
+                        n_north = (float)n_idx;
+                    }
+                }
+
+                // East neighbor (x + 1)
+                if (pz_map_in_bounds(map, x + 1, y)) {
+                    int8_t n_h = pz_map_get_height(map, x + 1, y);
+                    uint8_t n_idx = pz_map_get_tile_index(map, x + 1, y);
+                    bool neighbor_blends
+                        = (n_idx < MAX_TILE_TEXTURES) && tile_blends[n_idx];
+                    if (n_h == h && n_idx != idx
+                        && (this_blends || neighbor_blends)) {
+                        n_east = (float)n_idx;
+                    }
+                }
+
+                // South neighbor (y + 1)
+                if (pz_map_in_bounds(map, x, y + 1)) {
+                    int8_t n_h = pz_map_get_height(map, x, y + 1);
+                    uint8_t n_idx = pz_map_get_tile_index(map, x, y + 1);
+                    bool neighbor_blends
+                        = (n_idx < MAX_TILE_TEXTURES) && tile_blends[n_idx];
+                    if (n_h == h && n_idx != idx
+                        && (this_blends || neighbor_blends)) {
+                        n_south = (float)n_idx;
+                    }
+                }
+
+                // West neighbor (x - 1)
+                if (pz_map_in_bounds(map, x - 1, y)) {
+                    int8_t n_h = pz_map_get_height(map, x - 1, y);
+                    uint8_t n_idx = pz_map_get_tile_index(map, x - 1, y);
+                    bool neighbor_blends
+                        = (n_idx < MAX_TILE_TEXTURES) && tile_blends[n_idx];
+                    if (n_h == h && n_idx != idx
+                        && (this_blends || neighbor_blends)) {
+                        n_west = (float)n_idx;
+                    }
+                }
+
+                // Emit 6 vertices (2 triangles) for this tile
+                // Vertex format: pos(3) + uv(2) + terrain_idx(1) + neighbors(4)
+#define EMIT_BLEND_VERTEX(px, py, pz, pu, pv)                                  \
+    *bv++ = (px);                                                              \
+    *bv++ = (py);                                                              \
+    *bv++ = (pz);                                                              \
+    *bv++ = (pu);                                                              \
+    *bv++ = (pv);                                                              \
+    *bv++ = (float)idx;                                                        \
+    *bv++ = n_north;                                                           \
+    *bv++ = n_east;                                                            \
+    *bv++ = n_south;                                                           \
+    *bv++ = n_west;
+
+                // Triangle 1 (CCW: v0-v1-v2)
+                EMIT_BLEND_VERTEX(x0, ground_y, z0, u0, v0); // top-left
+                EMIT_BLEND_VERTEX(x0, ground_y, z1, u0, v1); // bottom-left
+                EMIT_BLEND_VERTEX(x1, ground_y, z1, u1, v1); // bottom-right
+
+                // Triangle 2 (CCW: v0-v2-v3)
+                EMIT_BLEND_VERTEX(x0, ground_y, z0, u0, v0); // top-left
+                EMIT_BLEND_VERTEX(x1, ground_y, z1, u1, v1); // bottom-right
+                EMIT_BLEND_VERTEX(x1, ground_y, z0, u1, v0); // top-right
+
+#undef EMIT_BLEND_VERTEX
+            }
+        }
+
+        mr->ground_blend_vertex_count = num_verts;
+
+        pz_buffer_desc desc = {
+            .type = PZ_BUFFER_VERTEX,
+            .usage = PZ_BUFFER_STATIC,
+            .data = blend_verts,
+            .size = num_verts * BLEND_GROUND_VERTEX_SIZE * sizeof(float),
+        };
+        mr->ground_blend_buffer
+            = pz_renderer_create_buffer(mr->renderer, &desc);
+
+        pz_free(blend_verts);
+
+        pz_log(PZ_LOG_INFO, PZ_LOG_CAT_RENDER,
+            "Created blended ground mesh: %d vertices", num_verts);
+    }
+
     // Generate water mesh (for tiles at or below water_level)
     if (mr->water_buffer != PZ_INVALID_HANDLE) {
         pz_renderer_destroy_buffer(mr->renderer, mr->water_buffer);
@@ -1196,6 +1512,88 @@ pz_map_renderer_draw_ground(pz_map_renderer *mr, const pz_mat4 *view_projection,
         return;
     }
 
+    // Use blended ground if available
+    if (mr->ground_blend_buffer != PZ_INVALID_HANDLE
+        && mr->ground_texture_array != PZ_INVALID_HANDLE
+        && mr->ground_blend_vertex_count > 0) {
+
+        pz_renderer_set_uniform_mat4(
+            mr->renderer, mr->ground_blend_shader, "u_mvp", view_projection);
+
+        // Bind texture array to slot 0
+        pz_renderer_bind_texture(mr->renderer, 0, mr->ground_texture_array);
+
+        // Track texture
+        if (params && params->track_texture != PZ_INVALID_HANDLE
+            && params->track_texture != 0) {
+            pz_renderer_bind_texture(mr->renderer, 1, params->track_texture);
+            pz_renderer_set_uniform_int(
+                mr->renderer, mr->ground_blend_shader, "u_use_tracks", 1);
+            pz_renderer_set_uniform_vec2(mr->renderer, mr->ground_blend_shader,
+                "u_track_scale",
+                (pz_vec2) { params->track_scale_x, params->track_scale_z });
+            pz_renderer_set_uniform_vec2(mr->renderer, mr->ground_blend_shader,
+                "u_track_offset",
+                (pz_vec2) { params->track_offset_x, params->track_offset_z });
+        } else {
+            pz_renderer_set_uniform_int(
+                mr->renderer, mr->ground_blend_shader, "u_use_tracks", 0);
+        }
+
+        // Light map
+        if (params && params->light_texture != PZ_INVALID_HANDLE
+            && params->light_texture != 0) {
+            pz_renderer_bind_texture(mr->renderer, 2, params->light_texture);
+            pz_renderer_set_uniform_int(
+                mr->renderer, mr->ground_blend_shader, "u_use_lighting", 1);
+            pz_renderer_set_uniform_vec2(mr->renderer, mr->ground_blend_shader,
+                "u_light_scale",
+                (pz_vec2) { params->light_scale_x, params->light_scale_z });
+            pz_renderer_set_uniform_vec2(mr->renderer, mr->ground_blend_shader,
+                "u_light_offset",
+                (pz_vec2) { params->light_offset_x, params->light_offset_z });
+        } else {
+            pz_renderer_set_uniform_int(
+                mr->renderer, mr->ground_blend_shader, "u_use_lighting", 0);
+        }
+
+        // Sun lighting
+        if (params && params->has_sun) {
+            pz_renderer_set_uniform_int(
+                mr->renderer, mr->ground_blend_shader, "u_has_sun", 1);
+            pz_renderer_set_uniform_vec3(mr->renderer, mr->ground_blend_shader,
+                "u_sun_direction", params->sun_direction);
+            pz_renderer_set_uniform_vec3(mr->renderer, mr->ground_blend_shader,
+                "u_sun_color", params->sun_color);
+        } else {
+            pz_renderer_set_uniform_int(
+                mr->renderer, mr->ground_blend_shader, "u_has_sun", 0);
+        }
+
+        // Blend parameters
+        pz_renderer_set_uniform_float(
+            mr->renderer, mr->ground_blend_shader, "u_blend_sharpness", 0.3f);
+        pz_renderer_set_uniform_float(
+            mr->renderer, mr->ground_blend_shader, "u_noise_scale", 0.8f);
+        pz_renderer_set_uniform_float(mr->renderer, mr->ground_blend_shader,
+            "u_tile_size", mr->map->tile_size);
+        // Map offset: half of world size to align grid
+        pz_renderer_set_uniform_vec2(mr->renderer, mr->ground_blend_shader,
+            "u_map_offset",
+            (pz_vec2) {
+                mr->map->world_width / 2.0f, mr->map->world_height / 2.0f });
+
+        // Draw unified blended ground mesh
+        pz_draw_cmd cmd = {
+            .pipeline = mr->ground_blend_pipeline,
+            .vertex_buffer = mr->ground_blend_buffer,
+            .vertex_count = mr->ground_blend_vertex_count,
+        };
+        pz_renderer_draw(mr->renderer, &cmd);
+        return;
+    }
+
+    // Fallback: use old batched rendering
     pz_renderer_set_uniform_mat4(
         mr->renderer, mr->ground_shader, "u_mvp", view_projection);
     pz_renderer_set_uniform_int(

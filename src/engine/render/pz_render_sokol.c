@@ -53,6 +53,7 @@ static const shader_desc_entry SHADER_DESC_TABLE[] = {
     { "test", tankgame_test_shader_desc },
     { "textured", tankgame_textured_shader_desc },
     { "ground", tankgame_ground_shader_desc },
+    { "ground_blend", tankgame_ground_blend_shader_desc },
     { "water", tankgame_water_shader_desc },
     { "fog", tankgame_fog_shader_desc },
     { "wall", tankgame_wall_shader_desc },
@@ -91,6 +92,8 @@ static const char *SHADER_BLOCKS_TEST[] = { "test_vs_params" };
 static const char *SHADER_BLOCKS_TEXTURED[] = { "textured_vs_params" };
 static const char *SHADER_BLOCKS_GROUND[]
     = { "ground_vs_params", "ground_fs_params" };
+static const char *SHADER_BLOCKS_GROUND_BLEND[]
+    = { "ground_blend_vs_params", "ground_blend_fs_params" };
 static const char *SHADER_BLOCKS_WATER[]
     = { "water_vs_params", "water_fs_params" };
 static const char *SHADER_BLOCKS_FOG[] = { "fog_vs_params", "fog_fs_params" };
@@ -125,6 +128,12 @@ static const shader_reflection SHADER_REFLECTION_TABLE[] = {
         tankgame_ground_uniformblock_slot, tankgame_ground_uniformblock_size,
         SHADER_BLOCKS_GROUND,
         (int)(sizeof(SHADER_BLOCKS_GROUND) / sizeof(SHADER_BLOCKS_GROUND[0])) },
+    { "ground_blend", tankgame_ground_blend_uniform_offset,
+        tankgame_ground_blend_uniform_desc,
+        tankgame_ground_blend_uniformblock_slot,
+        tankgame_ground_blend_uniformblock_size, SHADER_BLOCKS_GROUND_BLEND,
+        (int)(sizeof(SHADER_BLOCKS_GROUND_BLEND)
+            / sizeof(SHADER_BLOCKS_GROUND_BLEND[0])) },
     { "water", tankgame_water_uniform_offset, tankgame_water_uniform_desc,
         tankgame_water_uniformblock_slot, tankgame_water_uniformblock_size,
         SHADER_BLOCKS_WATER,
@@ -1158,6 +1167,119 @@ sokol_destroy_texture(pz_renderer *r, pz_texture_handle handle)
     data->textures[handle].used = false;
 }
 
+static pz_texture_handle
+sokol_create_texture_array(pz_renderer *r, int width, int height, int layers,
+    const void **data_per_layer, pz_texture_filter filter, pz_texture_wrap wrap)
+{
+    sokol_backend_data *data = r->backend_data;
+
+    int handle = alloc_texture(data);
+    if (handle == PZ_INVALID_HANDLE) {
+        pz_log(PZ_LOG_ERROR, PZ_LOG_CAT_RENDER,
+            "Max textures reached for texture array");
+        return PZ_INVALID_HANDLE;
+    }
+
+    sokol_texture *tex = &data->textures[handle];
+    memset(tex, 0, sizeof(*tex));
+    tex->used = true;
+    tex->width = width;
+    tex->height = height;
+    tex->format = PZ_TEXTURE_RGBA8;
+    tex->mipmapped = false;
+    tex->owns_image = true;
+
+    // Pack all layers into one contiguous buffer
+    // Sokol expects array texture data as: layer0, layer1, layer2, ...
+    size_t layer_size = (size_t)(width * height * 4);
+    size_t total_size = layer_size * (size_t)layers;
+    uint8_t *packed_data = pz_alloc(total_size);
+    if (!packed_data) {
+        pz_log(PZ_LOG_ERROR, PZ_LOG_CAT_RENDER,
+            "Failed to allocate %zu bytes for texture array data", total_size);
+        tex->used = false;
+        return PZ_INVALID_HANDLE;
+    }
+
+    for (int i = 0; i < layers; i++) {
+        if (data_per_layer[i]) {
+            memcpy(packed_data + i * layer_size, data_per_layer[i], layer_size);
+        } else {
+            // Fill with magenta for missing layers (debugging aid)
+            uint8_t *layer_ptr = packed_data + i * layer_size;
+            for (size_t p = 0; p < layer_size; p += 4) {
+                layer_ptr[p + 0] = 255; // R
+                layer_ptr[p + 1] = 0; // G
+                layer_ptr[p + 2] = 255; // B
+                layer_ptr[p + 3] = 255; // A
+            }
+        }
+    }
+
+    sg_image_desc img_desc;
+    memset(&img_desc, 0, sizeof(img_desc));
+    img_desc.type = SG_IMAGETYPE_ARRAY;
+    img_desc.width = width;
+    img_desc.height = height;
+    img_desc.num_slices = layers;
+    img_desc.pixel_format = SG_PIXELFORMAT_RGBA8;
+    img_desc.usage.immutable = true;
+    img_desc.data.mip_levels[0].ptr = packed_data;
+    img_desc.data.mip_levels[0].size = total_size;
+
+    tex->image = sg_make_image(&img_desc);
+
+    // Free the packed data after upload
+    pz_free(packed_data);
+
+    if (!tex->image.id) {
+        pz_log(PZ_LOG_ERROR, PZ_LOG_CAT_RENDER,
+            "Failed to create texture array (%dx%d, %d layers)", width, height,
+            layers);
+        tex->used = false;
+        return PZ_INVALID_HANDLE;
+    }
+
+    tex->view = sg_make_view(&(sg_view_desc) {
+        .texture = { .image = tex->image },
+    });
+
+    sg_sampler_desc sampler_desc;
+    memset(&sampler_desc, 0, sizeof(sampler_desc));
+
+    if (filter == PZ_FILTER_NEAREST) {
+        sampler_desc.min_filter = SG_FILTER_NEAREST;
+        sampler_desc.mag_filter = SG_FILTER_NEAREST;
+    } else {
+        sampler_desc.min_filter = SG_FILTER_LINEAR;
+        sampler_desc.mag_filter = SG_FILTER_LINEAR;
+    }
+    sampler_desc.mipmap_filter = SG_FILTER_NEAREST;
+
+    switch (wrap) {
+    case PZ_WRAP_REPEAT:
+        sampler_desc.wrap_u = SG_WRAP_REPEAT;
+        sampler_desc.wrap_v = SG_WRAP_REPEAT;
+        break;
+    case PZ_WRAP_MIRROR:
+        sampler_desc.wrap_u = SG_WRAP_MIRRORED_REPEAT;
+        sampler_desc.wrap_v = SG_WRAP_MIRRORED_REPEAT;
+        break;
+    case PZ_WRAP_CLAMP:
+    default:
+        sampler_desc.wrap_u = SG_WRAP_CLAMP_TO_EDGE;
+        sampler_desc.wrap_v = SG_WRAP_CLAMP_TO_EDGE;
+        break;
+    }
+
+    tex->sampler = sg_make_sampler(&sampler_desc);
+
+    pz_log(PZ_LOG_INFO, PZ_LOG_CAT_RENDER,
+        "Created texture array: %dx%d, %d layers", width, height, layers);
+
+    return handle;
+}
+
 static pz_buffer_handle
 sokol_create_buffer(pz_renderer *r, const pz_buffer_desc *desc)
 {
@@ -1860,6 +1982,7 @@ pz_render_backend_sokol_vtable(void)
         .create_texture = sokol_create_texture,
         .update_texture = sokol_update_texture,
         .destroy_texture = sokol_destroy_texture,
+        .create_texture_array = sokol_create_texture_array,
         .create_buffer = sokol_create_buffer,
         .update_buffer = sokol_update_buffer,
         .destroy_buffer = sokol_destroy_buffer,

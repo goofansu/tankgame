@@ -34,7 +34,36 @@ def center_crop_square(img: Image.Image) -> Image.Image:
     return img.crop((left, top, left + size, top + size))
 
 
-def make_tileable(img: Image.Image, blend_ratio: float = 0.25) -> Image.Image:
+def smooth_step(x):
+    """Hermite smooth interpolation"""
+    x = np.clip(x, 0, 1)
+    return x * x * (3 - 2 * x)
+
+
+def make_tileable(img: Image.Image, blend_ratio: float = 0.25, method: str = "edge") -> Image.Image:
+    """
+    Make image tileable using the specified method.
+    
+    Methods:
+        edge     - Blend opposite edges (simple, can look mirrored)
+        poisson  - Gradient domain blending (preserves structure)
+        fft      - Frequency domain blending (smooth periodic)
+        quilting - Find optimal seam through overlap (best for irregular textures)
+    """
+    methods = {
+        "edge": _make_tileable_edge,
+        "poisson": _make_tileable_poisson,
+        "fft": _make_tileable_fft,
+        "quilting": _make_tileable_quilting,
+    }
+    
+    if method not in methods:
+        raise ValueError(f"Unknown tiling method: {method}. Use one of: {list(methods.keys())}")
+    
+    return methods[method](img, blend_ratio)
+
+
+def _make_tileable_edge(img: Image.Image, blend_ratio: float = 0.25) -> Image.Image:
     """
     Make image tileable by blending edges with their opposites.
     
@@ -62,6 +91,251 @@ def make_tileable(img: Image.Image, blend_ratio: float = 0.25) -> Image.Image:
         arr[h - 1 - i, :] = arr[h - 1 - i, :] * t + arr[blend_h - 1 - i, :] * (1 - t)
     
     return Image.fromarray(arr.astype(np.uint8))
+
+
+def _poisson_solve_periodic(divergence):
+    """Solve Poisson equation with periodic boundary conditions using FFT."""
+    from scipy.fft import fft2, ifft2
+    
+    h, w = divergence.shape
+    
+    # Create frequency coordinates
+    fy = np.fft.fftfreq(h)[:, np.newaxis]
+    fx = np.fft.fftfreq(w)[np.newaxis, :]
+    
+    # Laplacian in frequency domain (discrete version)
+    denom = 2 * np.cos(2 * np.pi * fx) + 2 * np.cos(2 * np.pi * fy) - 4
+    denom[0, 0] = 1  # Avoid division by zero (DC component)
+    
+    # Solve in frequency domain
+    div_fft = fft2(divergence)
+    result_fft = div_fft / denom
+    result_fft[0, 0] = 0  # Set DC to zero (mean is arbitrary)
+    
+    result = np.real(ifft2(result_fft))
+    return result
+
+
+def _make_tileable_poisson(img: Image.Image, blend_ratio: float = 0.25) -> Image.Image:
+    """
+    Gradient domain blending - preserves texture structure better.
+    
+    Instead of blending pixel values, we blend gradients and reconstruct.
+    This maintains texture detail while making edges seamless.
+    """
+    arr = np.array(img, dtype=np.float32)
+    h, w = arr.shape[:2]
+    n_channels = arr.shape[2] if len(arr.shape) == 3 else 1
+    blend_width = int(min(w, h) * blend_ratio)
+    
+    if n_channels == 1:
+        arr = arr[:, :, np.newaxis]
+    
+    result = np.zeros_like(arr)
+    
+    for c in range(arr.shape[2]):
+        channel = arr[:, :, c]
+        
+        # Compute gradients
+        gy, gx = np.gradient(channel)
+        
+        # Create weight mask - lower weight at edges
+        weight_x = np.ones(w)
+        weight_y = np.ones(h)
+        
+        for i in range(blend_width):
+            t = smooth_step(i / blend_width)
+            weight_x[i] = t
+            weight_x[w - 1 - i] = t
+            weight_y[i] = t
+            weight_y[h - 1 - i] = t
+        
+        weight = np.outer(weight_y, weight_x)
+        
+        # For x gradient at left/right edges
+        for x in range(blend_width):
+            t = smooth_step(x / blend_width)
+            gx[:, x] = t * gx[:, x] + (1 - t) * gx[:, w - 1 - x]
+            gx[:, w - 1 - x] = t * gx[:, w - 1 - x] + (1 - t) * gx[:, x]
+        
+        # For y gradient at top/bottom edges
+        for y in range(blend_width):
+            t = smooth_step(y / blend_width)
+            gy[y, :] = t * gy[y, :] + (1 - t) * gy[h - 1 - y, :]
+            gy[h - 1 - y, :] = t * gy[h - 1 - y, :] + (1 - t) * gy[y, :]
+        
+        # Reconstruct from gradients using Poisson solver
+        divergence = np.gradient(gx, axis=1) + np.gradient(gy, axis=0)
+        result_channel = _poisson_solve_periodic(divergence)
+        
+        # Normalize to original range
+        result_channel = result_channel - result_channel.min()
+        orig_range = channel.max() - channel.min()
+        if result_channel.max() > 0:
+            result_channel = result_channel / result_channel.max() * orig_range
+        result_channel = result_channel + channel.min()
+        
+        # Blend with original using weight mask to preserve center
+        result[:, :, c] = weight * channel + (1 - weight) * result_channel
+    
+    if n_channels == 1:
+        result = result[:, :, 0]
+    
+    return Image.fromarray(np.clip(result, 0, 255).astype(np.uint8))
+
+
+def _make_tileable_fft(img: Image.Image, blend_ratio: float = 0.25) -> Image.Image:
+    """
+    FFT-based method - make edges match in frequency domain.
+    
+    This smoothly wraps the image by working in frequency space,
+    which naturally handles periodic boundaries.
+    """
+    arr = np.array(img, dtype=np.float32)
+    h, w = arr.shape[:2]
+    
+    # Create smooth transition mask using cosine window
+    y_ramp = np.linspace(0, 1, h)
+    x_ramp = np.linspace(0, 1, w)
+    
+    y_window = 0.5 - 0.5 * np.cos(2 * np.pi * y_ramp)
+    x_window = 0.5 - 0.5 * np.cos(2 * np.pi * x_ramp)
+    
+    window = np.outer(y_window, x_window)
+    
+    if len(arr.shape) == 3:
+        result = np.zeros_like(arr)
+        for c in range(arr.shape[2]):
+            channel = arr[:, :, c]
+            mean_val = channel.mean()
+            centered = channel - mean_val
+            rolled_xy = np.roll(np.roll(centered, w // 2, axis=1), h // 2, axis=0)
+            result[:, :, c] = centered * window + rolled_xy * (1 - window) + mean_val
+    else:
+        mean_val = arr.mean()
+        centered = arr - mean_val
+        rolled_xy = np.roll(np.roll(centered, w // 2, axis=1), h // 2, axis=0)
+        result = centered * window + rolled_xy * (1 - window) + mean_val
+    
+    return Image.fromarray(np.clip(result, 0, 255).astype(np.uint8))
+
+
+def _find_min_seam_vertical(error):
+    """Find minimum cost vertical seam using dynamic programming."""
+    h, w = error.shape
+    dp = error.copy()
+    
+    # Build up costs
+    for y in range(1, h):
+        for x in range(w):
+            candidates = [dp[y-1, x]]
+            if x > 0:
+                candidates.append(dp[y-1, x-1])
+            if x < w - 1:
+                candidates.append(dp[y-1, x+1])
+            dp[y, x] += min(candidates)
+    
+    # Backtrack to find seam
+    seam = np.zeros(h, dtype=np.int32)
+    seam[-1] = np.argmin(dp[-1])
+    
+    for y in range(h - 2, -1, -1):
+        x = seam[y + 1]
+        candidates = [(dp[y, x], x)]
+        if x > 0:
+            candidates.append((dp[y, x-1], x-1))
+        if x < w - 1:
+            candidates.append((dp[y, x+1], x+1))
+        seam[y] = min(candidates)[1]
+    
+    return seam
+
+
+def _make_tileable_quilting(img: Image.Image, blend_ratio: float = 0.25) -> Image.Image:
+    """
+    Quilting-inspired approach using optimal seam finding.
+    
+    Finds the best seam path through the overlap region rather than
+    blending everywhere. This preserves texture features better.
+    """
+    arr = np.array(img, dtype=np.float32)
+    h, w = arr.shape[:2]
+    blend_width = int(min(w, h) * blend_ratio)
+    
+    # Roll image so edges meet in center
+    rolled = np.roll(np.roll(arr, w // 2, axis=1), h // 2, axis=0)
+    
+    center_y, center_x = h // 2, w // 2
+    result = rolled.copy()
+    
+    # Fix vertical seam (at x = w/2)
+    left_region = rolled[:, :blend_width]
+    right_region = rolled[:, -blend_width:]
+    
+    if len(arr.shape) == 3:
+        error = np.sum((left_region - right_region[:, ::-1]) ** 2, axis=2)
+    else:
+        error = (left_region - right_region[:, ::-1]) ** 2
+    
+    seam_x = _find_min_seam_vertical(error)
+    
+    # Create mask based on seam
+    mask = np.zeros((h, blend_width * 2), dtype=np.float32)
+    for y in range(h):
+        seam_pos = seam_x[y]
+        mask[y, :seam_pos] = 1.0
+        for dx in range(-3, 4):
+            x = seam_pos + dx
+            if 0 <= x < blend_width * 2:
+                t = 1.0 - abs(dx) / 4.0
+                mask[y, x] = max(mask[y, x], 0.5 * t)
+    
+    x_start = center_x - blend_width
+    x_end = center_x + blend_width
+    
+    left_source = np.roll(rolled, blend_width, axis=1)[:, x_start:x_end]
+    right_source = np.roll(rolled, -blend_width, axis=1)[:, x_start:x_end]
+    
+    if len(arr.shape) == 3:
+        mask_3d = mask[:, :, np.newaxis]
+        result[:, x_start:x_end] = left_source * mask_3d + right_source * (1 - mask_3d)
+    else:
+        result[:, x_start:x_end] = left_source * mask + right_source * (1 - mask)
+    
+    # Fix horizontal seam
+    y_start = center_y - blend_width
+    y_end = center_y + blend_width
+    
+    top_region = rolled[:blend_width, :]
+    bottom_region = rolled[-blend_width:, :]
+    
+    if len(arr.shape) == 3:
+        error_h = np.sum((top_region - bottom_region[::-1, :]) ** 2, axis=2)
+    else:
+        error_h = (top_region - bottom_region[::-1, :]) ** 2
+    
+    seam_y = _find_min_seam_vertical(error_h.T)
+    
+    mask_h = np.zeros((blend_width * 2, w), dtype=np.float32)
+    for x in range(w):
+        seam_pos = seam_y[x]
+        mask_h[:seam_pos, x] = 1.0
+        for dy in range(-3, 4):
+            y = seam_pos + dy
+            if 0 <= y < blend_width * 2:
+                t = 1.0 - abs(dy) / 4.0
+                mask_h[y, x] = max(mask_h[y, x], 0.5 * t)
+    
+    top_source = np.roll(result, blend_width, axis=0)[y_start:y_end, :]
+    bottom_source = np.roll(result, -blend_width, axis=0)[y_start:y_end, :]
+    
+    if len(arr.shape) == 3:
+        mask_h_3d = mask_h[:, :, np.newaxis]
+        result[y_start:y_end, :] = top_source * mask_h_3d + bottom_source * (1 - mask_h_3d)
+    else:
+        result[y_start:y_end, :] = top_source * mask_h + bottom_source * (1 - mask_h)
+    
+    return Image.fromarray(np.clip(result, 0, 255).astype(np.uint8))
 
 
 def detect_edges(img: Image.Image, threshold: float = 0.15, thickness: int = 1) -> np.ndarray:

@@ -41,6 +41,12 @@ typedef struct pz_tile_config {
     int ground_texture_scale; // Ground texture scale (default 1)
     int wall_texture_scale; // Wall texture scale (default 1)
 
+    // Blending behavior
+    // If true, this tile will blend with adjacent tiles of different types
+    // Blending occurs when at least one of the two adjacent tiles has
+    // blend=true
+    bool blend; // Enable texture blending at edges (default false)
+
     // Status
     bool valid; // False if tile failed to load properly
 } pz_tile_config;

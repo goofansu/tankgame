@@ -220,6 +220,12 @@ void pz_renderer_update_texture(pz_renderer *r, pz_texture_handle handle, int x,
     int y, int width, int height, const void *data);
 void pz_renderer_destroy_texture(pz_renderer *r, pz_texture_handle handle);
 
+// Texture array operations (for terrain blending, etc.)
+// All layers must be the same size. data_per_layer is array of RGBA pixel data.
+pz_texture_handle pz_renderer_create_texture_array(pz_renderer *r, int width,
+    int height, int layers, const void **data_per_layer,
+    pz_texture_filter filter, pz_texture_wrap wrap);
+
 // Buffer operations
 pz_buffer_handle pz_renderer_create_buffer(
     pz_renderer *r, const pz_buffer_desc *desc);

@@ -39,6 +39,11 @@ typedef struct pz_render_backend_vtable {
         int y, int width, int height, const void *data);
     void (*destroy_texture)(pz_renderer *r, pz_texture_handle handle);
 
+    // Texture arrays (optional - can be NULL)
+    pz_texture_handle (*create_texture_array)(pz_renderer *r, int width,
+        int height, int layers, const void **data_per_layer,
+        pz_texture_filter filter, pz_texture_wrap wrap);
+
     // Buffers
     pz_buffer_handle (*create_buffer)(
         pz_renderer *r, const pz_buffer_desc *desc);
