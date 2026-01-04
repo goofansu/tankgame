@@ -501,6 +501,14 @@ pz_tank_update(pz_tank_manager *mgr, pz_tank *tank, const pz_tank_input *input,
             tank->fire_cooldown = 0.0f;
     }
 
+    // Get terrain properties at tank position
+    float terrain_speed_mult = 1.0f;
+    float terrain_friction = 1.0f;
+    if (map) {
+        terrain_speed_mult = pz_map_get_speed_multiplier(map, tank->pos);
+        terrain_friction = pz_map_get_friction(map, tank->pos);
+    }
+
     // Apply acceleration in input direction
     if (pz_vec2_len_sq(input->move_dir) > 0.0f) {
         pz_vec2 dir = pz_vec2_normalize(input->move_dir);
@@ -513,20 +521,23 @@ pz_tank_update(pz_tank_manager *mgr, pz_tank *tank, const pz_tank_input *input,
             += angle_diff * pz_minf(1.0f, mgr->body_turn_speed * dt);
     }
 
-    // Apply friction
+    // Apply friction (scaled by terrain friction - higher friction = faster
+    // stop)
     float speed = pz_vec2_len(tank->vel);
     if (speed > 0.0f) {
-        float friction_amount = mgr->friction * dt;
+        float friction_amount = mgr->friction * terrain_friction * dt;
         if (friction_amount > speed)
             friction_amount = speed;
         tank->vel = pz_vec2_sub(tank->vel,
             pz_vec2_scale(pz_vec2_normalize(tank->vel), friction_amount));
     }
 
-    // Clamp to max speed
+    // Clamp to max speed (scaled by terrain speed multiplier)
+    float effective_max_speed = mgr->max_speed * terrain_speed_mult;
     speed = pz_vec2_len(tank->vel);
-    if (speed > mgr->max_speed) {
-        tank->vel = pz_vec2_scale(pz_vec2_normalize(tank->vel), mgr->max_speed);
+    if (speed > effective_max_speed) {
+        tank->vel
+            = pz_vec2_scale(pz_vec2_normalize(tank->vel), effective_max_speed);
     }
 
     // Update position

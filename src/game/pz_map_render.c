@@ -598,7 +598,7 @@ emit_pit_box(float *v, float x0, float z0, float x1, float z1, float depth,
     return v;
 }
 
-// Count pit wall faces for a given pit tile
+// Count pit wall faces for a given pit tile (deprecated - kept for reference)
 static int
 count_pit_faces(int tile_x, int tile_y, const pz_map *map)
 {
@@ -628,6 +628,161 @@ count_pit_faces(int tile_x, int tile_y, const pz_map *map)
         count++;
 
     return count;
+}
+
+// Count pit wall faces that should use a specific neighbor's texture
+// Pit walls use the texture of the adjacent (higher) tile, not the pit itself
+static void
+count_pit_faces_per_neighbor(
+    int tile_x, int tile_y, const pz_map *map, int *counts)
+{
+    int8_t h = pz_map_get_height(map, tile_x, tile_y);
+
+    // Check each neighbor - if they're higher, they contribute a wall face
+    // that uses their texture
+    if (pz_map_in_bounds(map, tile_x - 1, tile_y)) {
+        int8_t left_h = pz_map_get_height(map, tile_x - 1, tile_y);
+        if (left_h > h) {
+            uint8_t idx = pz_map_get_tile_index(map, tile_x - 1, tile_y);
+            if (idx < MAX_TILE_TEXTURES)
+                counts[idx]++;
+        }
+    }
+    if (pz_map_in_bounds(map, tile_x + 1, tile_y)) {
+        int8_t right_h = pz_map_get_height(map, tile_x + 1, tile_y);
+        if (right_h > h) {
+            uint8_t idx = pz_map_get_tile_index(map, tile_x + 1, tile_y);
+            if (idx < MAX_TILE_TEXTURES)
+                counts[idx]++;
+        }
+    }
+    if (pz_map_in_bounds(map, tile_x, tile_y - 1)) {
+        int8_t back_h = pz_map_get_height(map, tile_x, tile_y - 1);
+        if (back_h > h) {
+            uint8_t idx = pz_map_get_tile_index(map, tile_x, tile_y - 1);
+            if (idx < MAX_TILE_TEXTURES)
+                counts[idx]++;
+        }
+    }
+    if (pz_map_in_bounds(map, tile_x, tile_y + 1)) {
+        int8_t front_h = pz_map_get_height(map, tile_x, tile_y + 1);
+        if (front_h > h) {
+            uint8_t idx = pz_map_get_tile_index(map, tile_x, tile_y + 1);
+            if (idx < MAX_TILE_TEXTURES)
+                counts[idx]++;
+        }
+    }
+}
+
+// Emit pit wall faces into the correct neighbor batches
+// Each pit face uses the texture of the adjacent tile that's higher
+static void
+emit_pit_faces_to_neighbors(float x0, float z0, float x1, float z1, int tile_x,
+    int tile_y, const pz_map *map, float **wall_ptrs, int *wall_scales)
+{
+    int8_t h = pz_map_get_height(map, tile_x, tile_y); // negative
+    float y_bottom = GROUND_Y_OFFSET + h * WALL_HEIGHT_UNIT; // Bottom of pit
+
+    // Check each neighbor and emit faces to their buffers
+    // Left neighbor (-X)
+    if (pz_map_in_bounds(map, tile_x - 1, tile_y)) {
+        int8_t left_h = pz_map_get_height(map, tile_x - 1, tile_y);
+        if (left_h > h) {
+            uint8_t idx = pz_map_get_tile_index(map, tile_x - 1, tile_y);
+            if (idx < MAX_TILE_TEXTURES && wall_ptrs[idx]) {
+                float neighbor_y = GROUND_Y_OFFSET
+                    + (left_h < 0 ? left_h : 0) * WALL_HEIGHT_UNIT;
+                int scale = wall_scales[idx];
+                float inv_scale = 1.0f / (float)scale;
+                float v_bottom = 0.0f;
+                float v_top = (left_h - h) * inv_scale;
+                float v0_z, v1_z, u0, u1;
+                compute_tile_uv(
+                    tile_x, tile_y, map->height, scale, &u0, &v0_z, &u1, &v1_z);
+
+                // Left wall faces +X (into pit)
+                wall_ptrs[idx] = emit_wall_face(wall_ptrs[idx], x0, y_bottom,
+                    z0, x0, neighbor_y, z0, x0, neighbor_y, z1, x0, y_bottom,
+                    z1, 1.0f, 0.0f, 0.0f, v0_z, v_bottom, v1_z, v_top, 1.0f,
+                    1.0f, 1.0f, 1.0f);
+            }
+        }
+    }
+
+    // Right neighbor (+X)
+    if (pz_map_in_bounds(map, tile_x + 1, tile_y)) {
+        int8_t right_h = pz_map_get_height(map, tile_x + 1, tile_y);
+        if (right_h > h) {
+            uint8_t idx = pz_map_get_tile_index(map, tile_x + 1, tile_y);
+            if (idx < MAX_TILE_TEXTURES && wall_ptrs[idx]) {
+                float neighbor_y = GROUND_Y_OFFSET
+                    + (right_h < 0 ? right_h : 0) * WALL_HEIGHT_UNIT;
+                int scale = wall_scales[idx];
+                float inv_scale = 1.0f / (float)scale;
+                float v_bottom = 0.0f;
+                float v_top = (right_h - h) * inv_scale;
+                float v0_z, v1_z, u0, u1;
+                compute_tile_uv(
+                    tile_x, tile_y, map->height, scale, &u0, &v0_z, &u1, &v1_z);
+
+                // Right wall faces -X (into pit)
+                wall_ptrs[idx] = emit_wall_face(wall_ptrs[idx], x1, y_bottom,
+                    z1, x1, neighbor_y, z1, x1, neighbor_y, z0, x1, y_bottom,
+                    z0, -1.0f, 0.0f, 0.0f, v1_z, v_bottom, v0_z, v_top, 1.0f,
+                    1.0f, 1.0f, 1.0f);
+            }
+        }
+    }
+
+    // Back neighbor (-Z)
+    if (pz_map_in_bounds(map, tile_x, tile_y - 1)) {
+        int8_t back_h = pz_map_get_height(map, tile_x, tile_y - 1);
+        if (back_h > h) {
+            uint8_t idx = pz_map_get_tile_index(map, tile_x, tile_y - 1);
+            if (idx < MAX_TILE_TEXTURES && wall_ptrs[idx]) {
+                float neighbor_y = GROUND_Y_OFFSET
+                    + (back_h < 0 ? back_h : 0) * WALL_HEIGHT_UNIT;
+                int scale = wall_scales[idx];
+                float inv_scale = 1.0f / (float)scale;
+                float v_bottom = 0.0f;
+                float v_top = (back_h - h) * inv_scale;
+                float v0_z, v1_z, u0, u1;
+                compute_tile_uv(
+                    tile_x, tile_y, map->height, scale, &u0, &v0_z, &u1, &v1_z);
+
+                // Back wall faces +Z (into pit)
+                wall_ptrs[idx] = emit_wall_face(wall_ptrs[idx], x1, y_bottom,
+                    z0, x1, neighbor_y, z0, x0, neighbor_y, z0, x0, y_bottom,
+                    z0, 0.0f, 0.0f, 1.0f, u1, v_bottom, u0, v_top, 1.0f, 1.0f,
+                    1.0f, 1.0f);
+            }
+        }
+    }
+
+    // Front neighbor (+Z)
+    if (pz_map_in_bounds(map, tile_x, tile_y + 1)) {
+        int8_t front_h = pz_map_get_height(map, tile_x, tile_y + 1);
+        if (front_h > h) {
+            uint8_t idx = pz_map_get_tile_index(map, tile_x, tile_y + 1);
+            if (idx < MAX_TILE_TEXTURES && wall_ptrs[idx]) {
+                float neighbor_y = GROUND_Y_OFFSET
+                    + (front_h < 0 ? front_h : 0) * WALL_HEIGHT_UNIT;
+                int scale = wall_scales[idx];
+                float inv_scale = 1.0f / (float)scale;
+                float v_bottom = 0.0f;
+                float v_top = (front_h - h) * inv_scale;
+                float v0_z, v1_z, u0, u1;
+                compute_tile_uv(
+                    tile_x, tile_y, map->height, scale, &u0, &v0_z, &u1, &v1_z);
+
+                // Front wall faces -Z (into pit)
+                wall_ptrs[idx] = emit_wall_face(wall_ptrs[idx], x0, y_bottom,
+                    z1, x0, neighbor_y, z1, x1, neighbor_y, z1, x1, y_bottom,
+                    z1, 0.0f, 0.0f, -1.0f, u0, v_bottom, u1, v_top, 1.0f, 1.0f,
+                    1.0f, 1.0f);
+            }
+        }
+    }
 }
 
 // ============================================================================
@@ -973,7 +1128,9 @@ pz_map_renderer_set_map(pz_map_renderer *mr, const pz_map *map)
                 float height = h * WALL_HEIGHT_UNIT;
                 wall_face_counts[idx] += count_wall_faces(x, y, height, map);
             } else if (h < 0) {
-                wall_face_counts[idx] += count_pit_faces(x, y, map);
+                // Pit walls use neighbor textures, count faces for each
+                // neighbor
+                count_pit_faces_per_neighbor(x, y, map, wall_face_counts);
             }
         }
     }
@@ -1045,16 +1202,17 @@ pz_map_renderer_set_map(pz_map_renderer *mr, const pz_map *map)
             }
 
             // Walls
-            if (wall_ptrs[idx]) {
-                if (h > 0) {
+            if (h > 0) {
+                if (wall_ptrs[idx]) {
                     float height = h * WALL_HEIGHT_UNIT;
                     wall_ptrs[idx] = emit_wall_box(wall_ptrs[idx], x0, z0, x1,
                         z1, height, x, y, map, wall_scales[idx]);
-                } else if (h < 0) {
-                    float depth = -h * WALL_HEIGHT_UNIT;
-                    wall_ptrs[idx] = emit_pit_box(wall_ptrs[idx], x0, z0, x1,
-                        z1, depth, x, y, map, wall_scales[idx]);
                 }
+            } else if (h < 0) {
+                // Pit walls - emit to neighbor batches (using neighbor
+                // textures)
+                emit_pit_faces_to_neighbors(
+                    x0, z0, x1, z1, x, y, map, wall_ptrs, wall_scales);
             }
         }
     }
