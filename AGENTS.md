@@ -78,26 +78,9 @@ Example progress.md:
 
 ## Map Editing
 
-**Use the map tool** at `tools/map_tool.py` to manipulate map files programmatically:
+**Use the map tool** at `tools/map_tool.py` to manipulate map files programmatically.
 
-```bash
-# Show map info
-python tools/map_tool.py info assets/maps/arena.map
-
-# Validate and show re-serialized output
-python tools/map_tool.py validate assets/maps/arena.map
-```
-
-The tool provides a Python API for map manipulation:
-```python
-from tools.map_tool import load_map, save_map, Map, Cell, TagDef, TileDef
-
-m = load_map("assets/maps/arena.map")
-m.fill_rect(2, 2, 5, 5, 0, ".")  # Clear area to ground
-m.place_tag(3, 3, "P1")          # Add spawn point
-m.resize(20, 20, fill_height=2, fill_tile="#")  # Resize with walls
-save_map(m, "assets/maps/arena.map")
-```
+Run `./tools/map_tool.py --help` for full API documentation and examples.
 
 **Prefer using map_tool.py** over manual text editing - it handles serialization correctly and avoids formatting errors.
 

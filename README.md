@@ -51,6 +51,16 @@ tankgame/
 └── spec/               # Design documents
 ```
 
+## Tools
+
+### Map Tool
+The `tools/map_tool.py` script provides CLI commands and a Python API for map manipulation:
+```bash
+./tools/map_tool.py --help           # Full documentation and examples
+./tools/map_tool.py info <map>       # Show map info
+./tools/map_tool.py validate <map>   # Validate and re-serialize
+```
+
 ## Documentation
 
 See `spec/` for design documents:

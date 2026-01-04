@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
 """
 Tank Game Map Tool - Parse, manipulate, and generate map files.
 """
@@ -356,13 +356,112 @@ def print_map_info(m: Map):
     print(f"Enemies: {enemies}")
 
 
+def print_help():
+    """Print comprehensive help message."""
+    help_text = """Tank Game Map Tool - Parse, manipulate, and generate map files.
+
+USAGE:
+    ./tools/map_tool.py <command> [args]
+    ./tools/map_tool.py --help
+
+COMMANDS:
+    info <map_file>       Show map info (size, spawns, enemies, etc.)
+    validate <map_file>   Validate map and print re-serialized output
+
+PYTHON API:
+    The map tool is designed to be imported and used as a Python library
+    for programmatic map manipulation. This is the preferred way to edit
+    maps rather than manual text editing.
+
+CLASSES:
+    Cell(height: int, tile: str, tags: list[str])
+        Represents a single map cell with height, terrain tile, and tags.
+    
+    TagDef(name: str, type: str, params: dict)
+        Defines a tag (spawn, enemy, powerup, barrier) with parameters.
+    
+    TileDef(symbol: str, name: str)
+        Maps a symbol (like '#') to a tile name (like 'wall').
+    
+    Map
+        The main map container with cells, definitions, and properties.
+        Properties: name, tile_size, width, height, cells, tile_defs, tag_defs
+        Lighting: sun_direction, sun_color, ambient_color, ambient_darkness
+        Effects: water_level, water_color, fog_level, fog_color, background_gradient
+
+MAP METHODS:
+    get_cell(x, y) -> Cell           Get cell at position (or None)
+    set_cell(x, y, cell)             Set cell at position
+    fill(height, tile)               Fill entire map with cell type
+    fill_rect(x1, y1, x2, y2, h, t)  Fill rectangle with cell type
+    place_tag(x, y, tag_name)        Add a tag to a cell
+    resize(w, h, fill_height, tile)  Resize map, padding if needed
+    pad(l, t, r, b, height, tile)    Add padding around map
+    get_tag_def(name) -> TagDef      Get tag definition by name
+    get_tile_for_symbol(sym) -> str  Get tile name for symbol
+
+FUNCTIONS:
+    load_map(path) -> Map            Load a map from file
+    save_map(map, path)              Save a map to file
+    parse_map(content) -> Map        Parse map from string content
+    serialize_map(map) -> str        Serialize map to string
+
+EXAMPLE USAGE:
+    from tools.map_tool import load_map, save_map, Map, Cell, TagDef, TileDef
+    
+    # Load and modify existing map
+    m = load_map("assets/maps/arena.map")
+    m.fill_rect(2, 2, 5, 5, 0, ".")      # Clear a 4x4 area to ground
+    m.place_tag(3, 3, "P1")               # Add spawn point at (3,3)
+    save_map(m, "assets/maps/arena.map")
+    
+    # Create a new map from scratch
+    m = Map()
+    m.name = "Test Arena"
+    m.tile_size = 2.0
+    m.width = 10
+    m.height = 10
+    m.cells = [[Cell(0, ".") for _ in range(10)] for _ in range(10)]
+    
+    # Add wall border
+    for x in range(10):
+        m.set_cell(x, 0, Cell(2, "#"))
+        m.set_cell(x, 9, Cell(2, "#"))
+    for y in range(10):
+        m.set_cell(0, y, Cell(2, "#"))
+        m.set_cell(9, y, Cell(2, "#"))
+    
+    # Define tiles and tags
+    m.tile_defs = [TileDef(".", "ground"), TileDef("#", "wall")]
+    m.tag_defs = [TagDef("P1", "spawn", {"angle": "0", "team": "0"})]
+    m.place_tag(5, 5, "P1")
+    
+    # Set lighting
+    m.sun_direction = (-0.5, -1.0, -0.3)
+    m.sun_color = (1.0, 0.95, 0.8)
+    m.ambient_color = (0.3, 0.35, 0.4)
+    
+    save_map(m, "assets/maps/test.map")
+
+CELL FORMAT:
+    Cells in the grid are formatted as: <height><tile>[|<tags>]
+    Examples:
+        0.        Ground at height 0
+        2#        Wall at height 2
+        -1:       Water at height -1 (using ':' tile)
+        0.|P1     Ground with spawn tag P1
+        1.|E1,E2  Ground with multiple tags
+
+MAP FILE FORMAT:
+    See docs/map-format.md for the complete map file specification.
+"""
+    print(help_text)
+
+
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: map_tool.py <command> [args]")
-        print("Commands:")
-        print("  info <map_file>       - Show map info")
-        print("  validate <map_file>   - Validate and re-save")
-        sys.exit(1)
+    if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help", "help"):
+        print_help()
+        sys.exit(0)
     
     cmd = sys.argv[1]
     
@@ -376,4 +475,5 @@ if __name__ == "__main__":
         print(serialize_map(m))
     else:
         print(f"Unknown command: {cmd}")
+        print("Run with --help for usage information.")
         sys.exit(1)
