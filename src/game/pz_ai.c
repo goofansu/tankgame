@@ -210,9 +210,17 @@ pz_ai_spawn_enemy(
         ctrl->max_shots_per_peek = 1;
     }
 
+    // Initialize pathfinding for Level 2 and 3
+    pz_path_clear(&ctrl->path);
+    ctrl->path_goal = pos;
+    ctrl->path_update_timer = 0.0f;
+    ctrl->use_pathfinding
+        = (level == PZ_ENEMY_LEVEL_2 || level == PZ_ENEMY_LEVEL_3);
+
     pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
-        "Spawned %s enemy at (%.1f, %.1f), tank_id=%d",
-        pz_enemy_level_name(level), pos.x, pos.y, tank->id);
+        "Spawned %s enemy at (%.1f, %.1f), tank_id=%d%s",
+        pz_enemy_level_name(level), pos.x, pos.y, tank->id,
+        ctrl->use_pathfinding ? " (with pathfinding)" : "");
 
     return tank;
 }
@@ -498,6 +506,110 @@ find_cover_position(const pz_map *map, pz_vec2 ai_pos, pz_vec2 player_pos,
 }
 
 /* ============================================================================
+ * Pathfinding Helpers
+ * ============================================================================
+ */
+
+// Tank collision radius for pathfinding
+#define AI_TANK_RADIUS 0.9f
+
+// How often to update paths (seconds)
+#define AI_PATH_UPDATE_INTERVAL 0.5f
+
+// How close to waypoint before advancing
+#define AI_PATH_ARRIVE_THRESHOLD 0.8f
+
+// Request a new path to a goal position
+// Returns true if a valid path was found
+static bool
+ai_request_path(
+    pz_ai_controller *ctrl, const pz_map *map, pz_vec2 start, pz_vec2 goal)
+{
+    // Check if we already have a valid path to the same goal
+    float goal_dist = pz_vec2_dist(ctrl->path_goal, goal);
+    if (ctrl->path.valid && goal_dist < 1.0f) {
+        // Same goal, check if path is still valid
+        if (pz_path_is_valid(&ctrl->path, map, AI_TANK_RADIUS)) {
+            return true; // Keep current path
+        }
+    }
+
+    // Find new path
+    ctrl->path = pz_pathfind(map, start, goal, AI_TANK_RADIUS);
+    ctrl->path_goal = goal;
+
+    if (ctrl->path.valid) {
+        // Smooth the path to remove unnecessary waypoints
+        pz_path_smooth(&ctrl->path, map, AI_TANK_RADIUS);
+
+        pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
+            "AI path found: %d waypoints to (%.1f, %.1f)", ctrl->path.count,
+            goal.x, goal.y);
+    }
+
+    return ctrl->path.valid;
+}
+
+// Follow the current path, returns movement direction
+// Returns zero vector if no valid path or at destination
+static pz_vec2
+ai_follow_path(pz_ai_controller *ctrl, pz_vec2 current_pos)
+{
+    if (!ctrl->path.valid || pz_path_is_complete(&ctrl->path)) {
+        return (pz_vec2) { 0.0f, 0.0f };
+    }
+
+    // Advance through waypoints we've passed
+    while (
+        pz_path_advance(&ctrl->path, current_pos, AI_PATH_ARRIVE_THRESHOLD)) {
+        // Keep advancing while we're close to waypoints
+    }
+
+    if (pz_path_is_complete(&ctrl->path)) {
+        return (pz_vec2) { 0.0f, 0.0f };
+    }
+
+    // Get direction to current waypoint
+    pz_vec2 target = pz_path_get_target(&ctrl->path);
+    pz_vec2 to_target = pz_vec2_sub(target, current_pos);
+    float dist = pz_vec2_len(to_target);
+
+    if (dist < 0.01f) {
+        return (pz_vec2) { 0.0f, 0.0f };
+    }
+
+    return pz_vec2_scale(to_target, 1.0f / dist);
+}
+
+// Check if we need to update the path (timer expired or goal changed
+// significantly)
+static bool
+ai_should_repath(pz_ai_controller *ctrl, pz_vec2 new_goal, float dt)
+{
+    ctrl->path_update_timer -= dt;
+
+    // Repath if timer expired
+    if (ctrl->path_update_timer <= 0.0f) {
+        ctrl->path_update_timer = AI_PATH_UPDATE_INTERVAL;
+        return true;
+    }
+
+    // Repath if goal moved significantly
+    float goal_dist = pz_vec2_dist(ctrl->path_goal, new_goal);
+    if (goal_dist > 2.0f) {
+        ctrl->path_update_timer = AI_PATH_UPDATE_INTERVAL;
+        return true;
+    }
+
+    // Repath if current path is invalid
+    if (!ctrl->path.valid) {
+        return true;
+    }
+
+    return false;
+}
+
+/* ============================================================================
  * Level 2 Cover AI Update
  * ============================================================================
  */
@@ -523,12 +635,15 @@ update_level2_ai(pz_ai_controller *ctrl, pz_tank *tank,
     switch (ctrl->state) {
     case PZ_AI_STATE_IDLE:
         // Initial state - look for cover
+        pz_path_clear(&ctrl->path);
         if (!ctrl->has_cover && ctrl->cover_search_timer <= 0.0f) {
             if (find_cover_position(map, tank->pos, player_pos,
                     &ctrl->cover_pos, &ctrl->peek_pos)) {
                 ctrl->has_cover = true;
                 ctrl->state = PZ_AI_STATE_SEEKING_COVER;
                 ctrl->move_target = ctrl->cover_pos;
+                // Request path to cover
+                ai_request_path(ctrl, map, tank->pos, ctrl->cover_pos);
                 pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
                     "AI %d found cover at (%.1f, %.1f)", tank->id,
                     ctrl->cover_pos.x, ctrl->cover_pos.y);
@@ -539,20 +654,29 @@ update_level2_ai(pz_ai_controller *ctrl, pz_tank *tank,
         break;
 
     case PZ_AI_STATE_SEEKING_COVER: {
-        // Move toward cover position
-        pz_vec2 to_cover = pz_vec2_sub(ctrl->cover_pos, tank->pos);
-        float dist = pz_vec2_len(to_cover);
+        // Use pathfinding to move toward cover position
+        float dist = pz_vec2_dist(ctrl->cover_pos, tank->pos);
 
         if (dist < arrive_threshold) {
             // Arrived at cover
             ctrl->state = PZ_AI_STATE_IN_COVER;
             ctrl->state_timer = cover_wait_time
                 * (0.5f + 0.5f * ((float)(rand() % 100) / 100.0f));
+            pz_path_clear(&ctrl->path);
             pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME, "AI %d arrived at cover",
                 tank->id);
         } else {
-            // Move toward cover
-            move_dir = pz_vec2_scale(to_cover, 1.0f / dist);
+            // Update path if needed
+            if (ai_should_repath(ctrl, ctrl->cover_pos, dt)) {
+                ai_request_path(ctrl, map, tank->pos, ctrl->cover_pos);
+            }
+            // Follow path
+            move_dir = ai_follow_path(ctrl, tank->pos);
+            // Fallback to direct movement if no path
+            if (pz_vec2_len(move_dir) < 0.01f && dist > arrive_threshold) {
+                pz_vec2 to_cover = pz_vec2_sub(ctrl->cover_pos, tank->pos);
+                move_dir = pz_vec2_scale(to_cover, 1.0f / dist);
+            }
         }
         break;
     }
@@ -575,6 +699,8 @@ update_level2_ai(pz_ai_controller *ctrl, pz_tank *tank,
                 ctrl->state = PZ_AI_STATE_PEEKING;
                 ctrl->move_target = ctrl->peek_pos;
                 ctrl->shots_fired = 0;
+                // Request path to peek position
+                ai_request_path(ctrl, map, tank->pos, ctrl->peek_pos);
                 pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
                     "AI %d peeking from cover", tank->id);
             }
@@ -582,16 +708,26 @@ update_level2_ai(pz_ai_controller *ctrl, pz_tank *tank,
         break;
 
     case PZ_AI_STATE_PEEKING: {
-        // Move to peek position
-        pz_vec2 to_peek = pz_vec2_sub(ctrl->peek_pos, tank->pos);
-        float dist = pz_vec2_len(to_peek);
+        // Use pathfinding to move to peek position
+        float dist = pz_vec2_dist(ctrl->peek_pos, tank->pos);
 
         if (dist < arrive_threshold) {
             // Arrived at peek position, start firing
             ctrl->state = PZ_AI_STATE_FIRING;
             ctrl->state_timer = firing_time;
+            pz_path_clear(&ctrl->path);
         } else {
-            move_dir = pz_vec2_scale(to_peek, 1.0f / dist);
+            // Update path if needed
+            if (ai_should_repath(ctrl, ctrl->peek_pos, dt)) {
+                ai_request_path(ctrl, map, tank->pos, ctrl->peek_pos);
+            }
+            // Follow path
+            move_dir = ai_follow_path(ctrl, tank->pos);
+            // Fallback to direct movement if no path
+            if (pz_vec2_len(move_dir) < 0.01f && dist > arrive_threshold) {
+                pz_vec2 to_peek = pz_vec2_sub(ctrl->peek_pos, tank->pos);
+                move_dir = pz_vec2_scale(to_peek, 1.0f / dist);
+            }
         }
         break;
     }
@@ -604,6 +740,8 @@ update_level2_ai(pz_ai_controller *ctrl, pz_tank *tank,
             || ctrl->shots_fired >= ctrl->max_shots_per_peek) {
             ctrl->state = PZ_AI_STATE_RETREATING;
             ctrl->move_target = ctrl->cover_pos;
+            // Request path back to cover
+            ai_request_path(ctrl, map, tank->pos, ctrl->cover_pos);
             pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
                 "AI %d retreating to cover after %d shots", tank->id,
                 ctrl->shots_fired);
@@ -611,15 +749,15 @@ update_level2_ai(pz_ai_controller *ctrl, pz_tank *tank,
         break;
 
     case PZ_AI_STATE_RETREATING: {
-        // Move back to cover
-        pz_vec2 to_cover = pz_vec2_sub(ctrl->cover_pos, tank->pos);
-        float dist = pz_vec2_len(to_cover);
+        // Use pathfinding to move back to cover
+        float dist = pz_vec2_dist(ctrl->cover_pos, tank->pos);
 
         if (dist < arrive_threshold) {
             // Back in cover
             ctrl->state = PZ_AI_STATE_IN_COVER;
             ctrl->state_timer = cover_wait_time
                 * (0.5f + 0.5f * ((float)(rand() % 100) / 100.0f));
+            pz_path_clear(&ctrl->path);
 
             // Occasionally search for new cover
             if ((rand() % 100) < 50) {
@@ -629,10 +767,23 @@ update_level2_ai(pz_ai_controller *ctrl, pz_tank *tank,
                     "AI %d looking for new cover", tank->id);
             }
         } else {
-            move_dir = pz_vec2_scale(to_cover, 1.0f / dist);
+            // Update path if needed
+            if (ai_should_repath(ctrl, ctrl->cover_pos, dt)) {
+                ai_request_path(ctrl, map, tank->pos, ctrl->cover_pos);
+            }
+            // Follow path
+            move_dir = ai_follow_path(ctrl, tank->pos);
+            // Fallback to direct movement if no path
+            if (pz_vec2_len(move_dir) < 0.01f && dist > arrive_threshold) {
+                pz_vec2 to_cover = pz_vec2_sub(ctrl->cover_pos, tank->pos);
+                move_dir = pz_vec2_scale(to_cover, 1.0f / dist);
+            }
         }
         break;
     }
+
+    default:
+        break;
     }
 
     // Apply movement
@@ -817,6 +968,7 @@ update_level3_ai(pz_ai_controller *ctrl, pz_tank *tank,
         ctrl->evade_dir = evade_dir;
         ctrl->evade_timer = evade_duration;
         ctrl->wants_to_fire = false;
+        pz_path_clear(&ctrl->path); // Cancel current path when evading
     }
 
     // State machine
@@ -827,10 +979,11 @@ update_level3_ai(pz_ai_controller *ctrl, pz_tank *tank,
         // Start chasing the player immediately
         ctrl->state = PZ_AI_STATE_CHASING;
         ctrl->aggression_timer = 1.0f + (float)(rand() % 100) / 100.0f;
+        pz_path_clear(&ctrl->path);
         break;
 
     case PZ_AI_STATE_EVADING:
-        // Dodge incoming projectile
+        // Dodge incoming projectile - use direct movement, no pathfinding
         move_dir = ctrl->evade_dir;
         ctrl->wants_to_fire = false;
 
@@ -844,21 +997,32 @@ update_level3_ai(pz_ai_controller *ctrl, pz_tank *tank,
             } else {
                 ctrl->state = PZ_AI_STATE_CHASING;
             }
+            pz_path_clear(&ctrl->path);
         }
         break;
 
     case PZ_AI_STATE_CHASING: {
-        // Move toward player aggressively
-        pz_vec2 to_player = pz_vec2_sub(player_pos, tank->pos);
+        // Use A* to chase player around obstacles
+        // Update path periodically since player moves
+        if (ai_should_repath(ctrl, player_pos, dt)) {
+            ai_request_path(ctrl, map, tank->pos, player_pos);
+        }
 
-        if (dist_to_player > 0.1f) {
+        // Follow the path
+        move_dir = ai_follow_path(ctrl, tank->pos);
+
+        // Fallback to direct movement if no path (or already close)
+        if (pz_vec2_len(move_dir) < 0.01f
+            && dist_to_player > arrive_threshold) {
+            pz_vec2 to_player = pz_vec2_sub(player_pos, tank->pos);
             move_dir = pz_vec2_scale(to_player, 1.0f / dist_to_player);
         }
 
-        // Transition to engaging when close enough
+        // Transition to engaging when close enough and have LOS
         if (dist_to_player < engage_distance && ctrl->can_see_player) {
             ctrl->state = PZ_AI_STATE_ENGAGING;
             ctrl->state_timer = 4.0f + (float)(rand() % 200) / 100.0f;
+            pz_path_clear(&ctrl->path);
         }
 
         // Try to flank frequently
@@ -867,6 +1031,8 @@ update_level3_ai(pz_ai_controller *ctrl, pz_tank *tank,
                     map, tank->pos, player_pos, &ctrl->flank_target)) {
                 ctrl->state = PZ_AI_STATE_FLANKING;
                 ctrl->aggression_timer = 2.0f;
+                // Request path to flank position
+                ai_request_path(ctrl, map, tank->pos, ctrl->flank_target);
             } else {
                 ctrl->aggression_timer = 1.0f;
             }
@@ -876,6 +1042,7 @@ update_level3_ai(pz_ai_controller *ctrl, pz_tank *tank,
         if (health_ratio < health_retreat_threshold) {
             ctrl->state = PZ_AI_STATE_SEEKING_COVER;
             ctrl->has_cover = false;
+            pz_path_clear(&ctrl->path);
         }
 
         // Fire while chasing if we can see the player
@@ -884,16 +1051,27 @@ update_level3_ai(pz_ai_controller *ctrl, pz_tank *tank,
     }
 
     case PZ_AI_STATE_FLANKING: {
-        // Move to flanking position
-        pz_vec2 to_flank = pz_vec2_sub(ctrl->flank_target, tank->pos);
-        float flank_dist = pz_vec2_len(to_flank);
+        // Use A* to move to flanking position
+        float flank_dist = pz_vec2_dist(ctrl->flank_target, tank->pos);
 
         if (flank_dist < arrive_threshold) {
             // Reached flanking position, engage
             ctrl->state = PZ_AI_STATE_ENGAGING;
             ctrl->state_timer = 2.0f;
+            pz_path_clear(&ctrl->path);
         } else {
-            move_dir = pz_vec2_scale(to_flank, 1.0f / flank_dist);
+            // Update path if needed
+            if (ai_should_repath(ctrl, ctrl->flank_target, dt)) {
+                ai_request_path(ctrl, map, tank->pos, ctrl->flank_target);
+            }
+            // Follow path
+            move_dir = ai_follow_path(ctrl, tank->pos);
+            // Fallback to direct movement if no path
+            if (pz_vec2_len(move_dir) < 0.01f
+                && flank_dist > arrive_threshold) {
+                pz_vec2 to_flank = pz_vec2_sub(ctrl->flank_target, tank->pos);
+                move_dir = pz_vec2_scale(to_flank, 1.0f / flank_dist);
+            }
         }
 
         // Fire while flanking if we have line of sight
@@ -903,12 +1081,14 @@ update_level3_ai(pz_ai_controller *ctrl, pz_tank *tank,
         if (health_ratio < health_retreat_threshold) {
             ctrl->state = PZ_AI_STATE_SEEKING_COVER;
             ctrl->has_cover = false;
+            pz_path_clear(&ctrl->path);
         }
         break;
     }
 
     case PZ_AI_STATE_ENGAGING: {
-        // Strafe and shoot
+        // Strafe and shoot - use direct movement for responsiveness
+        // (pathfinding would be too slow for strafing)
         ctrl->state_timer -= dt;
 
         // Calculate strafing direction (perpendicular to player)
@@ -959,9 +1139,10 @@ update_level3_ai(pz_ai_controller *ctrl, pz_tank *tank,
             }
         }
 
-        // Lost line of sight - chase
+        // Lost line of sight - chase with pathfinding
         if (!ctrl->can_see_player) {
             ctrl->state = PZ_AI_STATE_CHASING;
+            pz_path_clear(&ctrl->path);
         }
 
         // Retreat if low health
@@ -979,6 +1160,8 @@ update_level3_ai(pz_ai_controller *ctrl, pz_tank *tank,
                     &ctrl->cover_pos, &ctrl->peek_pos)) {
                 ctrl->has_cover = true;
                 ctrl->move_target = ctrl->cover_pos;
+                // Request path to cover
+                ai_request_path(ctrl, map, tank->pos, ctrl->cover_pos);
             } else {
                 ctrl->cover_search_timer = 1.0f;
                 // Can't find cover, just run away
@@ -991,14 +1174,25 @@ update_level3_ai(pz_ai_controller *ctrl, pz_tank *tank,
         }
 
         if (ctrl->has_cover) {
-            pz_vec2 to_cover = pz_vec2_sub(ctrl->cover_pos, tank->pos);
-            float cover_dist = pz_vec2_len(to_cover);
+            float cover_dist = pz_vec2_dist(ctrl->cover_pos, tank->pos);
 
             if (cover_dist < arrive_threshold) {
                 ctrl->state = PZ_AI_STATE_IN_COVER;
                 ctrl->state_timer = 1.5f + (float)(rand() % 150) / 100.0f;
+                pz_path_clear(&ctrl->path);
             } else {
-                move_dir = pz_vec2_scale(to_cover, 1.0f / cover_dist);
+                // Update path if needed
+                if (ai_should_repath(ctrl, ctrl->cover_pos, dt)) {
+                    ai_request_path(ctrl, map, tank->pos, ctrl->cover_pos);
+                }
+                // Follow path
+                move_dir = ai_follow_path(ctrl, tank->pos);
+                // Fallback to direct movement
+                if (pz_vec2_len(move_dir) < 0.01f
+                    && cover_dist > arrive_threshold) {
+                    pz_vec2 to_cover = pz_vec2_sub(ctrl->cover_pos, tank->pos);
+                    move_dir = pz_vec2_scale(to_cover, 1.0f / cover_dist);
+                }
             }
         }
 
@@ -1016,11 +1210,14 @@ update_level3_ai(pz_ai_controller *ctrl, pz_tank *tank,
                 ctrl->state = PZ_AI_STATE_CHASING;
                 ctrl->has_cover = false;
                 ctrl->aggression_timer = 1.0f;
+                pz_path_clear(&ctrl->path);
             } else {
                 // Peek out to fire
                 ctrl->state = PZ_AI_STATE_PEEKING;
                 ctrl->move_target = ctrl->peek_pos;
                 ctrl->shots_fired = 0;
+                // Request path to peek position
+                ai_request_path(ctrl, map, tank->pos, ctrl->peek_pos);
             }
         }
 
@@ -1028,14 +1225,24 @@ update_level3_ai(pz_ai_controller *ctrl, pz_tank *tank,
         break;
 
     case PZ_AI_STATE_PEEKING: {
-        pz_vec2 to_peek = pz_vec2_sub(ctrl->peek_pos, tank->pos);
-        float peek_dist = pz_vec2_len(to_peek);
+        float peek_dist = pz_vec2_dist(ctrl->peek_pos, tank->pos);
 
         if (peek_dist < arrive_threshold) {
             ctrl->state = PZ_AI_STATE_FIRING;
             ctrl->state_timer = 1.5f;
+            pz_path_clear(&ctrl->path);
         } else {
-            move_dir = pz_vec2_scale(to_peek, 1.0f / peek_dist);
+            // Update path if needed
+            if (ai_should_repath(ctrl, ctrl->peek_pos, dt)) {
+                ai_request_path(ctrl, map, tank->pos, ctrl->peek_pos);
+            }
+            // Follow path
+            move_dir = ai_follow_path(ctrl, tank->pos);
+            // Fallback to direct movement
+            if (pz_vec2_len(move_dir) < 0.01f && peek_dist > arrive_threshold) {
+                pz_vec2 to_peek = pz_vec2_sub(ctrl->peek_pos, tank->pos);
+                move_dir = pz_vec2_scale(to_peek, 1.0f / peek_dist);
+            }
         }
 
         ctrl->wants_to_fire = ctrl->can_see_player;
@@ -1052,22 +1259,36 @@ update_level3_ai(pz_ai_controller *ctrl, pz_tank *tank,
             if (health_ratio > 0.5f) {
                 ctrl->state = PZ_AI_STATE_CHASING;
                 ctrl->has_cover = false;
+                pz_path_clear(&ctrl->path);
             } else {
                 ctrl->state = PZ_AI_STATE_RETREATING;
                 ctrl->move_target = ctrl->cover_pos;
+                // Request path back to cover
+                ai_request_path(ctrl, map, tank->pos, ctrl->cover_pos);
             }
         }
         break;
 
     case PZ_AI_STATE_RETREATING: {
-        pz_vec2 to_cover = pz_vec2_sub(ctrl->cover_pos, tank->pos);
-        float cover_dist = pz_vec2_len(to_cover);
+        float cover_dist = pz_vec2_dist(ctrl->cover_pos, tank->pos);
 
         if (cover_dist < arrive_threshold) {
             ctrl->state = PZ_AI_STATE_IN_COVER;
             ctrl->state_timer = 2.0f;
+            pz_path_clear(&ctrl->path);
         } else {
-            move_dir = pz_vec2_scale(to_cover, 1.0f / cover_dist);
+            // Update path if needed
+            if (ai_should_repath(ctrl, ctrl->cover_pos, dt)) {
+                ai_request_path(ctrl, map, tank->pos, ctrl->cover_pos);
+            }
+            // Follow path
+            move_dir = ai_follow_path(ctrl, tank->pos);
+            // Fallback to direct movement
+            if (pz_vec2_len(move_dir) < 0.01f
+                && cover_dist > arrive_threshold) {
+                pz_vec2 to_cover = pz_vec2_sub(ctrl->cover_pos, tank->pos);
+                move_dir = pz_vec2_scale(to_cover, 1.0f / cover_dist);
+            }
         }
 
         ctrl->wants_to_fire = false;
@@ -1076,6 +1297,7 @@ update_level3_ai(pz_ai_controller *ctrl, pz_tank *tank,
 
     default:
         ctrl->state = PZ_AI_STATE_CHASING;
+        pz_path_clear(&ctrl->path);
         break;
     }
 

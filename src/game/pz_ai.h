@@ -13,6 +13,7 @@
 #include <stdint.h>
 
 #include "../core/pz_math.h"
+#include "pz_pathfinding.h"
 #include "pz_powerup.h"
 #include "pz_tank.h"
 
@@ -141,6 +142,12 @@ typedef struct pz_ai_controller {
     float fire_confidence; // 0.0-1.0: how confident AI is about the shot
     float hesitation_timer; // Delay before first shot after acquiring target
     bool had_target_last_frame; // Track target acquisition for hesitation
+
+    // A* Pathfinding (Level 2/3)
+    pz_path path; // Current path being followed
+    pz_vec2 path_goal; // Goal position for current path
+    float path_update_timer; // Time until next repath
+    bool use_pathfinding; // Whether this AI uses pathfinding
 } pz_ai_controller;
 
 /* ============================================================================
