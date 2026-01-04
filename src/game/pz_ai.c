@@ -5,11 +5,11 @@
 #include "pz_ai.h"
 
 #include <math.h>
-#include <stdlib.h>
 #include <string.h>
 
 #include "../core/pz_log.h"
 #include "../core/pz_mem.h"
+#include "../core/pz_sim.h"
 #include "pz_map.h"
 #include "pz_powerup.h"
 #include "pz_projectile.h"
@@ -766,7 +766,8 @@ ai_should_repath(pz_ai_controller *ctrl, pz_vec2 new_goal, float dt)
 
 static void
 update_level2_ai(pz_ai_controller *ctrl, pz_tank *tank,
-    pz_tank_manager *tank_mgr, const pz_map *map, pz_vec2 player_pos, float dt)
+    pz_tank_manager *tank_mgr, const pz_map *map, pz_vec2 player_pos,
+    pz_rng *rng, float dt)
 {
     const float move_speed = 3.0f; // Movement speed for AI
     const float arrive_threshold = 0.5f; // How close to target to stop
@@ -810,8 +811,8 @@ update_level2_ai(pz_ai_controller *ctrl, pz_tank *tank,
         if (dist < arrive_threshold) {
             // Arrived at cover
             ctrl->state = PZ_AI_STATE_IN_COVER;
-            ctrl->state_timer = cover_wait_time
-                * (0.5f + 0.5f * ((float)(rand() % 100) / 100.0f));
+            ctrl->state_timer
+                = cover_wait_time * (0.5f + 0.5f * pz_rng_float(rng));
             pz_path_clear(&ctrl->path);
             pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME, "AI %d arrived at cover",
                 tank->id);
@@ -841,7 +842,7 @@ update_level2_ai(pz_ai_controller *ctrl, pz_tank *tank,
         // Wait in cover, then peek out
         ctrl->state_timer -= dt;
         if (ctrl->state_timer <= 0.0f) {
-            if ((rand() % 100) < 25) {
+            if (pz_rng_int(rng, 0, 99) < 25) {
                 ctrl->has_cover = false;
                 ctrl->state = PZ_AI_STATE_IDLE;
                 ctrl->state_timer = 0.0f;
@@ -905,12 +906,12 @@ update_level2_ai(pz_ai_controller *ctrl, pz_tank *tank,
         if (dist < arrive_threshold) {
             // Back in cover
             ctrl->state = PZ_AI_STATE_IN_COVER;
-            ctrl->state_timer = cover_wait_time
-                * (0.5f + 0.5f * ((float)(rand() % 100) / 100.0f));
+            ctrl->state_timer
+                = cover_wait_time * (0.5f + 0.5f * pz_rng_float(rng));
             pz_path_clear(&ctrl->path);
 
             // Occasionally search for new cover
-            if ((rand() % 100) < 50) {
+            if (pz_rng_int(rng, 0, 99) < 50) {
                 ctrl->has_cover = false;
                 ctrl->state = PZ_AI_STATE_IDLE;
                 pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
@@ -1084,7 +1085,7 @@ find_flank_position(
 static void
 update_level3_ai(pz_ai_controller *ctrl, pz_tank *tank,
     pz_tank_manager *tank_mgr, const pz_map *map, pz_vec2 player_pos,
-    pz_projectile_manager *proj_mgr, float dt)
+    pz_projectile_manager *proj_mgr, pz_rng *rng, float dt)
 {
     const float move_speed = 6.0f; // Fast and aggressive
     const float arrive_threshold = 0.5f;
@@ -1128,7 +1129,7 @@ update_level3_ai(pz_ai_controller *ctrl, pz_tank *tank,
     case PZ_AI_STATE_IDLE:
         // Start chasing the player immediately
         ctrl->state = PZ_AI_STATE_CHASING;
-        ctrl->aggression_timer = 1.0f + (float)(rand() % 100) / 100.0f;
+        ctrl->aggression_timer = 1.0f + pz_rng_float(rng);
         pz_path_clear(&ctrl->path);
         break;
 
@@ -1171,7 +1172,7 @@ update_level3_ai(pz_ai_controller *ctrl, pz_tank *tank,
         // Transition to engaging when close enough and have LOS
         if (dist_to_player < engage_distance && ctrl->can_see_player) {
             ctrl->state = PZ_AI_STATE_ENGAGING;
-            ctrl->state_timer = 4.0f + (float)(rand() % 200) / 100.0f;
+            ctrl->state_timer = 4.0f + pz_rng_range(rng, 0.0f, 2.0f);
             pz_path_clear(&ctrl->path);
         }
 
@@ -1281,11 +1282,11 @@ update_level3_ai(pz_ai_controller *ctrl, pz_tank *tank,
             if (health_ratio < health_retreat_threshold) {
                 ctrl->state = PZ_AI_STATE_SEEKING_COVER;
                 ctrl->has_cover = false;
-            } else if ((rand() % 100) < 40) {
+            } else if (pz_rng_int(rng, 0, 99) < 40) {
                 ctrl->state = PZ_AI_STATE_CHASING;
                 ctrl->aggression_timer = 1.5f;
             } else {
-                ctrl->state_timer = 2.0f + (float)(rand() % 200) / 100.0f;
+                ctrl->state_timer = 2.0f + pz_rng_range(rng, 0.0f, 2.0f);
             }
         }
 
@@ -1328,7 +1329,7 @@ update_level3_ai(pz_ai_controller *ctrl, pz_tank *tank,
 
             if (cover_dist < arrive_threshold) {
                 ctrl->state = PZ_AI_STATE_IN_COVER;
-                ctrl->state_timer = 1.5f + (float)(rand() % 150) / 100.0f;
+                ctrl->state_timer = 1.5f + pz_rng_range(rng, 0.0f, 1.5f);
                 pz_path_clear(&ctrl->path);
             } else {
                 // Update path if needed
@@ -1468,7 +1469,7 @@ update_level3_ai(pz_ai_controller *ctrl, pz_tank *tank,
 
 void
 pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
-    pz_projectile_manager *proj_mgr, float dt)
+    pz_projectile_manager *proj_mgr, pz_rng *rng, float dt)
 {
     if (!ai_mgr || !ai_mgr->tank_mgr) {
         return;
@@ -1511,7 +1512,7 @@ pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
                 bool found_defense = find_projectile_defense_target(
                     proj_mgr, tank, &defense_angle);
                 if (found_defense) {
-                    float roll = (float)(rand() % 100) / 100.0f;
+                    float roll = pz_rng_float(rng);
                     if (roll < stats->projectile_defense_chance) {
                         ctrl->defending_projectile = true;
                         ctrl->defense_aim_angle = defense_angle;
@@ -1611,11 +1612,11 @@ pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
         if (ctrl->level == PZ_ENEMY_LEVEL_3) {
             // Level 3: Aggressive hunter
             update_level3_ai(ctrl, tank, ai_mgr->tank_mgr, ai_mgr->map,
-                player_pos, proj_mgr, dt);
+                player_pos, proj_mgr, rng, dt);
         } else if (ctrl->level == PZ_ENEMY_LEVEL_2) {
             // Level 2: Cover-based
             update_level2_ai(
-                ctrl, tank, ai_mgr->tank_mgr, ai_mgr->map, player_pos, dt);
+                ctrl, tank, ai_mgr->tank_mgr, ai_mgr->map, player_pos, rng, dt);
         } else {
             // Stationary turret only (sentry, sniper)
             pz_tank_input input = {
@@ -1646,8 +1647,7 @@ pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
             // Trigger hesitation when acquiring a new target
             if (has_target && !ctrl->had_target_last_frame) {
                 // Random hesitation: 0.15 - 0.4 seconds
-                ctrl->hesitation_timer
-                    = 0.15f + 0.25f * ((float)(rand() % 100) / 100.0f);
+                ctrl->hesitation_timer = 0.15f + 0.25f * pz_rng_float(rng);
             }
             ctrl->had_target_last_frame = has_target;
 
@@ -1660,8 +1660,7 @@ pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
                 ctrl->fire_confidence = 1.0f;
             } else if (ctrl->has_bounce_shot) {
                 // Bounce shot = lower confidence (0.3 - 0.5)
-                ctrl->fire_confidence
-                    = 0.3f + 0.2f * ((float)(rand() % 100) / 100.0f);
+                ctrl->fire_confidence = 0.3f + 0.2f * pz_rng_float(rng);
             } else {
                 ctrl->fire_confidence = 0.0f;
             }

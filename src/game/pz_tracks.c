@@ -5,12 +5,12 @@
 #include "pz_tracks.h"
 
 #include <math.h>
-#include <stdlib.h>
 #include <string.h>
 
 #include "../core/pz_log.h"
 #include "../core/pz_math.h"
 #include "../core/pz_mem.h"
+#include "../core/pz_sim.h"
 
 // Maximum number of track marks to batch before rendering
 #define MAX_PENDING_MARKS 256
@@ -63,6 +63,9 @@ struct pz_tracks {
     pz_renderer *renderer;
     pz_texture_manager *tex_manager;
 
+    // Visual RNG (not gameplay-critical)
+    pz_rng rng;
+
     // World dimensions
     float world_width;
     float world_height;
@@ -109,6 +112,9 @@ pz_tracks_create(pz_renderer *renderer, pz_texture_manager *tex_manager,
     tracks->world_height = config->world_height;
     tracks->texture_size = config->texture_size;
     tracks->first_update = true;
+
+    // Seed visual RNG (not gameplay-critical, just for visual variety)
+    pz_rng_seed(&tracks->rng, 0xCAFEBABE);
 
     // Create render target for accumulation
     // Use a simple grayscale format - R8 is enough since tracks are just
@@ -212,12 +218,6 @@ pz_tracks_destroy(pz_tracks *tracks)
 // Track Mark Generation
 // ============================================================================
 
-static float
-randf_range(float min, float max)
-{
-    return min + ((float)rand() / (float)RAND_MAX) * (max - min);
-}
-
 // Add a single track mark at the specified position
 static void
 add_single_mark(
@@ -232,17 +232,24 @@ add_single_mark(
     mark->x = x;
     mark->z = z;
     mark->angle = angle
-        + randf_range(-TRACK_MARK_JITTER_ANGLE, TRACK_MARK_JITTER_ANGLE);
-    mark->width_scale_back
-        = 1.0f + randf_range(-TRACK_MARK_JITTER_WIDTH, TRACK_MARK_JITTER_WIDTH);
-    mark->width_scale_front
-        = 1.0f + randf_range(-TRACK_MARK_JITTER_WIDTH, TRACK_MARK_JITTER_WIDTH);
+        + pz_rng_range(
+            &tracks->rng, -TRACK_MARK_JITTER_ANGLE, TRACK_MARK_JITTER_ANGLE);
+    mark->width_scale_back = 1.0f
+        + pz_rng_range(
+            &tracks->rng, -TRACK_MARK_JITTER_WIDTH, TRACK_MARK_JITTER_WIDTH);
+    mark->width_scale_front = 1.0f
+        + pz_rng_range(
+            &tracks->rng, -TRACK_MARK_JITTER_WIDTH, TRACK_MARK_JITTER_WIDTH);
     mark->length_scale = 1.0f
-        + randf_range(-TRACK_MARK_JITTER_LENGTH, TRACK_MARK_JITTER_LENGTH);
-    mark->jitter_x = randf_range(-TRACK_MARK_JITTER_POS, TRACK_MARK_JITTER_POS);
-    mark->jitter_z = randf_range(-TRACK_MARK_JITTER_POS, TRACK_MARK_JITTER_POS);
-    mark->strength = pz_clampf(strength * randf_range(0.85f, 1.15f),
-        TRACK_MARK_STRENGTH_MIN, TRACK_MARK_STRENGTH_MAX);
+        + pz_rng_range(
+            &tracks->rng, -TRACK_MARK_JITTER_LENGTH, TRACK_MARK_JITTER_LENGTH);
+    mark->jitter_x = pz_rng_range(
+        &tracks->rng, -TRACK_MARK_JITTER_POS, TRACK_MARK_JITTER_POS);
+    mark->jitter_z = pz_rng_range(
+        &tracks->rng, -TRACK_MARK_JITTER_POS, TRACK_MARK_JITTER_POS);
+    mark->strength
+        = pz_clampf(strength * pz_rng_range(&tracks->rng, 0.85f, 1.15f),
+            TRACK_MARK_STRENGTH_MIN, TRACK_MARK_STRENGTH_MAX);
 }
 
 // Find or create entity state for the given entity ID

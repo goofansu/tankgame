@@ -35,7 +35,6 @@ typedef uint32_t pz_render_target_handle;
 
 typedef enum pz_renderer_backend {
     PZ_BACKEND_NULL = 0, // No-op backend for testing
-    PZ_BACKEND_GL33, // OpenGL 3.3 Core Profile
     PZ_BACKEND_SOKOL, // sokol_gfx backend
 } pz_renderer_backend;
 

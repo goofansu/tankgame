@@ -10,13 +10,6 @@
 #include "../src/engine/render/pz_renderer.h"
 #include "test_framework.h"
 
-/* Stub for GL33 backend - not used in tests */
-const pz_render_backend_vtable *
-pz_render_backend_gl33_vtable(void)
-{
-    return NULL;
-}
-
 /* ============================================================================
  * Helper to create a null renderer for testing
  * ============================================================================

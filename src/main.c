@@ -1259,7 +1259,7 @@ app_frame(void)
         if (g_app.session.ai_mgr && g_app.session.player_tank
             && !(g_app.session.player_tank->flags & PZ_TANK_FLAG_DEAD)) {
             pz_ai_update(g_app.session.ai_mgr, g_app.session.player_tank->pos,
-                g_app.session.projectile_mgr, dt);
+                g_app.session.projectile_mgr, pz_sim_rng(g_app.sim), dt);
             int ai_shots = pz_ai_fire(
                 g_app.session.ai_mgr, g_app.session.projectile_mgr);
 

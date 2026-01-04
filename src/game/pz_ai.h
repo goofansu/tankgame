@@ -19,6 +19,7 @@
 
 // Forward declarations
 typedef struct pz_map pz_map;
+typedef struct pz_rng pz_rng;
 typedef struct pz_tank_manager pz_tank_manager;
 typedef struct pz_projectile_manager pz_projectile_manager;
 
@@ -187,8 +188,9 @@ pz_tank *pz_ai_spawn_enemy(
 // This generates pz_tank_input for each AI-controlled tank
 // player_pos is the position of the player tank (for aiming)
 // proj_mgr is optional - used by Level 3 to detect incoming projectiles
+// rng is used for AI decision-making randomness (deterministic)
 void pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
-    pz_projectile_manager *proj_mgr, float dt);
+    pz_projectile_manager *proj_mgr, pz_rng *rng, float dt);
 
 // Fire projectiles for AI tanks that want to fire
 // This should be called after pz_ai_update

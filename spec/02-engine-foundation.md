@@ -33,7 +33,6 @@ tankgame/
 │   │   │   ├── pz_renderer.c/h       # Backend-agnostic API
 │   │   │   ├── pz_render_backend.c/h # Backend selection/vtable
 │   │   │   ├── pz_render_sokol.c/h   # Sokol gfx backend
-│   │   │   ├── pz_render_gl33.c/h    # OpenGL 3.3 backend (fallback)
 │   │   │   ├── pz_render_null.c/h    # No-op backend (tests)
 │   │   │   ├── pz_shader.c/h         # Shader descriptors
 │   │   │   ├── pz_sokol_shaders.h    # Generated sokol-shdc header

@@ -441,25 +441,3 @@ pz_render_backend_null_vtable(void)
 {
     return &s_null_vtable;
 }
-
-// Weak stub for GL33 backend vtable when the real implementation is not linked.
-__attribute__((weak)) const pz_render_backend_vtable *
-pz_render_backend_gl33_vtable(void)
-{
-    pz_log(PZ_LOG_WARN, PZ_LOG_CAT_RENDER,
-        "GL33 backend not linked, falling back to null backend");
-    return &s_null_vtable;
-}
-
-// Weak stub for render target reading (used by pz_renderer.c when GL33 not
-// linked) The real implementation in pz_render_gl33.c overrides this.
-__attribute__((weak)) uint8_t *
-pz_render_gl33_read_render_target(pz_renderer *r,
-    pz_render_target_handle handle, int *out_width, int *out_height)
-{
-    (void)r;
-    (void)handle;
-    (void)out_width;
-    (void)out_height;
-    return NULL; // Not supported in null backend
-}

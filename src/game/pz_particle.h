@@ -12,6 +12,7 @@
 #include <stdint.h>
 
 #include "../core/pz_math.h"
+#include "../core/pz_sim.h"
 #include "../engine/render/pz_renderer.h"
 
 // Maximum particles active at once
@@ -55,6 +56,9 @@ typedef struct pz_particle {
 typedef struct pz_particle_manager {
     pz_particle particles[PZ_MAX_PARTICLES];
     int active_count;
+
+    // Visual RNG (not gameplay-critical)
+    pz_rng rng;
 
     // Rendering resources
     pz_shader_handle shader;

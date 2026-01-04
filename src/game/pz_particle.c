@@ -7,7 +7,6 @@
 #include "pz_particle.h"
 
 #include <math.h>
-#include <stdlib.h>
 #include <string.h>
 
 #include "../core/pz_log.h"
@@ -58,20 +57,6 @@ const pz_smoke_config PZ_SMOKE_TANK_EXPLOSION = {
  * Helper Functions
  * ============================================================================
  */
-
-// Simple random float [0, 1]
-static float
-randf(void)
-{
-    return (float)rand() / (float)RAND_MAX;
-}
-
-// Random float in range [min, max]
-static float
-randf_range(float min, float max)
-{
-    return min + randf() * (max - min);
-}
 
 // Check if a point is inside a circle
 static bool
@@ -283,6 +268,9 @@ pz_particle_manager_create(pz_renderer *renderer)
 {
     pz_particle_manager *mgr = pz_calloc(1, sizeof(pz_particle_manager));
 
+    // Seed visual RNG (not gameplay-critical, just for visual variety)
+    pz_rng_seed(&mgr->rng, 0xDEADBEEF);
+
     // Generate procedural smoke texture
     int tex_size = 128; // Higher res for better quality
     uint8_t *tex_data = generate_smoke_texture(tex_size);
@@ -425,27 +413,29 @@ pz_particle_spawn_smoke(pz_particle_manager *mgr, const pz_smoke_config *config)
         p.type = PZ_PARTICLE_SMOKE;
 
         // Random offset from center
-        float ox = randf_range(-config->spread, config->spread);
-        float oy = randf_range(0.0f, config->spread * 0.5f);
-        float oz = randf_range(-config->spread, config->spread);
+        float ox = pz_rng_range(&mgr->rng, -config->spread, config->spread);
+        float oy = pz_rng_range(&mgr->rng, 0.0f, config->spread * 0.5f);
+        float oz = pz_rng_range(&mgr->rng, -config->spread, config->spread);
 
         p.pos.x = config->position.x + ox;
         p.pos.y = config->position.y + oy;
         p.pos.z = config->position.z + oz;
 
         // Velocity: upward with some horizontal spread
-        p.velocity.x
-            = randf_range(-config->velocity_spread, config->velocity_spread);
-        p.velocity.y = config->velocity_up * randf_range(0.7f, 1.3f);
-        p.velocity.z
-            = randf_range(-config->velocity_spread, config->velocity_spread);
+        p.velocity.x = pz_rng_range(
+            &mgr->rng, -config->velocity_spread, config->velocity_spread);
+        p.velocity.y
+            = config->velocity_up * pz_rng_range(&mgr->rng, 0.7f, 1.3f);
+        p.velocity.z = pz_rng_range(
+            &mgr->rng, -config->velocity_spread, config->velocity_spread);
 
         // Random rotation
-        p.rotation = randf() * 2.0f * PZ_PI;
-        p.rotation_speed = randf_range(-2.0f, 2.0f);
+        p.rotation = pz_rng_angle(&mgr->rng);
+        p.rotation_speed = pz_rng_range(&mgr->rng, -2.0f, 2.0f);
 
         // Scale animation: start small, grow, then shrink slightly
-        float base_scale = randf_range(config->scale_min, config->scale_max);
+        float base_scale
+            = pz_rng_range(&mgr->rng, config->scale_min, config->scale_max);
         p.scale_start = base_scale * 0.3f;
         p.scale_end = base_scale * 1.4f;
         p.scale = p.scale_start;
@@ -459,11 +449,12 @@ pz_particle_spawn_smoke(pz_particle_manager *mgr, const pz_smoke_config *config)
         p.color = base_colors[i % 4];
 
         // Lifetime
-        p.lifetime = randf_range(config->lifetime_min, config->lifetime_max);
+        p.lifetime = pz_rng_range(
+            &mgr->rng, config->lifetime_min, config->lifetime_max);
         p.age = 0.0f;
 
         // Random variant (for future sprite variation)
-        p.variant = rand() % 4;
+        p.variant = pz_rng_int(&mgr->rng, 0, 3);
 
         pz_particle_spawn(mgr, &p);
     }
@@ -489,21 +480,22 @@ pz_particle_spawn_fog(
     p.type = PZ_PARTICLE_FOG;
 
     // Subtle spread around the trail position
-    p.pos.x = position.x + randf_range(-0.25f, 0.25f);
-    p.pos.y = position.y + randf_range(0.0f, 0.2f);
-    p.pos.z = position.z + randf_range(-0.25f, 0.25f);
+    p.pos.x = position.x + pz_rng_range(&mgr->rng, -0.25f, 0.25f);
+    p.pos.y = position.y + pz_rng_range(&mgr->rng, 0.0f, 0.2f);
+    p.pos.z = position.z + pz_rng_range(&mgr->rng, -0.25f, 0.25f);
 
     // Gentle drift, mostly upward
-    p.velocity.x = randf_range(-0.15f, 0.15f);
-    p.velocity.y = randf_range(0.08f, 0.25f);
-    p.velocity.z = randf_range(-0.15f, 0.15f);
+    p.velocity.x = pz_rng_range(&mgr->rng, -0.15f, 0.15f);
+    p.velocity.y = pz_rng_range(&mgr->rng, 0.08f, 0.25f);
+    p.velocity.z = pz_rng_range(&mgr->rng, -0.15f, 0.15f);
 
     // Soft rotation
-    p.rotation = randf() * 2.0f * PZ_PI;
-    p.rotation_speed = randf_range(-0.6f, 0.6f);
+    p.rotation = pz_rng_angle(&mgr->rng);
+    p.rotation_speed = pz_rng_range(&mgr->rng, -0.6f, 0.6f);
 
     float scale_bias = pz_lerpf(0.9f, 1.25f, idle_factor);
-    float base_scale = randf_range(1.08f, 1.68f) * scale_bias; // 20% bigger
+    float base_scale
+        = pz_rng_range(&mgr->rng, 1.08f, 1.68f) * scale_bias; // 20% bigger
     p.scale_start = base_scale * 0.5f;
     p.scale_end
         = base_scale * pz_lerpf(1.6f, 2.4f, idle_factor); // scales up more
@@ -513,14 +505,14 @@ pz_particle_spawn_fog(
     p.alpha_end = 0.0f;
     p.alpha = p.alpha_start;
 
-    p.color = base_colors[rand() % 4];
+    p.color = base_colors[pz_rng_int(&mgr->rng, 0, 3)];
 
-    float lifetime
-        = pz_lerpf(1.1f, 3.4f, idle_factor) + randf_range(-0.2f, 0.2f);
+    float lifetime = pz_lerpf(1.1f, 3.4f, idle_factor)
+        + pz_rng_range(&mgr->rng, -0.2f, 0.2f);
     p.lifetime = pz_minf(pz_maxf(lifetime, 0.6f), 4.0f);
     p.age = 0.0f;
 
-    p.variant = rand() % 4;
+    p.variant = pz_rng_int(&mgr->rng, 0, 3);
 
     pz_particle_spawn(mgr, &p);
 }
@@ -542,34 +534,34 @@ pz_particle_spawn_bullet_fog(pz_particle_manager *mgr, pz_vec3 position)
     p.type = PZ_PARTICLE_FOG;
 
     // Tight spread around the trail position
-    p.pos.x = position.x + randf_range(-0.12f, 0.12f);
-    p.pos.y = position.y + randf_range(0.0f, 0.12f);
-    p.pos.z = position.z + randf_range(-0.12f, 0.12f);
+    p.pos.x = position.x + pz_rng_range(&mgr->rng, -0.12f, 0.12f);
+    p.pos.y = position.y + pz_rng_range(&mgr->rng, 0.0f, 0.12f);
+    p.pos.z = position.z + pz_rng_range(&mgr->rng, -0.12f, 0.12f);
 
     // Gentle drift, slower to keep the trail cohesive
-    p.velocity.x = randf_range(-0.08f, 0.08f);
-    p.velocity.y = randf_range(0.05f, 0.16f);
-    p.velocity.z = randf_range(-0.08f, 0.08f);
+    p.velocity.x = pz_rng_range(&mgr->rng, -0.08f, 0.08f);
+    p.velocity.y = pz_rng_range(&mgr->rng, 0.05f, 0.16f);
+    p.velocity.z = pz_rng_range(&mgr->rng, -0.08f, 0.08f);
 
     // Soft rotation
-    p.rotation = randf() * 2.0f * PZ_PI;
-    p.rotation_speed = randf_range(-0.4f, 0.4f);
+    p.rotation = pz_rng_angle(&mgr->rng);
+    p.rotation_speed = pz_rng_range(&mgr->rng, -0.4f, 0.4f);
 
-    float base_scale = randf_range(0.55f, 0.85f);
+    float base_scale = pz_rng_range(&mgr->rng, 0.55f, 0.85f);
     p.scale_start = base_scale * 0.45f;
     p.scale_end = base_scale * 1.6f;
     p.scale = p.scale_start;
 
-    p.alpha_start = randf_range(0.32f, 0.48f);
+    p.alpha_start = pz_rng_range(&mgr->rng, 0.32f, 0.48f);
     p.alpha_end = 0.0f;
     p.alpha = p.alpha_start;
 
-    p.color = base_colors[rand() % 4];
+    p.color = base_colors[pz_rng_int(&mgr->rng, 0, 3)];
 
-    p.lifetime = 2.0f + randf_range(-0.5f, 0.5f);
+    p.lifetime = 2.0f + pz_rng_range(&mgr->rng, -0.5f, 0.5f);
     p.age = 0.0f;
 
-    p.variant = rand() % 4;
+    p.variant = pz_rng_int(&mgr->rng, 0, 3);
 
     pz_particle_spawn(mgr, &p);
 }

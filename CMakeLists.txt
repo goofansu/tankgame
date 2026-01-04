@@ -46,7 +46,6 @@ set(CORE_SOURCES
 set(ENGINE_SOURCES
     src/engine/render/pz_renderer.c
     src/engine/render/pz_render_null.c
-    src/engine/render/pz_render_gl33.c
     src/engine/render/pz_render_sokol.c
     src/engine/render/pz_texture.c
     src/engine/pz_audio.c
