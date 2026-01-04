@@ -1295,8 +1295,11 @@ pz_ai_fire(pz_ai_manager *ai_mgr, pz_projectile_manager *proj_mgr)
         }
 
         // Fire!
-        pz_vec2 spawn_pos = pz_tank_get_barrel_tip(tank);
-        pz_vec2 fire_dir = pz_tank_get_fire_direction(tank);
+        pz_vec2 spawn_pos = { 0 };
+        pz_vec2 fire_dir = { 0 };
+        int bounce_cost = 0;
+        pz_tank_get_fire_solution(
+            tank, ai_mgr->map, &spawn_pos, &fire_dir, &bounce_cost);
 
         float projectile_speed
             = weapon->projectile_speed * stats->projectile_speed_scale;
@@ -1309,8 +1312,14 @@ pz_ai_fire(pz_ai_manager *ai_mgr, pz_projectile_manager *proj_mgr)
             .color = weapon->projectile_color,
         };
 
-        pz_projectile_spawn(
+        int proj_slot = pz_projectile_spawn(
             proj_mgr, spawn_pos, fire_dir, &proj_config, tank->id);
+        if (proj_slot >= 0 && bounce_cost > 0) {
+            pz_projectile *proj = &proj_mgr->projectiles[proj_slot];
+            if (proj->bounces_remaining > 0) {
+                proj->bounces_remaining -= 1;
+            }
+        }
 
         // Reset fire timer to the weapon's max fire rate (same as player).
         ctrl->fire_timer = weapon->fire_cooldown;

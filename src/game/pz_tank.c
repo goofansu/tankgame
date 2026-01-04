@@ -18,6 +18,10 @@
 
 // Barrel length from turret center to tip (must match turret mesh)
 static const float BARREL_LENGTH = 1.65f;
+// Allow tiny overlap before treating the barrel as blocked
+static const float BARREL_CLEAR_EPSILON = 0.02f;
+// Small offset to push a deflected projectile off the wall
+static const float BARREL_DEFLECT_EPSILON = 0.01f;
 
 // Turret height offset above ground
 static const float TURRET_Y_OFFSET = 0.65f;
@@ -998,6 +1002,74 @@ pz_tank_get_fire_direction(const pz_tank *tank)
         sinf(tank->turret_angle),
         cosf(tank->turret_angle),
     };
+}
+
+bool
+pz_tank_get_fire_solution(const pz_tank *tank, const pz_map *map,
+    pz_vec2 *out_pos, pz_vec2 *out_dir, int *out_bounce_cost)
+{
+    if (!tank) {
+        return false;
+    }
+
+    pz_vec2 fire_dir = pz_tank_get_fire_direction(tank);
+    pz_vec2 tip = pz_tank_get_barrel_tip(tank);
+
+    if (out_pos) {
+        *out_pos = tip;
+    }
+    if (out_dir) {
+        *out_dir = fire_dir;
+    }
+    if (out_bounce_cost) {
+        *out_bounce_cost = 0;
+    }
+
+    if (!map) {
+        return true;
+    }
+
+    float barrel_len = pz_vec2_dist(tank->pos, tip);
+    if (barrel_len < 0.0001f) {
+        return true;
+    }
+
+    pz_raycast_result hit = pz_map_raycast_ex(map, tank->pos, tip);
+    if (hit.hit && hit.distance < (barrel_len - BARREL_CLEAR_EPSILON)) {
+        if (out_pos) {
+            *out_pos = pz_vec2_add(
+                hit.point, pz_vec2_scale(hit.normal, BARREL_DEFLECT_EPSILON));
+        }
+        if (out_dir) {
+            *out_dir = pz_vec2_reflect(fire_dir, hit.normal);
+        }
+        if (out_bounce_cost) {
+            *out_bounce_cost = 1;
+        }
+    }
+
+    return true;
+}
+
+bool
+pz_tank_barrel_is_clear(const pz_tank *tank, const pz_map *map)
+{
+    if (!tank || !map) {
+        return true;
+    }
+
+    pz_vec2 tip = pz_tank_get_barrel_tip(tank);
+    float barrel_len = pz_vec2_dist(tank->pos, tip);
+    if (barrel_len < 0.0001f) {
+        return true;
+    }
+
+    pz_raycast_result hit = pz_map_raycast_ex(map, tank->pos, tip);
+    if (hit.hit && hit.distance < (barrel_len - BARREL_CLEAR_EPSILON)) {
+        return false;
+    }
+
+    return true;
 }
 
 int

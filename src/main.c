@@ -933,10 +933,11 @@ app_frame(void)
 
             if (should_fire && can_fire
                 && g_app.session.player_tank->fire_cooldown <= 0.0f) {
-                pz_vec2 spawn_pos
-                    = pz_tank_get_barrel_tip(g_app.session.player_tank);
-                pz_vec2 fire_dir
-                    = pz_tank_get_fire_direction(g_app.session.player_tank);
+                pz_vec2 spawn_pos = { 0 };
+                pz_vec2 fire_dir = { 0 };
+                int bounce_cost = 0;
+                pz_tank_get_fire_solution(g_app.session.player_tank,
+                    g_app.session.map, &spawn_pos, &fire_dir, &bounce_cost);
 
                 pz_projectile_config proj_config = {
                     .speed = weapon->projectile_speed,
@@ -947,8 +948,16 @@ app_frame(void)
                     .color = weapon->projectile_color,
                 };
 
-                pz_projectile_spawn(g_app.session.projectile_mgr, spawn_pos,
-                    fire_dir, &proj_config, g_app.session.player_tank->id);
+                int proj_slot = pz_projectile_spawn(
+                    g_app.session.projectile_mgr, spawn_pos, fire_dir,
+                    &proj_config, g_app.session.player_tank->id);
+                if (proj_slot >= 0 && bounce_cost > 0) {
+                    pz_projectile *proj
+                        = &g_app.session.projectile_mgr->projectiles[proj_slot];
+                    if (proj->bounces_remaining > 0) {
+                        proj->bounces_remaining -= 1;
+                    }
+                }
 
                 g_app.session.player_tank->fire_cooldown
                     = weapon->fire_cooldown;
@@ -1426,22 +1435,29 @@ app_frame(void)
     if (g_app.laser_pipeline != PZ_INVALID_HANDLE && g_app.session.map
         && g_app.session.player_tank
         && !(g_app.session.player_tank->flags & PZ_TANK_FLAG_DEAD)) {
-        pz_vec2 laser_start = pz_tank_get_barrel_tip(g_app.session.player_tank);
-        pz_vec2 laser_dir
-            = pz_tank_get_fire_direction(g_app.session.player_tank);
+        pz_vec2 laser_start = { 0 };
+        pz_vec2 laser_dir = { 0 };
+        int bounce_cost = 0;
+        pz_tank_get_fire_solution(g_app.session.player_tank, g_app.session.map,
+            &laser_start, &laser_dir, &bounce_cost);
 
-        bool hit_wall = false;
-        pz_vec2 laser_end = pz_map_raycast(g_app.session.map, laser_start,
-            laser_dir, LASER_MAX_DIST, &hit_wall);
+        pz_vec2 ray_start = laser_start;
+        pz_vec2 ray_end
+            = pz_vec2_add(ray_start, pz_vec2_scale(laser_dir, LASER_MAX_DIST));
+
+        pz_raycast_result map_hit
+            = pz_map_raycast_ex(g_app.session.map, ray_start, ray_end);
+        pz_vec2 laser_end = map_hit.hit ? map_hit.point : ray_end;
 
         // Also check barrier collision for laser
         if (g_app.session.barrier_mgr) {
             pz_vec2 barrier_hit_pos;
-            if (pz_barrier_raycast(g_app.session.barrier_mgr, laser_start,
-                    laser_end, &barrier_hit_pos, NULL, NULL)) {
-                // Use barrier hit if it's closer than wall hit
-                if (pz_vec2_dist(laser_start, barrier_hit_pos)
-                    < pz_vec2_dist(laser_start, laser_end)) {
+            if (pz_barrier_raycast(g_app.session.barrier_mgr, ray_start,
+                    ray_end, &barrier_hit_pos, NULL, NULL)) {
+                float barrier_dist = pz_vec2_dist(ray_start, barrier_hit_pos);
+                float best_dist
+                    = map_hit.hit ? map_hit.distance : LASER_MAX_DIST;
+                if (barrier_dist < best_dist) {
                     laser_end = barrier_hit_pos;
                 }
             }

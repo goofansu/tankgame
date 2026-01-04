@@ -225,6 +225,13 @@ pz_vec2 pz_tank_get_barrel_tip(const pz_tank *tank);
 // Get fire direction (normalized)
 pz_vec2 pz_tank_get_fire_direction(const pz_tank *tank);
 
+// Compute spawn position + firing direction (handles barrel-wall deflection)
+bool pz_tank_get_fire_solution(const pz_tank *tank, const pz_map *map,
+    pz_vec2 *out_pos, pz_vec2 *out_dir, int *out_bounce_cost);
+
+// Returns true if the barrel path from the tank center to the tip is clear
+bool pz_tank_barrel_is_clear(const pz_tank *tank, const pz_map *map);
+
 // Get count of active (non-dead) tanks
 int pz_tank_count_active(const pz_tank_manager *mgr);
 

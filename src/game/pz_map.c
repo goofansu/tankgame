@@ -626,32 +626,15 @@ pz_map_raycast(const pz_map *map, pz_vec2 start, pz_vec2 direction,
         return start;
     direction = pz_vec2_scale(direction, 1.0f / dir_len);
 
-    // DDA-style raycast stepping through the grid
-    const float step_size = 0.05f;
-    float dist = 0.0f;
-
-    pz_vec2 pos = start;
-
-    while (dist < max_dist) {
-        // Check if current position blocks bullets
-        if (pz_map_blocks_bullets(map, pos)) {
-            if (hit)
-                *hit = true;
-            return pz_vec2_sub(pos, pz_vec2_scale(direction, step_size));
-        }
-
-        // Check if out of bounds
-        if (!pz_map_in_bounds_world(map, pos)) {
-            if (hit)
-                *hit = true;
-            return pos;
-        }
-
-        pos = pz_vec2_add(pos, pz_vec2_scale(direction, step_size));
-        dist += step_size;
+    pz_vec2 end = pz_vec2_add(start, pz_vec2_scale(direction, max_dist));
+    pz_raycast_result result = pz_map_raycast_ex(map, start, end);
+    if (result.hit) {
+        if (hit)
+            *hit = true;
+        return result.point;
     }
 
-    return pz_vec2_add(start, pz_vec2_scale(direction, max_dist));
+    return end;
 }
 
 pz_raycast_result
@@ -739,6 +722,8 @@ pz_map_raycast_ex(const pz_map *map, pz_vec2 start, pz_vec2 end)
     // Maximum iterations to prevent infinite loops
     int max_iters = (int)(total_dist / ts) + map->width + map->height + 10;
 
+    const float corner_epsilon = 0.00001f;
+
     for (int i = 0; i < max_iters; i++) {
         // Check if we've traveled past the end point
         float current_t = (t_max_x < t_max_y) ? (t_max_x - t_delta_x)
@@ -746,6 +731,55 @@ pz_map_raycast_ex(const pz_map *map, pz_vec2 start, pz_vec2 end)
         if (current_t > total_dist) {
             // No hit within range
             return result;
+        }
+
+        if (fabsf(t_max_x - t_max_y) < corner_epsilon) {
+            int next_x = tile_x + step_x;
+            int next_y = tile_y + step_y;
+
+            bool hit_x = false;
+            if (!pz_map_in_bounds(map, next_x, tile_y)) {
+                hit_x = true;
+            } else if (pz_map_get_height(map, next_x, tile_y) > 0) {
+                hit_x = true;
+            }
+
+            bool hit_y = false;
+            if (!pz_map_in_bounds(map, tile_x, next_y)) {
+                hit_y = true;
+            } else if (pz_map_get_height(map, tile_x, next_y) > 0) {
+                hit_y = true;
+            }
+
+            if (hit_x || hit_y) {
+                float hit_t = t_max_x;
+                if (hit_t < 0)
+                    hit_t = 0;
+                if (hit_t > total_dist)
+                    hit_t = total_dist;
+
+                result.hit = true;
+                result.distance = hit_t;
+                result.point = pz_vec2_add(start, pz_vec2_scale(dir, hit_t));
+
+                if (hit_x && !hit_y) {
+                    result.normal
+                        = (pz_vec2) { (step_x > 0) ? -1.0f : 1.0f, 0.0f };
+                } else if (hit_y && !hit_x) {
+                    result.normal
+                        = (pz_vec2) { 0.0f, (step_y > 0) ? -1.0f : 1.0f };
+                } else {
+                    if (fabsf(dir.x) >= fabsf(dir.y)) {
+                        result.normal
+                            = (pz_vec2) { (step_x > 0) ? -1.0f : 1.0f, 0.0f };
+                    } else {
+                        result.normal
+                            = (pz_vec2) { 0.0f, (step_y > 0) ? -1.0f : 1.0f };
+                    }
+                }
+
+                return result;
+            }
         }
 
         // Check if current tile is solid
