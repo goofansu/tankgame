@@ -79,19 +79,21 @@ Tiles reference textures at `assets/textures/<name>.png`. Built-in behaviors:
 
 ## Object Tags
 
-Define reusable objects, place them in grid cells:
+Define reusable objects, place them in grid cells. **Tags can be placed multiple times** - each placement creates a new instance of that object:
 
 ```
-tag P1 spawn angle=0.785 team=0
-tag E1 enemy angle=3.14 type=hunter
-tag W1 powerup type=machine_gun respawn=15
-tag W2 powerup type=ricochet respawn=20
-tag B1 barrier tile=cobble health=20
+tag P spawn angle=0.785 team=0
+tag E enemy angle=3.14 type=hunter
+tag W powerup type=machine_gun respawn=15
+tag B barrier tile=cobble health=20
 
 <grid>
-2# 0.|P1 0.|E1 0.|W1 0.|B1 2#
+2# 0.|P 0.|E 0.|W 0.|B 2#
+2# 0. 0.|B 0. 0.|B 2#
 </grid>
 ```
+
+In this example, the single `B` barrier tag creates 3 separate barriers at different positions.
 
 **Spawn params:** `angle`, `team`, `team_spawn`
 **Enemy params:** `angle`, `type` (sentry, skirmisher, hunter, sniper)
@@ -174,14 +176,14 @@ tile . ground
 tile # stone
 tile : mud
 
-tag P1 spawn angle=0.785 team=0
-tag P2 spawn angle=2.356 team=0
-tag E1 enemy angle=3.14 type=sentry
+tag P spawn angle=0.785 team=0
+tag E enemy angle=3.14 type=sentry
+tag B barrier tile=cobble health=20
 
 <grid>
 2# 2# 2# 2# 2# 2#
-2# 0.|P1 0. 0: 0. 2#
-2# 0. 0.|E1 0. 0.|P2 2#
+2# 0.|P 0.|B 0: 0. 2#
+2# 0. 0.|E 0.|B 0.|P 2#
 2# 2# 2# 2# 2# 2#
 </grid>
 

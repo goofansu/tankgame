@@ -1865,7 +1865,7 @@ app_frame(void)
 
         // White text with black outline for visibility
         health_style.color = pz_vec4_new(1.0f, 1.0f, 1.0f, 1.0f);
-        health_style.outline_width = 3.0f;
+        health_style.outline_width = 5.0f;
         health_style.outline_color = pz_vec4_new(0.0f, 0.0f, 0.0f, 1.0f);
 
         // Player health (bottom-right)
@@ -1881,7 +1881,7 @@ app_frame(void)
             lives_style.align_h = PZ_FONT_ALIGN_LEFT;
             lives_style.align_v = PZ_FONT_ALIGN_BOTTOM;
             lives_style.color = pz_vec4_new(0.6f, 0.9f, 1.0f, 1.0f);
-            lives_style.outline_width = 2.0f;
+            lives_style.outline_width = 4.0f;
             lives_style.outline_color = pz_vec4_new(0.0f, 0.0f, 0.0f, 1.0f);
 
             pz_font_drawf(g_app.font_mgr, &lives_style, 20.0f,
@@ -1894,7 +1894,7 @@ app_frame(void)
             level_style.align_h = PZ_FONT_ALIGN_LEFT;
             level_style.align_v = PZ_FONT_ALIGN_TOP;
             level_style.color = pz_vec4_new(0.8f, 0.8f, 0.8f, 1.0f);
-            level_style.outline_width = 2.0f;
+            level_style.outline_width = 4.0f;
             level_style.outline_color = pz_vec4_new(0.0f, 0.0f, 0.0f, 1.0f);
 
             pz_font_drawf(g_app.font_mgr, &level_style, 20.0f, 20.0f,
@@ -1912,7 +1912,7 @@ app_frame(void)
             enemy_style.align_h = PZ_FONT_ALIGN_RIGHT;
             enemy_style.align_v = PZ_FONT_ALIGN_TOP;
             enemy_style.color = pz_vec4_new(1.0f, 0.8f, 0.6f, 1.0f);
-            enemy_style.outline_width = 2.0f;
+            enemy_style.outline_width = 4.0f;
             enemy_style.outline_color = pz_vec4_new(0.0f, 0.0f, 0.0f, 1.0f);
 
             pz_font_drawf(g_app.font_mgr, &enemy_style, vp_width - 20.0f, 20.0f,
@@ -1924,14 +1924,14 @@ app_frame(void)
             = PZ_TEXT_STYLE_DEFAULT(g_app.font_russo, 64.0f);
         title_style.align_h = PZ_FONT_ALIGN_CENTER;
         title_style.align_v = PZ_FONT_ALIGN_MIDDLE;
-        title_style.outline_width = 4.0f;
+        title_style.outline_width = 6.0f;
 
         pz_text_style subtitle_style
             = PZ_TEXT_STYLE_DEFAULT(g_app.font_russo, 28.0f);
         subtitle_style.align_h = PZ_FONT_ALIGN_CENTER;
         subtitle_style.align_v = PZ_FONT_ALIGN_MIDDLE;
         subtitle_style.color = pz_vec4_new(0.9f, 0.9f, 0.9f, 1.0f);
-        subtitle_style.outline_width = 2.0f;
+        subtitle_style.outline_width = 4.0f;
         subtitle_style.outline_color = pz_vec4_new(0.0f, 0.0f, 0.0f, 1.0f);
 
         if (g_app.state == GAME_STATE_LEVEL_COMPLETE) {

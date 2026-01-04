@@ -42,7 +42,7 @@ static const pz_weapon_stats WEAPON_DEFAULT = {
     .projectile_scale = 1.0f,
     .projectile_color = { 1.0f, 0.8f, 0.2f, 1.0f }, // Yellow/orange
     .auto_fire = false, // Must click for each shot
-    .max_active_projectiles = 8, // Max 8 bullets in flight
+    .max_active_projectiles = 5, // Max 5 bullets in flight
     .recoil_strength = 1.0f, // Moderate recoil
 };
 
@@ -69,7 +69,7 @@ static const pz_weapon_stats WEAPON_RICOCHET = {
     .projectile_scale = 1.0f, // Normal size
     .projectile_color = { 0.2f, 0.9f, 0.3f, 1.0f }, // Green
     .auto_fire = false, // Must click for each shot
-    .max_active_projectiles = 6, // Max 6 bullets in flight
+    .max_active_projectiles = 3, // Max 3 bullets in flight
     .recoil_strength = 1.2f, // Moderate recoil
 };
 

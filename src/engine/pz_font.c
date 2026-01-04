@@ -640,16 +640,17 @@ pz_font_draw(pz_font_manager *mgr, const pz_text_style *style, float x, float y,
     }
 
     // Convert outline width from logical pixels to SDF units
-    // The SDF has PZ_FONT_SDF_SCALE distance per pixel at SDF_SIZE
-    // outline_width is in logical pixels, so scale by dpi and convert to SDF
-    // units
+    // The shader uses (0.5 - outline_sdf) as the threshold, so outline_sdf
+    // should be around 0.05-0.2 for visible outlines.
+    // We express outline as a fraction of the SDF padding region.
     float outline_sdf = 0.0f;
     if (style->outline_width > 0.0f) {
-        // Convert pixel outline to SDF distance units
-        // At SDF_SIZE, 1 pixel = 1/PZ_FONT_SDF_SCALE in SDF distance
-        // We scale by (SDF_SIZE / fb_size) to account for current font size
-        outline_sdf
-            = (style->outline_width * dpi) / (fb_size * PZ_FONT_SDF_SCALE);
+        // Convert pixel outline to SDF units
+        // outline_width is in logical pixels, convert to fraction of SDF range
+        // Higher multiplier = thicker outlines
+        outline_sdf = (style->outline_width / style->size) * 0.8f;
+        if (outline_sdf > 0.4f)
+            outline_sdf = 0.4f; // Clamp to avoid artifacts
     }
 
     float cursor_x = x;
