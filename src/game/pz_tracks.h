@@ -40,9 +40,10 @@ void pz_tracks_destroy(pz_tracks *tracks);
 // - pos_x, pos_z: world position of the tank center
 // - angle: tank body angle in radians (direction it's facing)
 // - tread_offset: distance from center to each tread (typically tank_width/2)
+// - strength: opacity multiplier (1.0 = normal)
 // Call this when the tank has moved enough distance
 void pz_tracks_add_mark(pz_tracks *tracks, int entity_id, float pos_x,
-    float pos_z, float angle, float tread_offset);
+    float pos_z, float angle, float tread_offset, float strength);
 
 // Clear track state for a specific entity (e.g., when entity dies/respawns)
 void pz_tracks_clear_entity(pz_tracks *tracks, int entity_id);

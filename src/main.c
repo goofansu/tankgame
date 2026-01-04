@@ -63,6 +63,13 @@ generate_screenshot_path(void)
     return pz_str_dup(filename);
 }
 
+static float
+track_strength_for_tank(const pz_tank *tank)
+{
+    float recoil = pz_clampf(tank->recoil, 0.0f, 1.5f);
+    return 1.0f + recoil * 0.35f;
+}
+
 static void
 spawn_tank_fog(
     pz_particle_manager *particle_mgr, pz_tank_manager *tank_mgr, float dt)
@@ -1152,7 +1159,8 @@ app_frame(void)
                     g_app.session.player_tank->id,
                     g_app.session.player_tank->pos.x,
                     g_app.session.player_tank->pos.y,
-                    g_app.session.player_tank->body_angle, 0.45f);
+                    g_app.session.player_tank->body_angle, 0.45f,
+                    track_strength_for_tank(g_app.session.player_tank));
             }
 
             // Powerup collection
@@ -1259,7 +1267,7 @@ app_frame(void)
                         if (pz_vec2_len(enemy->vel) > 0.1f) {
                             pz_tracks_add_mark(g_app.session.tracks, enemy->id,
                                 enemy->pos.x, enemy->pos.y, enemy->body_angle,
-                                0.45f);
+                                0.45f, track_strength_for_tank(enemy));
                         }
                     }
                 }

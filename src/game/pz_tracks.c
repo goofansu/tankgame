@@ -5,6 +5,7 @@
 #include "pz_tracks.h"
 
 #include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "../core/pz_log.h"
@@ -25,8 +26,16 @@
 // gaps)
 #define TRACK_MIN_DISTANCE 0.39f
 
-// Track mark vertex: position (2) + texcoord (2) = 4 floats
-#define TRACK_VERTEX_FLOATS 4
+// Randomness tuning for fuzzier track marks
+#define TRACK_MARK_JITTER_POS 0.025f
+#define TRACK_MARK_JITTER_ANGLE 0.08f
+#define TRACK_MARK_JITTER_WIDTH 0.18f
+#define TRACK_MARK_JITTER_LENGTH 0.12f
+#define TRACK_MARK_STRENGTH_MIN 0.6f
+#define TRACK_MARK_STRENGTH_MAX 1.6f
+
+// Track mark vertex: position (2) + texcoord (2) + strength (1) = 5 floats
+#define TRACK_VERTEX_FLOATS 5
 #define TRACK_VERTEX_SIZE (TRACK_VERTEX_FLOATS * sizeof(float))
 
 // Each mark is a quad = 6 vertices (2 triangles)
@@ -36,6 +45,11 @@
 typedef struct track_mark {
     float x, z; // World position
     float angle; // Rotation angle
+    float width_scale_back;
+    float width_scale_front;
+    float length_scale;
+    float jitter_x, jitter_z;
+    float strength;
 } track_mark;
 
 // Per-entity track state (last position for distance tracking)
@@ -134,10 +148,13 @@ pz_tracks_create(pz_renderer *renderer, pz_texture_manager *tex_manager,
         { .name = "a_texcoord",
             .type = PZ_ATTR_FLOAT2,
             .offset = 2 * sizeof(float) },
+        { .name = "a_strength",
+            .type = PZ_ATTR_FLOAT,
+            .offset = 4 * sizeof(float) },
     };
     pz_vertex_layout layout = {
         .attrs = attrs,
-        .attr_count = 2,
+        .attr_count = 3,
         .stride = TRACK_VERTEX_SIZE,
     };
     pz_pipeline_desc pipe_desc = {
@@ -195,9 +212,16 @@ pz_tracks_destroy(pz_tracks *tracks)
 // Track Mark Generation
 // ============================================================================
 
+static float
+randf_range(float min, float max)
+{
+    return min + ((float)rand() / (float)RAND_MAX) * (max - min);
+}
+
 // Add a single track mark at the specified position
 static void
-add_single_mark(pz_tracks *tracks, float x, float z, float angle)
+add_single_mark(
+    pz_tracks *tracks, float x, float z, float angle, float strength)
 {
     if (tracks->pending_count >= MAX_PENDING_MARKS) {
         // Buffer full, marks will be dropped until next update
@@ -207,7 +231,18 @@ add_single_mark(pz_tracks *tracks, float x, float z, float angle)
     track_mark *mark = &tracks->pending_marks[tracks->pending_count++];
     mark->x = x;
     mark->z = z;
-    mark->angle = angle;
+    mark->angle = angle
+        + randf_range(-TRACK_MARK_JITTER_ANGLE, TRACK_MARK_JITTER_ANGLE);
+    mark->width_scale_back
+        = 1.0f + randf_range(-TRACK_MARK_JITTER_WIDTH, TRACK_MARK_JITTER_WIDTH);
+    mark->width_scale_front
+        = 1.0f + randf_range(-TRACK_MARK_JITTER_WIDTH, TRACK_MARK_JITTER_WIDTH);
+    mark->length_scale = 1.0f
+        + randf_range(-TRACK_MARK_JITTER_LENGTH, TRACK_MARK_JITTER_LENGTH);
+    mark->jitter_x = randf_range(-TRACK_MARK_JITTER_POS, TRACK_MARK_JITTER_POS);
+    mark->jitter_z = randf_range(-TRACK_MARK_JITTER_POS, TRACK_MARK_JITTER_POS);
+    mark->strength = pz_clampf(strength * randf_range(0.85f, 1.15f),
+        TRACK_MARK_STRENGTH_MIN, TRACK_MARK_STRENGTH_MAX);
 }
 
 // Find or create entity state for the given entity ID
@@ -239,7 +274,7 @@ get_entity_state(pz_tracks *tracks, int entity_id)
 
 void
 pz_tracks_add_mark(pz_tracks *tracks, int entity_id, float pos_x, float pos_z,
-    float angle, float tread_offset)
+    float angle, float tread_offset, float strength)
 {
     if (!tracks)
         return;
@@ -275,8 +310,8 @@ pz_tracks_add_mark(pz_tracks *tracks, int entity_id, float pos_x, float pos_z,
         float right_z = pos_z - perp_z * tread_offset;
 
         // Add both tread marks oriented along direction of movement
-        add_single_mark(tracks, left_x, left_z, move_angle);
-        add_single_mark(tracks, right_x, right_z, move_angle);
+        add_single_mark(tracks, left_x, left_z, move_angle, strength);
+        add_single_mark(tracks, right_x, right_z, move_angle, strength);
 
         state->last_x = pos_x;
         state->last_z = pos_z;
@@ -305,27 +340,28 @@ pz_tracks_clear_entity(pz_tracks *tracks, int entity_id)
 // Generate vertex data for a single track mark quad
 // Returns pointer past the last written float
 static float *
-emit_track_quad(float *v, float x, float z, float angle, float world_width,
-    float world_height)
+emit_track_quad(
+    float *v, const track_mark *mark, float world_width, float world_height)
 {
     // Convert world coordinates to UV space (0-1)
     // We'll transform to NDC (-1 to 1) in the shader, but store UV coords
 
     // Half dimensions
-    float hw = TRACK_MARK_WIDTH * 0.5f;
-    float hl = TRACK_MARK_LENGTH * 0.5f;
+    float hl = TRACK_MARK_LENGTH * 0.5f * mark->length_scale;
+    float hw_back = TRACK_MARK_WIDTH * 0.5f * mark->width_scale_back;
+    float hw_front = TRACK_MARK_WIDTH * 0.5f * mark->width_scale_front;
 
     // Rotation
-    float cos_a = cosf(angle);
-    float sin_a = sinf(angle);
+    float cos_a = cosf(mark->angle);
+    float sin_a = sinf(mark->angle);
 
     // Four corners of the quad (in local space, then rotated)
     // Local: x along width, z along length
     float corners[4][2] = {
-        { -hw, -hl }, // bottom-left
-        { -hw, hl }, // top-left
-        { hw, hl }, // top-right
-        { hw, -hl }, // bottom-right
+        { -hw_back, -hl }, // bottom-left
+        { -hw_front, hl }, // top-left
+        { hw_front, hl }, // top-right
+        { hw_back, -hl }, // bottom-right
     };
 
     // Transform corners to world space
@@ -337,8 +373,8 @@ emit_track_quad(float *v, float x, float z, float angle, float world_width,
         float rx = lx * cos_a - lz * sin_a;
         float rz = lx * sin_a + lz * cos_a;
         // Translate to world position
-        world_corners[i][0] = x + rx;
-        world_corners[i][1] = z + rz;
+        world_corners[i][0] = mark->x + rx + mark->jitter_x;
+        world_corners[i][1] = mark->z + rz + mark->jitter_z;
     }
 
     // Convert to UV coordinates for the render target
@@ -369,6 +405,8 @@ emit_track_quad(float *v, float x, float z, float angle, float world_width,
         // Texture coordinate
         *v++ = tex_coords[idx][0];
         *v++ = tex_coords[idx][1];
+        // Strength multiplier for opacity
+        *v++ = mark->strength;
     }
 
     return v;
@@ -410,8 +448,7 @@ pz_tracks_update(pz_tracks *tracks)
     float *v = vertices;
     for (int i = 0; i < tracks->pending_count; i++) {
         track_mark *mark = &tracks->pending_marks[i];
-        v = emit_track_quad(v, mark->x, mark->z, mark->angle,
-            tracks->world_width, tracks->world_height);
+        v = emit_track_quad(v, mark, tracks->world_width, tracks->world_height);
     }
 
     // Upload to buffer
