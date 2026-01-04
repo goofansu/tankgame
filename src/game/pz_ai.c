@@ -1216,6 +1216,42 @@ pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
         if (ctrl->fire_timer > 0.0f) {
             ctrl->fire_timer -= dt;
         }
+
+        // Update hesitation timer
+        if (ctrl->hesitation_timer > 0.0f) {
+            ctrl->hesitation_timer -= dt;
+        }
+
+        // Calculate fire confidence for sentry and skirmisher
+        // Higher confidence = more bullets allowed, lower hesitation
+        if (ctrl->level == PZ_ENEMY_LEVEL_1
+            || ctrl->level == PZ_ENEMY_LEVEL_2) {
+            bool has_target = ctrl->can_see_player || ctrl->has_bounce_shot;
+
+            // Trigger hesitation when acquiring a new target
+            if (has_target && !ctrl->had_target_last_frame) {
+                // Random hesitation: 0.15 - 0.4 seconds
+                ctrl->hesitation_timer
+                    = 0.15f + 0.25f * ((float)(rand() % 100) / 100.0f);
+            }
+            ctrl->had_target_last_frame = has_target;
+
+            // Calculate confidence
+            if (ctrl->can_see_player) {
+                // Direct LOS = high confidence
+                ctrl->fire_confidence = 1.0f;
+            } else if (ctrl->has_bounce_shot) {
+                // Bounce shot = lower confidence (0.3 - 0.5)
+                ctrl->fire_confidence
+                    = 0.3f + 0.2f * ((float)(rand() % 100) / 100.0f);
+            } else {
+                ctrl->fire_confidence = 0.0f;
+            }
+        } else {
+            // Other enemy types: full confidence when they want to fire
+            ctrl->fire_confidence = 1.0f;
+            ctrl->hesitation_timer = 0.0f;
+        }
     }
 }
 
@@ -1276,6 +1312,11 @@ pz_ai_fire(pz_ai_manager *ai_mgr, pz_projectile_manager *proj_mgr)
             continue;
         }
 
+        // Check hesitation timer (small delay when acquiring new target)
+        if (ctrl->hesitation_timer > 0.0f) {
+            continue;
+        }
+
         float aim_error = fabsf(
             normalize_angle(ctrl->target_aim_angle - ctrl->current_aim_angle));
         if (aim_error > 0.26f) { // ~15 degrees
@@ -1288,9 +1329,24 @@ pz_ai_fire(pz_ai_manager *ai_mgr, pz_projectile_manager *proj_mgr)
         // Get weapon stats for this enemy
         const pz_weapon_stats *weapon = pz_weapon_get_stats(stats->weapon_type);
 
+        // Calculate max projectiles based on confidence
+        // High confidence (direct LOS): allow more bullets
+        // Low confidence (bounce shot): limit to fewer bullets
+        int max_projectiles = weapon->max_active_projectiles;
+        if (ctrl->level == PZ_ENEMY_LEVEL_1
+            || ctrl->level == PZ_ENEMY_LEVEL_2) {
+            if (ctrl->fire_confidence >= 0.8f) {
+                // Direct LOS: sentry gets 3, skirmisher gets 2
+                max_projectiles = (ctrl->level == PZ_ENEMY_LEVEL_1) ? 3 : 2;
+            } else if (ctrl->fire_confidence > 0.0f) {
+                // Bounce shot: only 1 bullet at a time
+                max_projectiles = 1;
+            }
+        }
+
         // Check active projectile count
         int active = pz_projectile_count_by_owner(proj_mgr, tank->id);
-        if (active >= weapon->max_active_projectiles) {
+        if (active >= max_projectiles) {
             continue;
         }
 

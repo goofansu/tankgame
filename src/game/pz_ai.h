@@ -136,6 +136,11 @@ typedef struct pz_ai_controller {
     bool has_bounce_shot; // Whether we found a valid bounce shot
     float bounce_shot_angle; // Angle to aim for bounce shot
     float bounce_shot_search_timer; // Cooldown for searching new bounce shots
+
+    // Fire rate limiting (reduces bullet spam)
+    float fire_confidence; // 0.0-1.0: how confident AI is about the shot
+    float hesitation_timer; // Delay before first shot after acquiring target
+    bool had_target_last_frame; // Track target acquisition for hesitation
 } pz_ai_controller;
 
 /* ============================================================================
