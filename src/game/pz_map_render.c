@@ -400,9 +400,10 @@ emit_wall_box(float *v, float x0, float z0, float x1, float z1, float height,
         1.0f, 0.0f, u0, v0_uv, u1, v1_uv, top_ao0, top_ao1, top_ao2, top_ao3);
 
     // Side faces use world-space UVs too (scaled to tile size)
-    // V coords based on wall height - one tile height in UV space
+    // V coords based on wall height - scale by height so texture tiles
+    // correctly
     float v_bottom = 0.0f;
-    float v_top = inv_scale; // One tile height in UV space
+    float v_top = h * inv_scale; // Scale V by number of height levels
 
     // Back face (-Z)
     if (back_exposed) {
@@ -528,10 +529,8 @@ emit_pit_box(float *v, float x0, float z0, float x1, float z1, float depth,
     float v1_z = 0.0f;
     compute_tile_uv(tile_x, tile_y, map->height, scale, &u0, &v0_z, &u1, &v1_z);
 
-    // V coords based on wall height (for vertical extent)
-    // Scale V by height so texture tiles correctly
+    // V coords for vertical extent - scale by height difference per face
     float v_bottom = 0.0f;
-    float v_top = inv_scale; // One tile height in UV space
 
     // Pit walls face INWARD so they're visible when looking down into the pit
     // This is opposite to regular walls which face outward
@@ -541,6 +540,7 @@ emit_pit_box(float *v, float x0, float z0, float x1, float z1, float depth,
     if (back_h > h) {
         float neighbor_y
             = GROUND_Y_OFFSET - (back_h < 0 ? -back_h : 0) * WALL_HEIGHT_UNIT;
+        float v_top = (back_h - h) * inv_scale; // Scale V by height difference
         // Use same winding as regular front face (+Z normal)
         // U goes left-to-right (x1 to x0), V goes bottom-to-top
         v = emit_wall_face(v, x1, y1, z0, // bottom right
@@ -555,6 +555,7 @@ emit_pit_box(float *v, float x0, float z0, float x1, float z1, float depth,
     if (front_h > h) {
         float neighbor_y
             = GROUND_Y_OFFSET - (front_h < 0 ? -front_h : 0) * WALL_HEIGHT_UNIT;
+        float v_top = (front_h - h) * inv_scale; // Scale V by height difference
         // Use same winding as regular back face (-Z normal)
         v = emit_wall_face(v, x0, y1, z1, // bottom left
             x0, neighbor_y, z1, // top left
@@ -568,6 +569,7 @@ emit_pit_box(float *v, float x0, float z0, float x1, float z1, float depth,
     if (left_h > h) {
         float neighbor_y
             = GROUND_Y_OFFSET - (left_h < 0 ? -left_h : 0) * WALL_HEIGHT_UNIT;
+        float v_top = (left_h - h) * inv_scale; // Scale V by height difference
         // Use same winding as regular right face (+X normal)
         // U goes along Z axis
         v = emit_wall_face(v, x0, y1, z0, // bottom back
@@ -583,6 +585,7 @@ emit_pit_box(float *v, float x0, float z0, float x1, float z1, float depth,
     if (right_h > h) {
         float neighbor_y
             = GROUND_Y_OFFSET - (right_h < 0 ? -right_h : 0) * WALL_HEIGHT_UNIT;
+        float v_top = (right_h - h) * inv_scale; // Scale V by height difference
         // Use same winding as regular left face (-X normal)
         v = emit_wall_face(v, x1, y1, z1, // bottom front
             x1, neighbor_y, z1, // top front
