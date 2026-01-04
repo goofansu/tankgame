@@ -3,6 +3,7 @@
  */
 
 #include "pz_barrier.h"
+#include "pz_collision.h"
 #include "pz_lighting.h"
 #include "pz_map.h"
 #include "pz_particle.h"
@@ -420,6 +421,7 @@ pz_barrier_check_collision(pz_barrier_manager *mgr, pz_vec2 pos, float radius)
         return NULL;
 
     float half = mgr->tile_size / 2.0f;
+    pz_circle circle = pz_circle_new(pos, radius);
 
     for (int i = 0; i < PZ_MAX_BARRIERS; i++) {
         pz_barrier *barrier = &mgr->barriers[i];
@@ -427,16 +429,9 @@ pz_barrier_check_collision(pz_barrier_manager *mgr, pz_vec2 pos, float radius)
             continue;
 
         // Box-circle collision
-        float closest_x
-            = fmaxf(barrier->pos.x - half, fminf(pos.x, barrier->pos.x + half));
-        float closest_z
-            = fmaxf(barrier->pos.y - half, fminf(pos.y, barrier->pos.y + half));
-
-        float dx = pos.x - closest_x;
-        float dz = pos.y - closest_z;
-        float dist_sq = dx * dx + dz * dz;
-
-        if (dist_sq < radius * radius) {
+        pz_aabb box
+            = pz_aabb_from_center(barrier->pos, (pz_vec2) { half, half });
+        if (pz_collision_circle_aabb(circle, box, NULL)) {
             return barrier;
         }
     }
@@ -459,62 +454,14 @@ pz_barrier_resolve_collision(
         if (!barrier->active || barrier->destroyed)
             continue;
 
-        // Find closest point on barrier box to circle center
-        float closest_x = fmaxf(
-            barrier->pos.x - half, fminf(pos->x, barrier->pos.x + half));
-        float closest_z = fmaxf(
-            barrier->pos.y - half, fminf(pos->y, barrier->pos.y + half));
+        pz_aabb box
+            = pz_aabb_from_center(barrier->pos, (pz_vec2) { half, half });
+        pz_circle circle = pz_circle_new(*pos, radius);
+        pz_vec2 push_out = { 0.0f, 0.0f };
 
-        float dx = pos->x - closest_x;
-        float dz = pos->y - closest_z;
-        float dist_sq = dx * dx + dz * dz;
-
-        if (dist_sq < radius * radius && dist_sq > 0.0001f) {
-            // Push circle out of barrier
-            float dist = sqrtf(dist_sq);
-            float penetration = radius - dist;
-            float nx = dx / dist;
-            float nz = dz / dist;
-
-            pos->x += nx * penetration;
-            pos->y += nz * penetration;
-            collided = true;
-        } else if (dist_sq < 0.0001f) {
-            // Circle center is inside barrier, push out to nearest edge
-            float dx_to_left = pos->x - (barrier->pos.x - half);
-            float dx_to_right = (barrier->pos.x + half) - pos->x;
-            float dz_to_back = pos->y - (barrier->pos.y - half);
-            float dz_to_front = (barrier->pos.y + half) - pos->y;
-
-            float min_dist = dx_to_left;
-            int axis = 0; // -X
-            if (dx_to_right < min_dist) {
-                min_dist = dx_to_right;
-                axis = 1; // +X
-            }
-            if (dz_to_back < min_dist) {
-                min_dist = dz_to_back;
-                axis = 2; // -Z
-            }
-            if (dz_to_front < min_dist) {
-                min_dist = dz_to_front;
-                axis = 3; // +Z
-            }
-
-            switch (axis) {
-            case 0:
-                pos->x = barrier->pos.x - half - radius;
-                break;
-            case 1:
-                pos->x = barrier->pos.x + half + radius;
-                break;
-            case 2:
-                pos->y = barrier->pos.y - half - radius;
-                break;
-            case 3:
-                pos->y = barrier->pos.y + half + radius;
-                break;
-            }
+        if (pz_collision_circle_aabb(circle, box, &push_out)) {
+            pos->x += push_out.x;
+            pos->y += push_out.y;
             collided = true;
         }
     }

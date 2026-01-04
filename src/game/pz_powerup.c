@@ -3,6 +3,7 @@
  */
 
 #include "pz_powerup.h"
+#include "pz_collision.h"
 #include "pz_tank.h"
 
 #include <math.h>
@@ -259,10 +260,11 @@ pz_powerup_check_collection(
             continue;
 
         // Circle-circle collision
-        float dist = pz_vec2_dist(tank_pos, powerup->pos);
-        float combined_radius = tank_radius + POWERUP_RADIUS;
+        pz_circle tank_circle = pz_circle_new(tank_pos, tank_radius);
+        pz_circle powerup_circle = pz_circle_new(powerup->pos, POWERUP_RADIUS);
 
-        if (dist < combined_radius) {
+        if (pz_collision_circle_circle(
+                tank_circle, powerup_circle, NULL, NULL)) {
             // Collected!
             powerup->collected = true;
             powerup->respawn_timer = powerup->respawn_time;

@@ -70,6 +70,7 @@ set(THIRD_PARTY_SOURCES
 )
 
 set(GAME_SOURCES
+    src/game/pz_collision.c
     src/game/pz_map.c
     src/game/pz_map_render.c
     src/game/pz_mesh.c

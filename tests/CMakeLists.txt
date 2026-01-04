@@ -17,6 +17,12 @@ target_include_directories(test_math PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE
 target_link_libraries(test_math PRIVATE m)  # Link math library
 add_test(NAME math COMMAND test_math)
 
+# Collision primitive tests
+add_executable(test_collision test_collision.c ../src/game/pz_collision.c)
+target_include_directories(test_collision PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_collision PRIVATE m)
+add_test(NAME collision COMMAND test_collision)
+
 # Data structures tests
 add_executable(test_ds test_ds.c ../src/core/pz_ds.c ../src/core/pz_mem.c)
 target_include_directories(test_ds PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/src)

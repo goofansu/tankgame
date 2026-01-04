@@ -3,6 +3,7 @@
  */
 
 #include "pz_tank.h"
+#include "pz_collision.h"
 #include "pz_powerup.h"
 
 #include <math.h>
@@ -63,58 +64,6 @@ create_shadow_mesh(void)
 }
 
 static bool
-circle_overlaps_tile(pz_vec2 center, float radius, float min_x, float min_y,
-    float max_x, float max_y, pz_vec2 *push_out)
-{
-    float nearest_x = pz_clampf(center.x, min_x, max_x);
-    float nearest_y = pz_clampf(center.y, min_y, max_y);
-    float dx = center.x - nearest_x;
-    float dy = center.y - nearest_y;
-    float dist_sq = dx * dx + dy * dy;
-    float radius_sq = radius * radius;
-
-    if (dist_sq >= radius_sq) {
-        return false;
-    }
-
-    if (!push_out) {
-        return true;
-    }
-
-    if (dist_sq > 0.000001f) {
-        float dist = sqrtf(dist_sq);
-        float push = radius - dist;
-        push_out->x = (dx / dist) * push;
-        push_out->y = (dy / dist) * push;
-        return true;
-    }
-
-    float left = center.x - min_x;
-    float right = max_x - center.x;
-    float bottom = center.y - min_y;
-    float top = max_y - center.y;
-
-    float min_dist = left;
-    pz_vec2 normal = { -1.0f, 0.0f };
-    if (right < min_dist) {
-        min_dist = right;
-        normal = (pz_vec2) { 1.0f, 0.0f };
-    }
-    if (bottom < min_dist) {
-        min_dist = bottom;
-        normal = (pz_vec2) { 0.0f, -1.0f };
-    }
-    if (top < min_dist) {
-        min_dist = top;
-        normal = (pz_vec2) { 0.0f, 1.0f };
-    }
-
-    push_out->x = normal.x * (radius + min_dist);
-    push_out->y = normal.y * (radius + min_dist);
-    return true;
-}
-
-static bool
 tank_circle_hits_map(const pz_map *map, pz_vec2 center, float radius)
 {
     if (!map)
@@ -128,6 +77,8 @@ tank_circle_hits_map(const pz_map *map, pz_vec2 center, float radius)
     int max_tx = (int)floorf((center.x + radius + half_w) / ts);
     int min_ty = (int)floorf((center.y - radius + half_h) / ts);
     int max_ty = (int)floorf((center.y + radius + half_h) / ts);
+
+    pz_circle circle = pz_circle_new(center, radius);
 
     for (int ty = min_ty; ty <= max_ty; ty++) {
         for (int tx = min_tx; tx <= max_tx; tx++) {
@@ -143,8 +94,10 @@ tank_circle_hits_map(const pz_map *map, pz_vec2 center, float radius)
             float max_x = min_x + ts;
             float max_y = min_y + ts;
 
-            if (circle_overlaps_tile(
-                    center, radius, min_x, min_y, max_x, max_y, NULL)) {
+            pz_aabb box = pz_aabb_new(
+                (pz_vec2) { min_x, min_y }, (pz_vec2) { max_x, max_y });
+
+            if (pz_collision_circle_aabb(circle, box, NULL)) {
                 return true;
             }
         }
@@ -205,9 +158,12 @@ resolve_tank_circle_map(const pz_map *map, pz_vec2 *center, float radius)
                 float tile_max_x = tile_min_x + ts;
                 float tile_max_y = tile_min_y + ts;
                 pz_vec2 push_out = { 0.0f, 0.0f };
+                pz_circle circle = pz_circle_new(*center, radius);
 
-                if (circle_overlaps_tile(*center, radius, tile_min_x,
-                        tile_min_y, tile_max_x, tile_max_y, &push_out)) {
+                pz_aabb box = pz_aabb_new((pz_vec2) { tile_min_x, tile_min_y },
+                    (pz_vec2) { tile_max_x, tile_max_y });
+
+                if (pz_collision_circle_aabb(circle, box, &push_out)) {
                     center->x += push_out.x;
                     center->y += push_out.y;
                     any = true;
@@ -219,6 +175,34 @@ resolve_tank_circle_map(const pz_map *map, pz_vec2 *center, float radius)
             break;
         }
     }
+}
+
+static bool
+tank_circle_hits_tanks(
+    pz_tank_manager *mgr, pz_vec2 center, float radius, int exclude_id)
+{
+    if (!mgr)
+        return false;
+
+    pz_circle circle = pz_circle_new(center, radius);
+
+    for (int i = 0; i < PZ_MAX_TANKS; i++) {
+        pz_tank *tank = &mgr->tanks[i];
+
+        if (!(tank->flags & PZ_TANK_FLAG_ACTIVE))
+            continue;
+        if (tank->flags & PZ_TANK_FLAG_DEAD)
+            continue;
+        if (tank->id == exclude_id)
+            continue;
+
+        pz_circle other = pz_circle_new(tank->pos, mgr->collision_radius);
+        if (pz_collision_circle_circle(circle, other, NULL, NULL)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 // Update turret color to match current weapon's projectile color
@@ -543,29 +527,33 @@ pz_tank_update(pz_tank_manager *mgr, pz_tank *tank, const pz_tank_input *input,
     // Update position
     pz_vec2 new_pos = pz_vec2_add(tank->pos, pz_vec2_scale(tank->vel, dt));
 
-    // Wall collision (separate axis) using circle-vs-tile checks
-    if (map) {
+    // Wall + tank collision (separate axis) using circle checks
+    {
         float r = mgr->collision_radius;
         pz_vec2 pos = tank->pos;
 
         pz_vec2 test_x = { new_pos.x, pos.y };
-        if (!tank_circle_hits_map(map, test_x, r)) {
+        bool hit_map_x = map && tank_circle_hits_map(map, test_x, r);
+        bool hit_tank_x = tank_circle_hits_tanks(mgr, test_x, r, tank->id);
+        if (!hit_map_x && !hit_tank_x) {
             pos.x = new_pos.x;
         } else {
             tank->vel.x = 0;
         }
 
         pz_vec2 test_y = { pos.x, new_pos.y };
-        if (!tank_circle_hits_map(map, test_y, r)) {
+        bool hit_map_y = map && tank_circle_hits_map(map, test_y, r);
+        bool hit_tank_y = tank_circle_hits_tanks(mgr, test_y, r, tank->id);
+        if (!hit_map_y && !hit_tank_y) {
             pos.y = new_pos.y;
         } else {
             tank->vel.y = 0;
         }
 
-        resolve_tank_circle_map(map, &pos, r);
+        if (map) {
+            resolve_tank_circle_map(map, &pos, r);
+        }
         tank->pos = pos;
-    } else {
-        tank->pos = new_pos;
     }
 
     // Turret rotation (smooth interpolation toward target)
@@ -697,6 +685,8 @@ pz_tank_check_collision(
     if (!mgr)
         return NULL;
 
+    pz_circle circle = pz_circle_new(pos, radius);
+
     for (int i = 0; i < PZ_MAX_TANKS; i++) {
         pz_tank *tank = &mgr->tanks[i];
 
@@ -711,10 +701,8 @@ pz_tank_check_collision(
             continue;
 
         // Circle-circle collision
-        float dist = pz_vec2_dist(pos, tank->pos);
-        float combined_radius = radius + mgr->collision_radius;
-
-        if (dist < combined_radius) {
+        pz_circle other = pz_circle_new(tank->pos, mgr->collision_radius);
+        if (pz_collision_circle_circle(circle, other, NULL, NULL)) {
             return tank;
         }
     }

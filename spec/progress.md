@@ -45,10 +45,10 @@
 - [x] M4.7: tank-wall collision (separate axis, sliding along walls)
 
 ## Phase 5: Physics and Collision
-- [ ] M5.1: collision shapes (circle, rect as reusable API)
+- [x] M5.1: collision shapes (circle, rect as reusable API)
 - [ ] M5.2: collision world (spatial queries)
 - [x] M5.3: raycast (DDA algorithm with normals, used for projectiles and AI LOS)
-- [ ] M5.4: tank-tank collision (tanks currently pass through each other)
+- [x] M5.4: tank-tank collision (tanks currently pass through each other)
 
 ## Phase 6: Weapons and Projectiles
 - [x] M6.1: projectile entity, mesh, movement, lifetime
