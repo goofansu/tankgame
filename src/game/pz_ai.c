@@ -28,7 +28,8 @@ static const pz_enemy_stats ENEMY_STATS[] = {
         .body_color = { 0.5f, 0.5f, 0.5f, 1.0f },
         .weapon_type = PZ_POWERUP_NONE,
         .projectile_speed_scale = 1.0f,
-        .bounce_shot_range = 30.0f },
+        .bounce_shot_range = 30.0f,
+        .projectile_defense_chance = 0.0f },
 
     // Level 1: Sentry (stationary turret, fires often, uses bounce shots)
     { .health = 10,
@@ -38,7 +39,8 @@ static const pz_enemy_stats ENEMY_STATS[] = {
         .body_color = { 0.6f, 0.25f, 0.25f, 1.0f }, // Dark red
         .weapon_type = PZ_POWERUP_NONE,
         .projectile_speed_scale = 1.0f,
-        .bounce_shot_range = 30.0f },
+        .bounce_shot_range = 30.0f,
+        .projectile_defense_chance = 0.6f },
 
     // Level 2: Skirmisher (uses cover)
     { .health = 15,
@@ -48,7 +50,8 @@ static const pz_enemy_stats ENEMY_STATS[] = {
         .body_color = { 0.7f, 0.4f, 0.1f, 1.0f }, // Orange-brown
         .weapon_type = PZ_POWERUP_NONE,
         .projectile_speed_scale = 1.0f,
-        .bounce_shot_range = 0.0f },
+        .bounce_shot_range = 0.0f,
+        .projectile_defense_chance = 0.0f },
 
     // Level 3: Hunter (aggressive, machine gun burst)
     { .health = 20,
@@ -58,7 +61,8 @@ static const pz_enemy_stats ENEMY_STATS[] = {
         .body_color = { 0.2f, 0.5f, 0.2f, 1.0f }, // Dark green (hunter)
         .weapon_type = PZ_POWERUP_MACHINE_GUN,
         .projectile_speed_scale = 1.0f,
-        .bounce_shot_range = 0.0f },
+        .bounce_shot_range = 0.0f,
+        .projectile_defense_chance = 0.0f },
 
     // Level 4: Sniper (stationary, long-range ricochet)
     { .health = 12,
@@ -68,7 +72,8 @@ static const pz_enemy_stats ENEMY_STATS[] = {
         .body_color = { 0.35f, 0.4f, 0.7f, 1.0f }, // Steel blue
         .weapon_type = PZ_POWERUP_RICOCHET,
         .projectile_speed_scale = 1.4f,
-        .bounce_shot_range = 60.0f },
+        .bounce_shot_range = 60.0f,
+        .projectile_defense_chance = 0.9f },
 };
 
 const pz_enemy_stats *
@@ -192,6 +197,9 @@ pz_ai_spawn_enemy(
     ctrl->can_see_player = false;
     ctrl->reaction_delay = 0.0f;
     ctrl->last_seen_time = 0.0f;
+    ctrl->defending_projectile = false;
+    ctrl->defense_aim_angle = angle;
+    ctrl->defense_check_timer = 0.0f;
 
     // Initialize cover behavior for level 2+
     ctrl->state = PZ_AI_STATE_IDLE;
@@ -267,6 +275,84 @@ check_line_of_sight(const pz_map *map, pz_vec2 from, pz_vec2 to)
     return !hit_wall;
 }
 
+// Look for an incoming projectile to shoot down.
+// Returns true when an incoming projectile threat is found and sets aim_angle.
+static bool
+find_projectile_defense_target(const pz_projectile_manager *proj_mgr,
+    const pz_tank *tank, float *aim_angle)
+{
+    if (!proj_mgr || !tank || !aim_angle) {
+        return false;
+    }
+
+    const float defense_range = 8.0f;
+    const float defense_lane_radius = 0.85f;
+    const float defense_max_time = 0.8f;
+
+    bool found = false;
+    float best_time = defense_max_time;
+    pz_vec2 best_target = tank->pos;
+
+    for (int i = 0; i < PZ_MAX_PROJECTILES; i++) {
+        const pz_projectile *proj = &proj_mgr->projectiles[i];
+        if (!proj->active) {
+            continue;
+        }
+
+        if (proj->owner_id == tank->id) {
+            continue;
+        }
+
+        float proj_speed = pz_vec2_len(proj->velocity);
+        if (proj_speed < 0.1f) {
+            continue;
+        }
+
+        pz_vec2 to_tank = pz_vec2_sub(tank->pos, proj->pos);
+        float dist = pz_vec2_len(to_tank);
+        if (dist > defense_range) {
+            continue;
+        }
+
+        pz_vec2 proj_dir = pz_vec2_scale(proj->velocity, 1.0f / proj_speed);
+        float along = pz_vec2_dot(to_tank, proj_dir);
+        if (along <= 0.0f) {
+            continue;
+        }
+
+        float time_to_hit = along / proj_speed;
+        if (time_to_hit > defense_max_time) {
+            continue;
+        }
+
+        pz_vec2 closest = pz_vec2_sub(to_tank, pz_vec2_scale(proj_dir, along));
+        float miss_dist = pz_vec2_len(closest);
+        if (miss_dist > defense_lane_radius) {
+            continue;
+        }
+
+        if (!found || time_to_hit < best_time) {
+            float lead_time = pz_clampf(time_to_hit, 0.05f, 0.25f);
+            best_time = time_to_hit;
+            best_target = pz_vec2_add(
+                proj->pos, pz_vec2_scale(proj->velocity, lead_time));
+            found = true;
+        }
+    }
+
+    if (!found) {
+        return false;
+    }
+
+    pz_vec2 to_target = pz_vec2_sub(best_target, tank->pos);
+    if (pz_vec2_len(to_target) < 0.01f) {
+        return false;
+    }
+
+    *aim_angle = atan2f(to_target.x, to_target.y);
+    return true;
+}
+
 // Check if a position is valid (not inside a wall)
 static bool
 is_position_valid(const pz_map *map, pz_vec2 pos, float radius)
@@ -310,93 +396,157 @@ is_position_valid(const pz_map *map, pz_vec2 pos, float radius)
     return true;
 }
 
-// Try to find a bounce shot angle to hit the player
-// Returns true if a valid bounce shot was found, sets bounce_angle
-// This simulates firing a projectile and checking if it would hit the player
-// after bouncing off a wall.
 static bool
-find_bounce_shot(const pz_map *map, pz_vec2 ai_pos, pz_vec2 player_pos,
-    float max_ray_dist, float *bounce_angle)
+ray_segment_hits_circle(pz_vec2 start, pz_vec2 dir, float seg_len,
+    pz_vec2 center, float radius, float *out_dist)
 {
-    if (!map) {
+    if (seg_len <= 0.0f) {
+        return false;
+    }
+
+    pz_vec2 to_center = pz_vec2_sub(center, start);
+    float along = pz_vec2_dot(to_center, dir);
+    if (along < 0.0f || along > seg_len) {
+        return false;
+    }
+
+    pz_vec2 closest = pz_vec2_add(start, pz_vec2_scale(dir, along));
+    float miss_dist = pz_vec2_dist(closest, center);
+    if (miss_dist > radius) {
+        return false;
+    }
+
+    if (out_dist) {
+        *out_dist = along;
+    }
+
+    return true;
+}
+
+// Simulate a ricochet path and see if it can hit the player without
+// intersecting the shooter.
+static bool
+simulate_ricochet_shot(const pz_map *map, pz_vec2 start_pos, pz_vec2 dir,
+    int max_bounces, float max_dist, pz_vec2 player_pos, float player_radius,
+    pz_vec2 self_pos, float self_radius, float self_ignore_dist,
+    float *out_total_dist, int *out_bounces)
+{
+    if (!map || max_dist <= 0.0f) {
+        return false;
+    }
+
+    float dir_len = pz_vec2_len(dir);
+    if (dir_len < 0.0001f) {
+        return false;
+    }
+
+    dir = pz_vec2_scale(dir, 1.0f / dir_len);
+
+    float remaining = max_dist;
+    float total_dist = 0.0f;
+    int bounces = 0;
+    pz_vec2 pos = start_pos;
+
+    for (int step = 0; step <= max_bounces; step++) {
+        if (remaining <= 0.01f) {
+            break;
+        }
+
+        pz_vec2 end = pz_vec2_add(pos, pz_vec2_scale(dir, remaining));
+        pz_raycast_result ray = pz_map_raycast_ex(map, pos, end);
+        float seg_len = ray.hit ? ray.distance : remaining;
+
+        float hit_dist = 0.0f;
+        bool hit_player = ray_segment_hits_circle(
+            pos, dir, seg_len, player_pos, player_radius, &hit_dist);
+
+        if (hit_player) {
+            if (!ray.hit || hit_dist <= (ray.distance - player_radius)) {
+                float self_hit_dist = 0.0f;
+                bool hit_self = ray_segment_hits_circle(
+                    pos, dir, hit_dist, self_pos, self_radius, &self_hit_dist);
+                if (hit_self) {
+                    bool ignore_self
+                        = (step == 0 && self_hit_dist <= self_ignore_dist);
+                    if (!ignore_self && self_hit_dist < hit_dist) {
+                        return false;
+                    }
+                }
+
+                total_dist += hit_dist;
+                if (out_total_dist) {
+                    *out_total_dist = total_dist;
+                }
+                if (out_bounces) {
+                    *out_bounces = bounces;
+                }
+                return true;
+            }
+        }
+
+        float self_hit_dist = 0.0f;
+        bool hit_self = ray_segment_hits_circle(
+            pos, dir, seg_len, self_pos, self_radius, &self_hit_dist);
+        if (hit_self) {
+            bool ignore_self = (step == 0 && self_hit_dist <= self_ignore_dist);
+            if (!ignore_self) {
+                return false;
+            }
+        }
+
+        if (!ray.hit || bounces >= max_bounces) {
+            break;
+        }
+
+        pos = pz_vec2_add(ray.point, pz_vec2_scale(ray.normal, 0.05f));
+        dir = pz_vec2_reflect(dir, ray.normal);
+        remaining -= seg_len;
+        total_dist += seg_len;
+        bounces++;
+    }
+
+    return false;
+}
+
+// Try to find a ricochet shot angle to hit the player (multi-bounce).
+// Returns true if a valid shot was found, sets bounce_angle.
+static bool
+find_ricochet_shot(const pz_map *map, pz_vec2 ai_pos, pz_vec2 player_pos,
+    float max_ray_dist, int max_bounces, int num_angles, float self_radius,
+    float self_ignore_dist, float *bounce_angle)
+{
+    if (!map || num_angles <= 0 || max_bounces < 0) {
         return false;
     }
 
     const float player_hit_radius = 0.9f; // Tank collision radius
-    const int num_angles = 36; // Sample 36 angles (every 10 degrees)
 
     float best_score = -1.0f;
     float best_angle = 0.0f;
 
-    // Try firing in multiple directions and simulate one bounce
     for (int i = 0; i < num_angles; i++) {
         float angle = (float)i * (2.0f * PZ_PI / (float)num_angles);
         pz_vec2 dir = { sinf(angle), cosf(angle) };
 
-        // Cast ray to find wall
-        pz_vec2 end = pz_vec2_add(ai_pos, pz_vec2_scale(dir, max_ray_dist));
-        pz_raycast_result ray = pz_map_raycast_ex(map, ai_pos, end);
-
-        if (!ray.hit) {
-            continue; // No wall hit, can't bounce
+        float total_dist = 0.0f;
+        int bounces = 0;
+        if (!simulate_ricochet_shot(map, ai_pos, dir, max_bounces, max_ray_dist,
+                player_pos, player_hit_radius, ai_pos, self_radius,
+                self_ignore_dist, &total_dist, &bounces)) {
+            continue;
         }
 
-        // Calculate reflected direction
-        pz_vec2 reflected = pz_vec2_reflect(dir, ray.normal);
+        float score = 10.0f;
+        score -= (float)bounces * 1.5f;
+        score -= total_dist * 0.02f;
 
-        // Push slightly off the wall
-        pz_vec2 bounce_pos
-            = pz_vec2_add(ray.point, pz_vec2_scale(ray.normal, 0.05f));
-
-        // Cast ray from bounce point in reflected direction toward player
-        float dist_to_player = pz_vec2_dist(bounce_pos, player_pos);
-        pz_vec2 reflected_end
-            = pz_vec2_add(bounce_pos, pz_vec2_scale(reflected, max_ray_dist));
-
-        // Check if reflected ray passes close to player
-        // Find closest approach of the reflected ray to the player
-
-        // Vector from bounce point to player
-        pz_vec2 to_player = pz_vec2_sub(player_pos, bounce_pos);
-
-        // Project player position onto reflected ray
-        float dot = pz_vec2_dot(to_player, reflected);
-
-        if (dot < 0) {
-            continue; // Player is behind the bounce direction
-        }
-
-        // Closest point on reflected ray to player
-        pz_vec2 closest
-            = pz_vec2_add(bounce_pos, pz_vec2_scale(reflected, dot));
-        float miss_dist = pz_vec2_dist(closest, player_pos);
-
-        // Check if the ray would hit a wall before reaching the player
-        pz_vec2 check_end = pz_vec2_add(
-            bounce_pos, pz_vec2_scale(reflected, dot + player_hit_radius));
-        pz_raycast_result check = pz_map_raycast_ex(map, bounce_pos, check_end);
-
-        if (check.hit && check.distance < dot - player_hit_radius) {
-            continue; // Wall blocks the path to player
-        }
-
-        // Score this shot (lower miss distance is better)
-        if (miss_dist < player_hit_radius * 1.5f) {
-            // Calculate a score based on how close we'd get
-            float score = player_hit_radius * 2.0f - miss_dist;
-
-            // Prefer shorter total path
-            float total_dist = ray.distance + dot;
-            score -= total_dist * 0.01f;
-
-            if (score > best_score) {
-                best_score = score;
-                best_angle = angle;
-            }
+        if (score > best_score) {
+            best_score = score;
+            best_angle = angle;
         }
     }
 
-    if (best_score > 0) {
+    if (best_score > 0.0f) {
         *bounce_angle = best_angle;
         return true;
     }
@@ -1350,11 +1500,41 @@ pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
         ctrl->can_see_player
             = check_line_of_sight(ai_mgr->map, tank->pos, player_pos);
 
-        // Level 1: Consider bounce shots when player is not visible
+        // Check for incoming projectiles to defend against.
+        if (stats->projectile_defense_chance > 0.0f && proj_mgr) {
+            if (ctrl->defense_check_timer > 0.0f) {
+                ctrl->defense_check_timer -= dt;
+            }
+
+            if (ctrl->defense_check_timer <= 0.0f) {
+                float defense_angle = 0.0f;
+                bool found_defense = find_projectile_defense_target(
+                    proj_mgr, tank, &defense_angle);
+                if (found_defense) {
+                    float roll = (float)(rand() % 100) / 100.0f;
+                    if (roll < stats->projectile_defense_chance) {
+                        ctrl->defending_projectile = true;
+                        ctrl->defense_aim_angle = defense_angle;
+                    } else {
+                        ctrl->defending_projectile = false;
+                    }
+                } else {
+                    ctrl->defending_projectile = false;
+                }
+                ctrl->defense_check_timer = 0.12f;
+            }
+        } else {
+            ctrl->defending_projectile = false;
+        }
+
+        // Stationary enemies use ricochet shots when player is not visible.
         bool uses_bounce_shots = (ctrl->level == PZ_ENEMY_LEVEL_1
             || ctrl->level == PZ_ENEMY_LEVEL_2
             || ctrl->level == PZ_ENEMY_LEVEL_SNIPER);
-        if (uses_bounce_shots) {
+        if (ctrl->defending_projectile) {
+            ctrl->target_aim_angle = ctrl->defense_aim_angle;
+            ctrl->has_bounce_shot = false;
+        } else if (uses_bounce_shots) {
             // Update bounce shot search timer
             if (ctrl->bounce_shot_search_timer > 0.0f) {
                 ctrl->bounce_shot_search_timer -= dt;
@@ -1373,8 +1553,15 @@ pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
                     if (bounce_range <= 0.0f) {
                         bounce_range = 30.0f;
                     }
-                    if (find_bounce_shot(ai_mgr->map, tank->pos, player_pos,
-                            bounce_range, &bounce_angle)) {
+                    int sample_count = 36;
+                    if (ctrl->level == PZ_ENEMY_LEVEL_SNIPER) {
+                        sample_count = 90;
+                    }
+                    float self_radius = 1.0f;
+                    float self_ignore_dist = 1.7f;
+                    if (find_ricochet_shot(ai_mgr->map, tank->pos, player_pos,
+                            bounce_range, stats->max_bounces, sample_count,
+                            self_radius, self_ignore_dist, &bounce_angle)) {
                         ctrl->has_bounce_shot = true;
                         ctrl->bounce_shot_angle = bounce_angle;
                         pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
@@ -1389,9 +1576,14 @@ pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
                 if (ctrl->has_bounce_shot) {
                     ctrl->target_aim_angle = ctrl->bounce_shot_angle;
                 } else {
-                    // Fallback: aim at player anyway (for when they become
-                    // visible)
-                    ctrl->target_aim_angle = direct_angle;
+                    if (ctrl->level == PZ_ENEMY_LEVEL_SNIPER) {
+                        // Snipers hold fire without a validated ricochet.
+                        ctrl->target_aim_angle = ctrl->current_aim_angle;
+                    } else {
+                        // Fallback: aim at player anyway (for when they become
+                        // visible)
+                        ctrl->target_aim_angle = direct_angle;
+                    }
                 }
             }
         } else {
@@ -1448,7 +1640,8 @@ pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
         // Higher confidence = more bullets allowed, lower hesitation
         if (ctrl->level == PZ_ENEMY_LEVEL_1
             || ctrl->level == PZ_ENEMY_LEVEL_2) {
-            bool has_target = ctrl->can_see_player || ctrl->has_bounce_shot;
+            bool has_target = ctrl->can_see_player || ctrl->has_bounce_shot
+                || ctrl->defending_projectile;
 
             // Trigger hesitation when acquiring a new target
             if (has_target && !ctrl->had_target_last_frame) {
@@ -1459,7 +1652,10 @@ pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
             ctrl->had_target_last_frame = has_target;
 
             // Calculate confidence
-            if (ctrl->can_see_player) {
+            if (ctrl->defending_projectile) {
+                ctrl->fire_confidence = 1.0f;
+                ctrl->hesitation_timer = 0.0f;
+            } else if (ctrl->can_see_player) {
                 // Direct LOS = high confidence
                 ctrl->fire_confidence = 1.0f;
             } else if (ctrl->has_bounce_shot) {
@@ -1525,6 +1721,9 @@ pz_ai_fire(pz_ai_manager *ai_mgr, pz_projectile_manager *proj_mgr)
         if (uses_bounce_shots && ctrl->has_bounce_shot) {
             can_attempt_fire = true;
         }
+        if (ctrl->defending_projectile) {
+            can_attempt_fire = true;
+        }
 
         if (!can_attempt_fire) {
             continue;
@@ -1545,6 +1744,9 @@ pz_ai_fire(pz_ai_manager *ai_mgr, pz_projectile_manager *proj_mgr)
         if (ctrl->level == PZ_ENEMY_LEVEL_3) {
             // Machine gun hunters can fire with looser alignment.
             aim_tolerance = 0.52f; // ~30 degrees
+        } else if (ctrl->level == PZ_ENEMY_LEVEL_SNIPER) {
+            // Snipers are precise and only shoot when nearly aligned.
+            aim_tolerance = 0.14f; // ~8 degrees
         }
         if (aim_error > aim_tolerance) {
             continue;
@@ -1567,6 +1769,9 @@ pz_ai_fire(pz_ai_manager *ai_mgr, pz_projectile_manager *proj_mgr)
                 max_projectiles = (ctrl->level == PZ_ENEMY_LEVEL_1) ? 3 : 2;
             } else if (ctrl->fire_confidence > 0.0f) {
                 // Bounce shot: only 1 bullet at a time
+                max_projectiles = 1;
+            }
+            if (ctrl->defending_projectile) {
                 max_projectiles = 1;
             }
         }

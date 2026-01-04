@@ -70,6 +70,7 @@ typedef struct pz_enemy_stats {
     pz_powerup_type weapon_type; // Default weapon for this enemy
     float projectile_speed_scale; // Multiplier applied to weapon speed
     float bounce_shot_range; // Bounce-search range for stationary types
+    float projectile_defense_chance; // 0.0 disables incoming-shot defense
 } pz_enemy_stats;
 
 // Get stats for an enemy level
@@ -142,6 +143,9 @@ typedef struct pz_ai_controller {
     float fire_confidence; // 0.0-1.0: how confident AI is about the shot
     float hesitation_timer; // Delay before first shot after acquiring target
     bool had_target_last_frame; // Track target acquisition for hesitation
+    bool defending_projectile; // Whether we're aiming to shoot a projectile
+    float defense_aim_angle; // Aim angle for projectile defense
+    float defense_check_timer; // Timer for reevaluating defense targets
 
     // A* Pathfinding (Level 2/3)
     pz_path path; // Current path being followed
