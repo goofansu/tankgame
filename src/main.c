@@ -264,6 +264,7 @@ typedef struct app_state {
     int frame_count;
     double last_hot_reload_check;
     double last_frame_time;
+    double last_perf_log_time;
     float total_time; // Cumulative time for animations
 
     // Input state
@@ -423,6 +424,9 @@ map_session_load(map_session *session, const char *map_path)
         .ambient = map_light->ambient_color,
     };
     session->lighting = pz_lighting_create(g_app.renderer, &light_config);
+    if (session->lighting) {
+        pz_lighting_set_map_occluders(session->lighting, session->map);
+    }
 
     // Create entity managers
     session->tank_mgr = pz_tank_manager_create(g_app.renderer, NULL);
@@ -953,6 +957,7 @@ app_init(void)
     g_app.frame_count = 0;
     g_app.last_hot_reload_check = pz_time_now();
     g_app.last_frame_time = pz_time_now();
+    g_app.last_perf_log_time = g_app.last_frame_time;
 
     // Input state
     g_app.mouse_x = (float)width * 0.5f;
@@ -1079,6 +1084,12 @@ render_music_debug_overlay(void)
     }
 }
 
+static float
+us_to_ms(uint64_t us)
+{
+    return (float)us / 1000.0f;
+}
+
 static void
 app_frame(void)
 {
@@ -1138,6 +1149,8 @@ app_frame(void)
             pz_tank_cycle_weapon(g_app.session.player_tank, 1);
         }
     }
+
+    uint64_t sim_start_us = pz_time_now_us();
 
     // =========================================================================
     // FIXED TIMESTEP SIMULATION LOOP
@@ -1361,6 +1374,9 @@ app_frame(void)
         pz_sim_end_tick(g_app.sim);
     }
 
+    uint64_t sim_end_us = pz_time_now_us();
+    uint64_t events_start_us = sim_end_us;
+
     fog_marks_update(&g_app.session, frame_dt);
     fog_marks_emit(&g_app.session);
 
@@ -1485,6 +1501,9 @@ app_frame(void)
         pz_tank_clear_death_events(g_app.session.tank_mgr);
     }
 
+    uint64_t events_end_us = pz_time_now_us();
+    uint64_t visual_start_us = events_end_us;
+
     // =========================================================================
     // VISUAL-ONLY UPDATES (use frame_dt for smooth animation)
     // =========================================================================
@@ -1515,9 +1534,25 @@ app_frame(void)
     double now = pz_time_now();
     if (now - g_app.last_hot_reload_check > 0.5) {
         pz_texture_check_hot_reload(g_app.tex_manager);
-        pz_map_hot_reload_check(g_app.session.hot_reload);
+        bool map_reloaded = pz_map_hot_reload_check(g_app.session.hot_reload);
+        if (map_reloaded && g_app.session.map) {
+            if (g_app.background) {
+                pz_background_set_from_map(g_app.background, g_app.session.map);
+            }
+            if (g_app.session.lighting) {
+                const pz_map_lighting *map_light
+                    = pz_map_get_lighting(g_app.session.map);
+                pz_lighting_set_map_occluders(
+                    g_app.session.lighting, g_app.session.map);
+                pz_lighting_set_ambient(
+                    g_app.session.lighting, map_light->ambient_color);
+            }
+        }
         g_app.last_hot_reload_check = now;
     }
+
+    uint64_t visual_end_us = pz_time_now_us();
+    uint64_t render_start_us = visual_end_us;
 
     pz_debug_overlay_begin_frame(g_app.debug_overlay);
     pz_renderer_begin_frame(g_app.renderer);
@@ -1530,10 +1565,9 @@ app_frame(void)
 
     pz_tracks_update(g_app.session.tracks);
 
+    uint64_t lighting_start_us = pz_time_now_us();
     if (g_app.session.lighting && g_app.session.map) {
-        pz_lighting_clear_occluders(g_app.session.lighting);
-        pz_lighting_add_map_occluders(
-            g_app.session.lighting, g_app.session.map);
+        pz_lighting_clear_dynamic_occluders(g_app.session.lighting);
 
         // Add barrier occluders
         if (g_app.session.barrier_mgr) {
@@ -1632,9 +1666,11 @@ app_frame(void)
 
         pz_lighting_render(g_app.session.lighting);
     }
+    uint64_t lighting_end_us = pz_time_now_us();
 
     const pz_mat4 *vp = pz_camera_get_view_projection(&g_app.camera);
 
+    uint64_t map_start_us = pz_time_now_us();
     pz_map_render_params render_params = { 0 };
     if (g_app.session.tracks) {
         render_params.track_texture
@@ -1705,8 +1741,10 @@ app_frame(void)
 
     // Draw debug texture scale grid if enabled
     pz_map_renderer_draw_debug(g_app.session.renderer, vp);
+    uint64_t map_end_us = pz_time_now_us();
 
     // Render barriers (after map, before tanks)
+    uint64_t entities_start_us = pz_time_now_us();
     if (g_app.session.barrier_mgr) {
         pz_barrier_render_params barrier_params = { 0 };
         if (g_app.session.lighting) {
@@ -1844,8 +1882,10 @@ app_frame(void)
         pz_particle_render(g_app.session.particle_mgr, g_app.renderer, vp,
             cam_right, cam_up, &particle_params);
     }
+    uint64_t entities_end_us = pz_time_now_us();
 
     // Render HUD
+    uint64_t hud_start_us = pz_time_now_us();
     if (g_app.font_mgr && g_app.font_russo) {
         pz_font_begin_frame(g_app.font_mgr);
 
@@ -1994,6 +2034,78 @@ app_frame(void)
         }
 
         pz_font_end_frame(g_app.font_mgr);
+    }
+    uint64_t hud_end_us = pz_time_now_us();
+
+    uint64_t render_end_us = pz_time_now_us();
+    float sim_ms = us_to_ms(sim_end_us - sim_start_us);
+    float events_ms = us_to_ms(events_end_us - events_start_us);
+    float visual_ms = us_to_ms(visual_end_us - visual_start_us);
+    float lighting_ms = us_to_ms(lighting_end_us - lighting_start_us);
+    float map_ms = us_to_ms(map_end_us - map_start_us);
+    float entities_ms = us_to_ms(entities_end_us - entities_start_us);
+    float hud_ms = us_to_ms(hud_end_us - hud_start_us);
+    float render_ms = us_to_ms(render_end_us - render_start_us);
+    int light_count = pz_lighting_get_light_count(g_app.session.lighting);
+    int occluder_count = pz_lighting_get_occluder_count(g_app.session.lighting);
+    int edge_count = pz_lighting_get_edge_count(g_app.session.lighting);
+    int projectile_count = pz_projectile_count(g_app.session.projectile_mgr);
+    int particle_count = pz_particle_count(g_app.session.particle_mgr);
+    int enemies_alive = 0;
+    if (g_app.session.tank_mgr) {
+        enemies_alive = pz_tank_count_enemies_alive(g_app.session.tank_mgr);
+    }
+
+    if (pz_debug_overlay_is_visible(g_app.debug_overlay)) {
+        int x = 10;
+        int y = 10;
+        int line_height = 16;
+
+        pz_debug_overlay_text(g_app.debug_overlay, x, y, "Perf (ms)");
+        y += line_height;
+        pz_debug_overlay_text(g_app.debug_overlay, x, y, "Sim: %.2f (ticks %d)",
+            sim_ms, sim_ticks);
+        y += line_height;
+        pz_debug_overlay_text(
+            g_app.debug_overlay, x, y, "Events: %.2f", events_ms);
+        y += line_height;
+        pz_debug_overlay_text(
+            g_app.debug_overlay, x, y, "Visual: %.2f", visual_ms);
+        y += line_height;
+        pz_debug_overlay_text(g_app.debug_overlay, x, y,
+            "Lighting: %.2f (L%d O%d E%d)", lighting_ms, light_count,
+            occluder_count, edge_count);
+        y += line_height;
+        pz_debug_overlay_text(g_app.debug_overlay, x, y, "Map: %.2f", map_ms);
+        y += line_height;
+        pz_debug_overlay_text(
+            g_app.debug_overlay, x, y, "Entities: %.2f", entities_ms);
+        y += line_height;
+        pz_debug_overlay_text(g_app.debug_overlay, x, y, "HUD: %.2f", hud_ms);
+        y += line_height;
+        pz_debug_overlay_text(
+            g_app.debug_overlay, x, y, "Render: %.2f", render_ms);
+        y += line_height;
+        pz_debug_overlay_text(g_app.debug_overlay, x, y,
+            "Projectiles: %d  Particles: %d", projectile_count, particle_count);
+    }
+
+    if (current_time - g_app.last_perf_log_time >= 5.0) {
+        float fps = pz_debug_overlay_get_fps(g_app.debug_overlay);
+        float frame_ms
+            = pz_debug_overlay_get_frame_time_ms(g_app.debug_overlay);
+        const char *map_name
+            = g_app.session.map ? g_app.session.map->name : "none";
+        pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
+            "Perf %s: fps=%.1f frame=%.2fms sim=%.2fms events=%.2fms "
+            "visual=%.2fms lighting=%.2fms map=%.2fms entities=%.2fms "
+            "hud=%.2fms render=%.2fms L=%d O=%d E=%d proj=%d particles=%d "
+            "enemies=%d ticks=%d",
+            map_name, fps, frame_ms, sim_ms, events_ms, visual_ms, lighting_ms,
+            map_ms, entities_ms, hud_ms, render_ms, light_count, occluder_count,
+            edge_count, projectile_count, particle_count, enemies_alive,
+            sim_ticks);
+        g_app.last_perf_log_time = current_time;
     }
 
     // Render debug overlay on top of everything

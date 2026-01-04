@@ -62,10 +62,12 @@ struct pz_lighting {
     pz_occluder occluders[PZ_MAX_OCCLUDERS];
     int occluder_count;
     const pz_map *map;
+    int base_occluder_count;
 
     // Edges extracted from occluders
     edge edges[PZ_MAX_OCCLUDERS * PZ_MAX_EDGES_PER_OCCLUDER];
     int edge_count;
+    int base_edge_count;
 
     // Lights
     pz_light lights[PZ_MAX_LIGHTS];
@@ -366,6 +368,36 @@ pz_lighting_clear_occluders(pz_lighting *lighting)
     lighting->occluder_count = 0;
     lighting->edge_count = 0;
     lighting->map = NULL;
+    lighting->base_occluder_count = 0;
+    lighting->base_edge_count = 0;
+}
+
+void
+pz_lighting_set_map_occluders(pz_lighting *lighting, const pz_map *map)
+{
+    if (!lighting) {
+        return;
+    }
+
+    pz_lighting_clear_occluders(lighting);
+    if (!map) {
+        return;
+    }
+
+    pz_lighting_add_map_occluders(lighting, map);
+    lighting->base_occluder_count = lighting->occluder_count;
+    lighting->base_edge_count = lighting->edge_count;
+}
+
+void
+pz_lighting_clear_dynamic_occluders(pz_lighting *lighting)
+{
+    if (!lighting) {
+        return;
+    }
+
+    lighting->occluder_count = lighting->base_occluder_count;
+    lighting->edge_count = lighting->base_edge_count;
 }
 
 void
@@ -914,4 +946,22 @@ pz_lighting_save_debug(pz_lighting *lighting, const char *path)
     }
     return pz_renderer_save_render_target(
         lighting->renderer, lighting->render_target, path);
+}
+
+int
+pz_lighting_get_light_count(const pz_lighting *lighting)
+{
+    return lighting ? lighting->light_count : 0;
+}
+
+int
+pz_lighting_get_occluder_count(const pz_lighting *lighting)
+{
+    return lighting ? lighting->occluder_count : 0;
+}
+
+int
+pz_lighting_get_edge_count(const pz_lighting *lighting)
+{
+    return lighting ? lighting->edge_count : 0;
 }

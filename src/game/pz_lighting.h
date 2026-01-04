@@ -92,6 +92,12 @@ void pz_lighting_destroy(pz_lighting *lighting);
 // Clear all occluders (call before adding new ones each frame)
 void pz_lighting_clear_occluders(pz_lighting *lighting);
 
+// Set map occluders and cache them for reuse across frames
+void pz_lighting_set_map_occluders(pz_lighting *lighting, const pz_map *map);
+
+// Clear only dynamic occluders (keeps cached map occluders)
+void pz_lighting_clear_dynamic_occluders(pz_lighting *lighting);
+
 // Add a rectangular occluder (wall or tank)
 void pz_lighting_add_occluder(
     pz_lighting *lighting, pz_vec2 position, pz_vec2 half_size, float angle);
@@ -141,5 +147,13 @@ void pz_lighting_set_ambient(pz_lighting *lighting, pz_vec3 ambient);
 
 // Save the lightmap to a PNG file (for debugging)
 bool pz_lighting_save_debug(pz_lighting *lighting, const char *path);
+
+// ========================================================================
+// Debug Stats
+// ========================================================================
+
+int pz_lighting_get_light_count(const pz_lighting *lighting);
+int pz_lighting_get_occluder_count(const pz_lighting *lighting);
+int pz_lighting_get_edge_count(const pz_lighting *lighting);
 
 #endif // PZ_LIGHTING_H
