@@ -1,5 +1,9 @@
 # Tank Game
 
+<p align="center">
+  <img src="screenshot.png" width="70%" alt="Tank Game Screenshot">
+</p>
+
 A multiplayer tank combat game built in C17 with Sokol (sokol_app + sokol_gfx) with the help of Pi and Claude Opus.
 
 Terrible and work in progress.
