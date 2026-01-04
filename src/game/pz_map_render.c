@@ -211,12 +211,79 @@ emit_ground_quad(float *v, float x0, float z0, float x1, float z1, int tile_x,
 // Wall Mesh Generation
 // ============================================================================
 
-#define WALL_VERTEX_SIZE 8
+#define WALL_VERTEX_SIZE 9
+
+static bool
+is_solid_block_level(const pz_map *map, int tile_x, int tile_y, int level)
+{
+    if (level < 0) {
+        return true;
+    }
+    if (!pz_map_in_bounds(map, tile_x, tile_y)) {
+        return true;
+    }
+    int8_t h = pz_map_get_height(map, tile_x, tile_y);
+    if (h <= 0) {
+        return false;
+    }
+    return h > level;
+}
+
+static float
+compute_wall_corner_ao(
+    const pz_map *map, int vx, int vy, int vz, int nx, int ny, int nz)
+{
+    int front_x = vx + (nx < 0 ? -1 : 0);
+    int front_y = vy + (ny < 0 ? -1 : 0);
+    int front_z = vz + (nz < 0 ? -1 : 0);
+
+    int x_steps = (nx == 0) ? 2 : 1;
+    int y_steps = (ny == 0) ? 2 : 1;
+    int z_steps = (nz == 0) ? 2 : 1;
+
+    int x_offsets[2] = { 0, 0 };
+    int y_offsets[2] = { 0, 0 };
+    int z_offsets[2] = { 0, 0 };
+
+    if (nx == 0) {
+        x_offsets[0] = -1;
+        x_offsets[1] = 0;
+    }
+    if (ny == 0) {
+        y_offsets[0] = -1;
+        y_offsets[1] = 0;
+    }
+    if (nz == 0) {
+        z_offsets[0] = -1;
+        z_offsets[1] = 0;
+    }
+
+    float sum = 0.0f;
+    int count = 0;
+    for (int xi = 0; xi < x_steps; xi++) {
+        for (int yi = 0; yi < y_steps; yi++) {
+            for (int zi = 0; zi < z_steps; zi++) {
+                int x = front_x + x_offsets[xi];
+                int y = front_y + y_offsets[yi];
+                int z = front_z + z_offsets[zi];
+                bool solid = is_solid_block_level(map, x, z, y);
+                sum += solid ? 0.0f : 1.0f;
+                count++;
+            }
+        }
+    }
+
+    if (count == 0) {
+        return 1.0f;
+    }
+    return sum / (float)count;
+}
 
 static float *
 emit_wall_face(float *v, float x0, float y0, float z0, float x1, float y1,
     float z1, float x2, float y2, float z2, float x3, float y3, float z3,
-    float nx, float ny, float nz, float u0, float v0_uv, float u1, float v1_uv)
+    float nx, float ny, float nz, float u0, float v0_uv, float u1, float v1_uv,
+    float ao0, float ao1, float ao2, float ao3)
 {
     // Triangle 1: v0, v1, v2
     *v++ = x0;
@@ -227,6 +294,7 @@ emit_wall_face(float *v, float x0, float y0, float z0, float x1, float y1,
     *v++ = nz;
     *v++ = u0;
     *v++ = v1_uv;
+    *v++ = ao0;
 
     *v++ = x1;
     *v++ = y1;
@@ -236,6 +304,7 @@ emit_wall_face(float *v, float x0, float y0, float z0, float x1, float y1,
     *v++ = nz;
     *v++ = u0;
     *v++ = v0_uv;
+    *v++ = ao1;
 
     *v++ = x2;
     *v++ = y2;
@@ -245,6 +314,7 @@ emit_wall_face(float *v, float x0, float y0, float z0, float x1, float y1,
     *v++ = nz;
     *v++ = u1;
     *v++ = v0_uv;
+    *v++ = ao2;
 
     // Triangle 2: v0, v2, v3
     *v++ = x0;
@@ -255,6 +325,7 @@ emit_wall_face(float *v, float x0, float y0, float z0, float x1, float y1,
     *v++ = nz;
     *v++ = u0;
     *v++ = v1_uv;
+    *v++ = ao0;
 
     *v++ = x2;
     *v++ = y2;
@@ -264,6 +335,7 @@ emit_wall_face(float *v, float x0, float y0, float z0, float x1, float y1,
     *v++ = nz;
     *v++ = u1;
     *v++ = v0_uv;
+    *v++ = ao2;
 
     *v++ = x3;
     *v++ = y3;
@@ -273,6 +345,7 @@ emit_wall_face(float *v, float x0, float y0, float z0, float x1, float y1,
     *v++ = nz;
     *v++ = u1;
     *v++ = v1_uv;
+    *v++ = ao3;
 
     return v;
 }
@@ -300,9 +373,20 @@ emit_wall_box(float *v, float x0, float z0, float x1, float z1, float height,
     compute_tile_uv(
         tile_x, tile_y, map->height, scale, &u0, &v0_uv, &u1, &v1_uv);
 
+    int bottom_level = 0;
+    int top_level = h;
+
     // Top face (always visible) - uses world-space UVs
+    float top_ao0
+        = compute_wall_corner_ao(map, tile_x, top_level, tile_y, 0, 1, 0);
+    float top_ao1
+        = compute_wall_corner_ao(map, tile_x, top_level, tile_y + 1, 0, 1, 0);
+    float top_ao2 = compute_wall_corner_ao(
+        map, tile_x + 1, top_level, tile_y + 1, 0, 1, 0);
+    float top_ao3
+        = compute_wall_corner_ao(map, tile_x + 1, top_level, tile_y, 0, 1, 0);
     v = emit_wall_face(v, x0, y1, z0, x0, y1, z1, x1, y1, z1, x1, y1, z0, 0.0f,
-        1.0f, 0.0f, u0, v0_uv, u1, v1_uv);
+        1.0f, 0.0f, u0, v0_uv, u1, v1_uv, top_ao0, top_ao1, top_ao2, top_ao3);
 
     // Side faces use world-space UVs too (scaled to tile size)
     // V coords based on wall height - one tile height in UV space
@@ -311,26 +395,60 @@ emit_wall_box(float *v, float x0, float z0, float x1, float z1, float height,
 
     // Back face (-Z)
     if (back_exposed) {
+        float ao0 = compute_wall_corner_ao(
+            map, tile_x, bottom_level, tile_y, 0, 0, -1);
+        float ao1
+            = compute_wall_corner_ao(map, tile_x, top_level, tile_y, 0, 0, -1);
+        float ao2 = compute_wall_corner_ao(
+            map, tile_x + 1, top_level, tile_y, 0, 0, -1);
+        float ao3 = compute_wall_corner_ao(
+            map, tile_x + 1, bottom_level, tile_y, 0, 0, -1);
         v = emit_wall_face(v, x0, y0, z0, x0, y1, z0, x1, y1, z0, x1, y0, z0,
-            0.0f, 0.0f, -1.0f, u0, v_bottom, u1, v_top);
+            0.0f, 0.0f, -1.0f, u0, v_bottom, u1, v_top, ao0, ao1, ao2, ao3);
     }
 
     // Front face (+Z)
     if (front_exposed) {
+        float ao0 = compute_wall_corner_ao(
+            map, tile_x + 1, bottom_level, tile_y + 1, 0, 0, 1);
+        float ao1 = compute_wall_corner_ao(
+            map, tile_x + 1, top_level, tile_y + 1, 0, 0, 1);
+        float ao2 = compute_wall_corner_ao(
+            map, tile_x, top_level, tile_y + 1, 0, 0, 1);
+        float ao3 = compute_wall_corner_ao(
+            map, tile_x, bottom_level, tile_y + 1, 0, 0, 1);
         v = emit_wall_face(v, x1, y0, z1, x1, y1, z1, x0, y1, z1, x0, y0, z1,
-            0.0f, 0.0f, 1.0f, u1, v_bottom, u0, v_top);
+            0.0f, 0.0f, 1.0f, u1, v_bottom, u0, v_top, ao0, ao1, ao2, ao3);
     }
 
     // Left face (-X)
     if (left_exposed) {
+        float ao0 = compute_wall_corner_ao(
+            map, tile_x, bottom_level, tile_y + 1, -1, 0, 0);
+        float ao1 = compute_wall_corner_ao(
+            map, tile_x, top_level, tile_y + 1, -1, 0, 0);
+        float ao2
+            = compute_wall_corner_ao(map, tile_x, top_level, tile_y, -1, 0, 0);
+        float ao3 = compute_wall_corner_ao(
+            map, tile_x, bottom_level, tile_y, -1, 0, 0);
         v = emit_wall_face(v, x0, y0, z1, x0, y1, z1, x0, y1, z0, x0, y0, z0,
-            -1.0f, 0.0f, 0.0f, v1_uv, v_bottom, v0_uv, v_top);
+            -1.0f, 0.0f, 0.0f, v1_uv, v_bottom, v0_uv, v_top, ao0, ao1, ao2,
+            ao3);
     }
 
     // Right face (+X)
     if (right_exposed) {
+        float ao0 = compute_wall_corner_ao(
+            map, tile_x + 1, bottom_level, tile_y, 1, 0, 0);
+        float ao1 = compute_wall_corner_ao(
+            map, tile_x + 1, top_level, tile_y, 1, 0, 0);
+        float ao2 = compute_wall_corner_ao(
+            map, tile_x + 1, top_level, tile_y + 1, 1, 0, 0);
+        float ao3 = compute_wall_corner_ao(
+            map, tile_x + 1, bottom_level, tile_y + 1, 1, 0, 0);
         v = emit_wall_face(v, x1, y0, z0, x1, y1, z0, x1, y1, z1, x1, y0, z1,
-            1.0f, 0.0f, 0.0f, v0_uv, v_bottom, v1_uv, v_top);
+            1.0f, 0.0f, 0.0f, v0_uv, v_bottom, v1_uv, v_top, ao0, ao1, ao2,
+            ao3);
     }
 
     return v;
@@ -418,7 +536,7 @@ emit_pit_box(float *v, float x0, float z0, float x1, float z1, float depth,
             x1, neighbor_y, z0, // top right
             x0, neighbor_y, z0, // top left
             x0, y1, z0, // bottom left
-            0.0f, 0.0f, 1.0f, u1, v_bottom, u0, v_top);
+            0.0f, 0.0f, 1.0f, u1, v_bottom, u0, v_top, 1.0f, 1.0f, 1.0f, 1.0f);
     }
 
     // Front wall (+Z edge of pit): faces -Z (into pit)
@@ -431,7 +549,7 @@ emit_pit_box(float *v, float x0, float z0, float x1, float z1, float depth,
             x0, neighbor_y, z1, // top left
             x1, neighbor_y, z1, // top right
             x1, y1, z1, // bottom right
-            0.0f, 0.0f, -1.0f, u0, v_bottom, u1, v_top);
+            0.0f, 0.0f, -1.0f, u0, v_bottom, u1, v_top, 1.0f, 1.0f, 1.0f, 1.0f);
     }
 
     // Left wall (-X edge of pit): faces +X (into pit)
@@ -445,7 +563,8 @@ emit_pit_box(float *v, float x0, float z0, float x1, float z1, float depth,
             x0, neighbor_y, z0, // top back
             x0, neighbor_y, z1, // top front
             x0, y1, z1, // bottom front
-            1.0f, 0.0f, 0.0f, v0_z, v_bottom, v1_z, v_top);
+            1.0f, 0.0f, 0.0f, v0_z, v_bottom, v1_z, v_top, 1.0f, 1.0f, 1.0f,
+            1.0f);
     }
 
     // Right wall (+X edge of pit): faces -X (into pit)
@@ -458,7 +577,8 @@ emit_pit_box(float *v, float x0, float z0, float x1, float z1, float depth,
             x1, neighbor_y, z1, // top front
             x1, neighbor_y, z0, // top back
             x1, y1, z0, // bottom back
-            -1.0f, 0.0f, 0.0f, v1_z, v_bottom, v0_z, v_top);
+            -1.0f, 0.0f, 0.0f, v1_z, v_bottom, v0_z, v_top, 1.0f, 1.0f, 1.0f,
+            1.0f);
     }
 
     return v;
@@ -576,13 +696,14 @@ pz_map_renderer_create(pz_renderer *renderer, pz_texture_manager *tex_manager,
         { .name = "a_texcoord",
             .type = PZ_ATTR_FLOAT2,
             .offset = 6 * sizeof(float) },
+        { .name = "a_ao", .type = PZ_ATTR_FLOAT, .offset = 8 * sizeof(float) },
     };
 
     pz_pipeline_desc wall_desc = {
         .shader = mr->wall_shader,
         .vertex_layout = {
             .attrs = wall_attrs,
-            .attr_count = 3,
+            .attr_count = 4,
             .stride = WALL_VERTEX_SIZE * sizeof(float),
         },
         .blend = PZ_BLEND_NONE,

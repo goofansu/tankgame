@@ -267,6 +267,7 @@ void main() {
 layout(location=0) in vec3 a_position;
 layout(location=1) in vec3 a_normal;
 layout(location=2) in vec2 a_texcoord;
+layout(location=3) in float a_ao;
 
 layout(std140, binding=0) uniform wall_vs_params {
     mat4 u_mvp;
@@ -276,12 +277,14 @@ layout(std140, binding=0) uniform wall_vs_params {
 layout(location=0) out vec3 v_normal;
 layout(location=1) out vec2 v_texcoord;
 layout(location=2) out vec3 v_world_pos;
+layout(location=3) out float v_ao;
 
 void main() {
     gl_Position = u_mvp * vec4(a_position, 1.0);
     v_normal = mat3(u_model) * a_normal;
     v_texcoord = a_texcoord;
     v_world_pos = (u_model * vec4(a_position, 1.0)).xyz;
+    v_ao = a_ao;
 }
 @end
 
@@ -308,6 +311,7 @@ layout(std140, binding=1) uniform wall_fs_params {
 layout(location=0) in vec3 v_normal;
 layout(location=1) in vec2 v_texcoord;
 layout(location=2) in vec3 v_world_pos;
+layout(location=3) in float v_ao;
 layout(location=0) out vec4 frag_color;
 
 void main() {
@@ -364,7 +368,8 @@ void main() {
         }
     }
 
-    frag_color = vec4(tex_color.rgb * lighting, tex_color.a);
+    float ao = pow(clamp(v_ao, 0.0, 1.0), 1.6);
+    frag_color = vec4(tex_color.rgb * (lighting * ao), tex_color.a);
 }
 @end
 
