@@ -558,14 +558,26 @@ update_level2_ai(pz_ai_controller *ctrl, pz_tank *tank,
     }
 
     case PZ_AI_STATE_IN_COVER:
+        if (check_line_of_sight(map, tank->pos, player_pos)) {
+            ctrl->has_cover = false;
+            ctrl->state = PZ_AI_STATE_IDLE;
+            ctrl->state_timer = 0.0f;
+            break;
+        }
         // Wait in cover, then peek out
         ctrl->state_timer -= dt;
         if (ctrl->state_timer <= 0.0f) {
-            ctrl->state = PZ_AI_STATE_PEEKING;
-            ctrl->move_target = ctrl->peek_pos;
-            ctrl->shots_fired = 0;
-            pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME, "AI %d peeking from cover",
-                tank->id);
+            if ((rand() % 100) < 25) {
+                ctrl->has_cover = false;
+                ctrl->state = PZ_AI_STATE_IDLE;
+                ctrl->state_timer = 0.0f;
+            } else {
+                ctrl->state = PZ_AI_STATE_PEEKING;
+                ctrl->move_target = ctrl->peek_pos;
+                ctrl->shots_fired = 0;
+                pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
+                    "AI %d peeking from cover", tank->id);
+            }
         }
         break;
 
@@ -610,7 +622,7 @@ update_level2_ai(pz_ai_controller *ctrl, pz_tank *tank,
                 * (0.5f + 0.5f * ((float)(rand() % 100) / 100.0f));
 
             // Occasionally search for new cover
-            if ((rand() % 100) < 30) {
+            if ((rand() % 100) < 50) {
                 ctrl->has_cover = false;
                 ctrl->state = PZ_AI_STATE_IDLE;
                 pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
@@ -1118,6 +1130,7 @@ pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
 
         // Level 1: Consider bounce shots when player is not visible
         bool uses_bounce_shots = (ctrl->level == PZ_ENEMY_LEVEL_1
+            || ctrl->level == PZ_ENEMY_LEVEL_2
             || ctrl->level == PZ_ENEMY_LEVEL_SNIPER);
         if (uses_bounce_shots) {
             // Update bounce shot search timer
@@ -1236,8 +1249,8 @@ pz_ai_fire(pz_ai_manager *ai_mgr, pz_projectile_manager *proj_mgr)
                 continue;
             }
         } else if (ctrl->level == PZ_ENEMY_LEVEL_2) {
-            // Level 2: Only fire in FIRING state
-            if (ctrl->state != PZ_AI_STATE_FIRING) {
+            // Level 2: Fire whenever not behind cover
+            if (ctrl->state == PZ_AI_STATE_IN_COVER) {
                 continue;
             }
         }
@@ -1249,6 +1262,7 @@ pz_ai_fire(pz_ai_manager *ai_mgr, pz_projectile_manager *proj_mgr)
         // Others: Need to see the player
         bool can_attempt_fire = ctrl->can_see_player;
         bool uses_bounce_shots = (ctrl->level == PZ_ENEMY_LEVEL_1
+            || ctrl->level == PZ_ENEMY_LEVEL_2
             || ctrl->level == PZ_ENEMY_LEVEL_SNIPER);
         if (uses_bounce_shots && ctrl->has_bounce_shot) {
             can_attempt_fire = true;
