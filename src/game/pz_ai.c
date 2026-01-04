@@ -1819,6 +1819,9 @@ pz_ai_fire(pz_ai_manager *ai_mgr, pz_projectile_manager *proj_mgr)
         ctrl->fire_timer = fire_cooldown;
         fired++;
 
+        // Trigger visual recoil
+        tank->recoil = weapon->recoil_strength;
+
         // Track shots for cover behavior
         ctrl->shots_fired++;
 

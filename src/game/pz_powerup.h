@@ -74,6 +74,7 @@ typedef struct pz_weapon_stats {
     pz_vec4 projectile_color; // Color of the projectile
     bool auto_fire; // If true, holding mouse fires continuously
     int max_active_projectiles; // Max bullets in flight at once
+    float recoil_strength; // Velocity impulse applied to tank when firing
 } pz_weapon_stats;
 
 // Get weapon stats for a weapon type

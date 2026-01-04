@@ -71,6 +71,7 @@ typedef struct pz_tank {
 
     // Visual feedback
     float damage_flash; // Timer for damage flash effect (0 = no flash)
+    float recoil; // Visual recoil amount (decays over time)
     pz_vec4 body_color;
     pz_vec4 turret_color; // Updated based on selected weapon
     float fog_timer; // Spawn timer for fog trail

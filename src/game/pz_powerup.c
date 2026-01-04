@@ -43,6 +43,7 @@ static const pz_weapon_stats WEAPON_DEFAULT = {
     .projectile_color = { 1.0f, 0.8f, 0.2f, 1.0f }, // Yellow/orange
     .auto_fire = false, // Must click for each shot
     .max_active_projectiles = 8, // Max 8 bullets in flight
+    .recoil_strength = 1.0f, // Moderate recoil
 };
 
 // Machine gun - fires twice as fast, 1 damage, smaller darker bullets, no
@@ -56,6 +57,7 @@ static const pz_weapon_stats WEAPON_MACHINE_GUN = {
     .projectile_color = { 0.3f, 0.25f, 0.2f, 1.0f }, // Dark brown/gray
     .auto_fire = true, // Hold to spray
     .max_active_projectiles = 12, // Max 12 bullets in flight
+    .recoil_strength = 0.5f, // Weak recoil (small bullets)
 };
 
 // Ricochet - bounces twice, green bullets, slightly faster
@@ -68,6 +70,7 @@ static const pz_weapon_stats WEAPON_RICOCHET = {
     .projectile_color = { 0.2f, 0.9f, 0.3f, 1.0f }, // Green
     .auto_fire = false, // Must click for each shot
     .max_active_projectiles = 6, // Max 6 bullets in flight
+    .recoil_strength = 1.2f, // Moderate recoil
 };
 
 const pz_weapon_stats *

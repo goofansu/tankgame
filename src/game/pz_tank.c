@@ -615,6 +615,13 @@ pz_tank_update_all(pz_tank_manager *mgr, const pz_map *map, float dt)
                 tank->damage_flash = 0.0f;
         }
 
+        // Decay visual recoil (spring-like decay)
+        if (tank->recoil > 0.001f) {
+            tank->recoil *= expf(-8.0f * dt);
+        } else {
+            tank->recoil = 0.0f;
+        }
+
         // Fire cooldown
         if (tank->fire_cooldown > 0.0f) {
             tank->fire_cooldown -= dt;
@@ -730,6 +737,7 @@ pz_tank_respawn(pz_tank *tank)
     tank->respawn_timer = 0.0f;
     tank->invuln_timer = INVULN_DURATION;
     tank->damage_flash = 0.0f;
+    tank->recoil = 0.0f;
     tank->fog_timer = 0.0f;
     tank->idle_time = 0.0f;
 
@@ -929,10 +937,20 @@ pz_tank_render(pz_tank_manager *mgr, pz_renderer *renderer,
         pz_renderer_set_uniform_vec2(
             renderer, mgr->shader, "u_shadow_params", (pz_vec2) { 0.0f, 0.0f });
 
-        // Draw body
+        // Calculate visual recoil offset (pushes backward from turret
+        // direction)
+        float recoil_scale = 0.25f; // How far the tank slides back visually
+        float recoil_x
+            = -sinf(tank->turret_angle) * tank->recoil * recoil_scale;
+        float recoil_z
+            = -cosf(tank->turret_angle) * tank->recoil * recoil_scale;
+
+        // Draw body (with recoil offset)
+        float body_recoil = 0.4f; // Body moves less than turret
         pz_mat4 body_model = pz_mat4_identity();
         body_model = pz_mat4_mul(body_model,
-            pz_mat4_translate((pz_vec3) { tank->pos.x, 0.0f, tank->pos.y }));
+            pz_mat4_translate((pz_vec3) { tank->pos.x + recoil_x * body_recoil,
+                0.0f, tank->pos.y + recoil_z * body_recoil }));
         body_model
             = pz_mat4_mul(body_model, pz_mat4_rotate_y(tank->body_angle));
 
@@ -955,11 +973,11 @@ pz_tank_render(pz_tank_manager *mgr, pz_renderer *renderer,
         };
         pz_renderer_draw(renderer, &body_cmd);
 
-        // Draw turret
+        // Draw turret (with full recoil offset)
         pz_mat4 turret_model = pz_mat4_identity();
         turret_model = pz_mat4_mul(turret_model,
-            pz_mat4_translate(
-                (pz_vec3) { tank->pos.x, TURRET_Y_OFFSET, tank->pos.y }));
+            pz_mat4_translate((pz_vec3) { tank->pos.x + recoil_x,
+                TURRET_Y_OFFSET, tank->pos.y + recoil_z }));
         turret_model
             = pz_mat4_mul(turret_model, pz_mat4_rotate_y(tank->turret_angle));
 

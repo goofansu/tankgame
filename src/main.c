@@ -1211,6 +1211,9 @@ app_frame(void)
                 g_app.session.player_tank->fire_cooldown
                     = weapon->fire_cooldown;
 
+                // Trigger visual recoil
+                g_app.session.player_tank->recoil = weapon->recoil_strength;
+
                 // Play gunfire sound
                 pz_game_sfx_play_gunfire(g_app.game_sfx);
             }
