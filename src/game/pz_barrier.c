@@ -16,8 +16,8 @@
 // Default barrier height (same as height=1 walls)
 #define BARRIER_HEIGHT 1.5f
 
-// Vertex size: position (3) + normal (3) + texcoord (2)
-#define BARRIER_VERTEX_SIZE 8
+// Vertex size: position (3) + normal (3) + texcoord (2) + ao (1)
+#define BARRIER_VERTEX_SIZE 9
 
 // Maximum vertices per barrier (6 faces * 6 verts each = 36)
 #define BARRIER_VERTS_PER_UNIT 36
@@ -31,7 +31,7 @@
 static float *
 emit_face(float *v, float x0, float y0, float z0, float x1, float y1, float z1,
     float x2, float y2, float z2, float x3, float y3, float z3, float nx,
-    float ny, float nz, float u0, float v0_uv, float u1, float v1_uv)
+    float ny, float nz, float u0, float v0_uv, float u1, float v1_uv, float ao)
 {
     // Triangle 1: v0, v1, v2
     *v++ = x0;
@@ -42,6 +42,7 @@ emit_face(float *v, float x0, float y0, float z0, float x1, float y1, float z1,
     *v++ = nz;
     *v++ = u0;
     *v++ = v1_uv;
+    *v++ = ao;
 
     *v++ = x1;
     *v++ = y1;
@@ -51,6 +52,7 @@ emit_face(float *v, float x0, float y0, float z0, float x1, float y1, float z1,
     *v++ = nz;
     *v++ = u0;
     *v++ = v0_uv;
+    *v++ = ao;
 
     *v++ = x2;
     *v++ = y2;
@@ -60,6 +62,7 @@ emit_face(float *v, float x0, float y0, float z0, float x1, float y1, float z1,
     *v++ = nz;
     *v++ = u1;
     *v++ = v0_uv;
+    *v++ = ao;
 
     // Triangle 2: v0, v2, v3
     *v++ = x0;
@@ -70,6 +73,7 @@ emit_face(float *v, float x0, float y0, float z0, float x1, float y1, float z1,
     *v++ = nz;
     *v++ = u0;
     *v++ = v1_uv;
+    *v++ = ao;
 
     *v++ = x2;
     *v++ = y2;
@@ -79,6 +83,7 @@ emit_face(float *v, float x0, float y0, float z0, float x1, float y1, float z1,
     *v++ = nz;
     *v++ = u1;
     *v++ = v0_uv;
+    *v++ = ao;
 
     *v++ = x3;
     *v++ = y3;
@@ -88,6 +93,7 @@ emit_face(float *v, float x0, float y0, float z0, float x1, float y1, float z1,
     *v++ = nz;
     *v++ = u1;
     *v++ = v1_uv;
+    *v++ = ao;
 
     return v;
 }
@@ -127,27 +133,27 @@ generate_barrier_mesh(
 
     // Top face
     v = emit_face(v, x0, y1, z0, x0, y1, z1, x1, y1, z1, x1, y1, z0, 0.0f, 1.0f,
-        0.0f, u0, v0_uv, u1, v1_uv);
+        0.0f, u0, v0_uv, u1, v1_uv, 1.0f);
 
     // Bottom face (not usually visible, but include for completeness)
     v = emit_face(v, x0, y0, z1, x0, y0, z0, x1, y0, z0, x1, y0, z1, 0.0f,
-        -1.0f, 0.0f, u0, v0_uv, u1, v1_uv);
+        -1.0f, 0.0f, u0, v0_uv, u1, v1_uv, 1.0f);
 
     // Front face (+Z)
     v = emit_face(v, x1, y0, z1, x1, y1, z1, x0, y1, z1, x0, y0, z1, 0.0f, 0.0f,
-        1.0f, u1, v_bottom, u0, v_top);
+        1.0f, u1, v_bottom, u0, v_top, 1.0f);
 
     // Back face (-Z)
     v = emit_face(v, x0, y0, z0, x0, y1, z0, x1, y1, z0, x1, y0, z0, 0.0f, 0.0f,
-        -1.0f, u0, v_bottom, u1, v_top);
+        -1.0f, u0, v_bottom, u1, v_top, 1.0f);
 
     // Left face (-X)
     v = emit_face(v, x0, y0, z1, x0, y1, z1, x0, y1, z0, x0, y0, z0, -1.0f,
-        0.0f, 0.0f, v1_uv, v_bottom, v0_uv, v_top);
+        0.0f, 0.0f, v1_uv, v_bottom, v0_uv, v_top, 1.0f);
 
     // Right face (+X)
     v = emit_face(v, x1, y0, z0, x1, y1, z0, x1, y1, z1, x1, y0, z1, 1.0f, 0.0f,
-        0.0f, v0_uv, v_bottom, v1_uv, v_top);
+        0.0f, v0_uv, v_bottom, v1_uv, v_top, 1.0f);
 
     return (int)(v - verts);
 }
@@ -184,13 +190,14 @@ pz_barrier_manager_create(pz_renderer *renderer,
         { .name = "a_texcoord",
             .type = PZ_ATTR_FLOAT2,
             .offset = 6 * sizeof(float) },
+        { .name = "a_ao", .type = PZ_ATTR_FLOAT, .offset = 8 * sizeof(float) },
     };
 
     pz_pipeline_desc desc = {
         .shader = mgr->shader,
         .vertex_layout = {
             .attrs = attrs,
-            .attr_count = 3,
+            .attr_count = 4,
             .stride = BARRIER_VERTEX_SIZE * sizeof(float),
         },
         .blend = PZ_BLEND_NONE,

@@ -6,8 +6,6 @@ NAME Main Campaign
 # Starting lives for the campaign
 LIVES 5
 
-# Maps in order of difficulty
-
 # Level 1: Sunset Fortress - Easy
 MAP assets/maps/sunset_fortress.map
 
@@ -17,26 +15,29 @@ MAP assets/maps/night_arena.map
 # Level 3: Canyon Crossing - Easy-Medium
 MAP assets/maps/canyon_crossing.map
 
-# Level 4: Day Arena - Medium
+# Level 4: Fjord
+MAP assets/maps/fjord.map
+
+# Level 5: Day Arena - Medium
 MAP assets/maps/day_arena.map
 
-# Level 5: Dawn Waterway - Medium-Hard
+# Level 6: Dawn Waterway - Medium-Hard
 MAP assets/maps/dawn_waterway.map
 
-# Level 6: Volcanic Ridge - Medium-Hard
+# Level 7: Volcanic Ridge - Medium-Hard
 MAP assets/maps/volcanic_ridge.map
 
-# Level 7: Midnight Maze - Hard
+# Level 8: Midnight Maze - Hard
 MAP assets/maps/midnight_maze.map
 
-# Level 8: Frozen Peaks - Hard
+# Level 9: Frozen Peaks - Hard
 MAP assets/maps/frozen_peaks.map
 
-# Level 9: Golden Hour Assault - Very Hard
+# Level 10: Golden Hour Assault - Very Hard
 MAP assets/maps/golden_hour_assault.map
 
-# Level 10: Storm Citadel - Very Hard
+# Level 11: Storm Citadel - Very Hard
 MAP assets/maps/storm_citadel.map
 
-# Level 11: Abyss Gauntlet - EXTREME
+# Level 12: Abyss Gauntlet - EXTREME
 MAP assets/maps/abyss_gauntlet.map

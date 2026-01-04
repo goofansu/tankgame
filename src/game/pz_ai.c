@@ -67,7 +67,7 @@ static const pz_enemy_stats ENEMY_STATS[] = {
     // Level 4: Sniper (stationary, long-range ricochet)
     { .health = 12,
         .max_bounces = 3,
-        .fire_cooldown = 1.1f,
+        .fire_cooldown = 2.2f,
         .aim_speed = 0.9f,
         .body_color = { 0.35f, 0.4f, 0.7f, 1.0f }, // Steel blue
         .weapon_type = PZ_POWERUP_RICOCHET,
