@@ -48,7 +48,7 @@
 - [x] M5.1: collision shapes (circle, rect as reusable API)
 - [ ] M5.2: collision world (spatial queries)
 - [x] M5.3: raycast (DDA algorithm with normals, used for projectiles and AI LOS)
-- [x] M5.4: tank-tank collision (tanks currently pass through each other)
+- [x] M5.4: tank-tank collision (circle-circle with push-out resolution)
 
 ## Phase 6: Weapons and Projectiles
 - [x] M6.1: projectile entity, mesh, movement, lifetime
@@ -138,7 +138,6 @@
 ## Remaining Work
 
 ### High Priority (gameplay gaps)
-- [ ] M5.4: tank-tank collision (tanks pass through each other)
 - [ ] M9.1-9.3: mines (not implemented)
 
 ### Medium Priority (content/polish)

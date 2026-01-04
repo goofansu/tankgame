@@ -205,6 +205,47 @@ tank_circle_hits_tanks(
     return false;
 }
 
+// Push a tank out of overlap with other tanks
+static void
+resolve_tank_circle_tanks(
+    pz_tank_manager *mgr, pz_tank *tank, pz_vec2 *center, float radius)
+{
+    if (!mgr || !tank || !center)
+        return;
+
+    // Iterate a few times to resolve multiple overlaps
+    for (int iter = 0; iter < 4; iter++) {
+        bool any_push = false;
+
+        for (int i = 0; i < PZ_MAX_TANKS; i++) {
+            pz_tank *other = &mgr->tanks[i];
+
+            if (!(other->flags & PZ_TANK_FLAG_ACTIVE))
+                continue;
+            if (other->flags & PZ_TANK_FLAG_DEAD)
+                continue;
+            if (other->id == tank->id)
+                continue;
+
+            pz_circle a = pz_circle_new(*center, radius);
+            pz_circle b = pz_circle_new(other->pos, mgr->collision_radius);
+
+            pz_vec2 normal;
+            float penetration;
+            if (pz_collision_circle_circle(a, b, &normal, &penetration)) {
+                // Push this tank out (opposite of normal direction)
+                // Normal points from a to b, so we push in -normal direction
+                center->x -= normal.x * penetration * 0.5f;
+                center->y -= normal.y * penetration * 0.5f;
+                any_push = true;
+            }
+        }
+
+        if (!any_push)
+            break;
+    }
+}
+
 // Update turret color to match current weapon's projectile color
 static void
 update_turret_color(pz_tank *tank)
@@ -553,6 +594,10 @@ pz_tank_update(pz_tank_manager *mgr, pz_tank *tank, const pz_tank_input *input,
         if (map) {
             resolve_tank_circle_map(map, &pos, r);
         }
+
+        // Resolve tank-tank overlaps
+        resolve_tank_circle_tanks(mgr, tank, &pos, r);
+
         tank->pos = pos;
     }
 
