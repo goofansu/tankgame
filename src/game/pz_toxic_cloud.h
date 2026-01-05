@@ -98,6 +98,11 @@ pz_vec2 pz_toxic_cloud_get_safe_position(
 // total: total number of entities (for even distribution)
 pz_vec2 pz_toxic_cloud_get_safe_position_spread(const pz_toxic_cloud *cloud,
     pz_vec2 from, float margin, int index, int total);
+// Like pz_toxic_cloud_get_safe_position_spread, but for an arbitrary progress
+// value (0.0 = no closure yet, 1.0 = fully closed).
+pz_vec2 pz_toxic_cloud_get_safe_position_spread_at_progress(
+    const pz_toxic_cloud *cloud, pz_vec2 from, float margin, int index,
+    int total, float progress);
 
 // Check if a position will be inside the toxic zone at a future progress level.
 // Used for AI to predict where the cloud will be.

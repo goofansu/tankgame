@@ -370,22 +370,66 @@ pz_vec2
 pz_toxic_cloud_get_safe_position_spread(const pz_toxic_cloud *cloud,
     pz_vec2 from, float margin, int index, int total)
 {
+    return pz_toxic_cloud_get_safe_position_spread_at_progress(cloud, from,
+        margin, index, total, cloud ? cloud->closing_progress : 0.0f);
+}
+
+static void
+pz_toxic_cloud_get_bounds_at_progress(const pz_toxic_cloud *cloud,
+    float progress, float *left, float *right, float *top, float *bottom)
+{
+    float half_w = cloud->map_width * 0.5f;
+    float half_h = cloud->map_height * 0.5f;
+    float map_left = cloud->map_center.x - half_w;
+    float map_right = cloud->map_center.x + half_w;
+    float map_top = cloud->map_center.y - half_h;
+    float map_bottom = cloud->map_center.y + half_h;
+
+    float safe_ratio = pz_clampf(cloud->config.safe_zone_ratio, 0.01f, 1.0f);
+    float safe_radius
+        = pz_minf(cloud->map_width, cloud->map_height) * safe_ratio * 0.5f;
+
+    pz_vec2 center = cloud->config.center;
+    float target_left = pz_clampf(center.x - safe_radius, map_left, map_right);
+    float target_right = pz_clampf(center.x + safe_radius, map_left, map_right);
+    float target_top = pz_clampf(center.y - safe_radius, map_top, map_bottom);
+    float target_bottom
+        = pz_clampf(center.y + safe_radius, map_top, map_bottom);
+
+    float t = pz_clampf(progress, 0.0f, 1.0f);
+    *left = pz_lerpf(map_left, target_left, t);
+    *right = pz_lerpf(map_right, target_right, t);
+    *top = pz_lerpf(map_top, target_top, t);
+    *bottom = pz_lerpf(map_bottom, target_bottom, t);
+}
+
+pz_vec2
+pz_toxic_cloud_get_safe_position_spread_at_progress(const pz_toxic_cloud *cloud,
+    pz_vec2 from, float margin, int index, int total, float progress)
+{
     if (!cloud || !cloud->config.enabled) {
         return from;
     }
 
+    float boundary_left = 0.0f;
+    float boundary_right = 0.0f;
+    float boundary_top = 0.0f;
+    float boundary_bottom = 0.0f;
+    pz_toxic_cloud_get_bounds_at_progress(cloud, progress, &boundary_left,
+        &boundary_right, &boundary_top, &boundary_bottom);
+
     // Get basic safe zone bounds with margin
-    float left = cloud->boundary_left + margin;
-    float right = cloud->boundary_right - margin;
-    float top = cloud->boundary_top + margin;
-    float bottom = cloud->boundary_bottom - margin;
+    float left = boundary_left + margin;
+    float right = boundary_right - margin;
+    float top = boundary_top + margin;
+    float bottom = boundary_bottom - margin;
 
     // Clamp margins if zone is too small
     if (left > right) {
-        left = right = (cloud->boundary_left + cloud->boundary_right) * 0.5f;
+        left = right = (boundary_left + boundary_right) * 0.5f;
     }
     if (top > bottom) {
-        top = bottom = (cloud->boundary_top + cloud->boundary_bottom) * 0.5f;
+        top = bottom = (boundary_top + boundary_bottom) * 0.5f;
     }
 
     // If already safely inside, stay put

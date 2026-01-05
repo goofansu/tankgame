@@ -3,8 +3,10 @@
  */
 
 #include "pz_debug_script.h"
+#include "../game/pz_ai.h"
 #include "../game/pz_projectile.h"
 #include "../game/pz_tank.h"
+#include "../game/pz_toxic_cloud.h"
 #include "pz_log.h"
 #include "pz_mem.h"
 #include "pz_platform.h"
@@ -551,9 +553,59 @@ pz_debug_script_get_god_mode(const pz_debug_script *script)
     return script ? script->action_god_mode : false;
 }
 
+static const char *
+pz_debug_ai_state_name(pz_ai_state state)
+{
+    switch (state) {
+    case PZ_AI_STATE_IDLE:
+        return "idle";
+    case PZ_AI_STATE_SEEKING_COVER:
+        return "seeking_cover";
+    case PZ_AI_STATE_IN_COVER:
+        return "in_cover";
+    case PZ_AI_STATE_PEEKING:
+        return "peeking";
+    case PZ_AI_STATE_FIRING:
+        return "firing";
+    case PZ_AI_STATE_RETREATING:
+        return "retreating";
+    case PZ_AI_STATE_CHASING:
+        return "chasing";
+    case PZ_AI_STATE_FLANKING:
+        return "flanking";
+    case PZ_AI_STATE_EVADING:
+        return "evading";
+    case PZ_AI_STATE_ENGAGING:
+        return "engaging";
+    default:
+        return "unknown";
+    }
+}
+
+static pz_tank *
+pz_debug_find_tank_by_id(pz_tank_manager *tank_mgr, int tank_id)
+{
+    if (!tank_mgr) {
+        return NULL;
+    }
+
+    for (int i = 0; i < PZ_MAX_TANKS; i++) {
+        pz_tank *tank = &tank_mgr->tanks[i];
+        if (!(tank->flags & PZ_TANK_FLAG_ACTIVE)) {
+            continue;
+        }
+        if (tank->id == tank_id) {
+            return tank;
+        }
+    }
+
+    return NULL;
+}
+
 void
 pz_debug_script_dump_state(const char *path, pz_tank_manager *tank_mgr,
-    pz_projectile_manager *proj_mgr, pz_tank *player, int frame_count)
+    pz_projectile_manager *proj_mgr, pz_ai_manager *ai_mgr,
+    const pz_toxic_cloud *toxic_cloud, pz_tank *player, int frame_count)
 {
     FILE *f = fopen(path, "w");
     if (!f) {
@@ -618,6 +670,79 @@ pz_debug_script_dump_state(const char *path, pz_tank_manager *tank_mgr,
                 tank->pos.x, tank->pos.y, tank->health, status);
             enemy_idx++;
         }
+        fprintf(f, "\n");
+    }
+
+    // AI controller state
+    if (ai_mgr) {
+        fprintf(f, "[ai]\n");
+        for (int i = 0; i < ai_mgr->controller_count; i++) {
+            pz_ai_controller *ctrl = &ai_mgr->controllers[i];
+            pz_tank *tank = pz_debug_find_tank_by_id(tank_mgr, ctrl->tank_id);
+            const char *level_name = pz_enemy_level_name(ctrl->level);
+            bool in_toxic = false;
+            bool toxic_at_end = false;
+            bool target_in_toxic = false;
+            pz_vec2 path_target = ctrl->toxic_escape_target;
+            pz_vec2 path_goal = ctrl->toxic_escape_target;
+            float path_target_dist = 0.0f;
+            float path_goal_dist = 0.0f;
+            pz_vec2 path_dir = pz_vec2_zero();
+            if (tank && toxic_cloud) {
+                in_toxic = pz_toxic_cloud_is_inside(toxic_cloud, tank->pos);
+                toxic_at_end = pz_toxic_cloud_will_be_inside(
+                    toxic_cloud, tank->pos, 1.0f);
+                target_in_toxic = pz_toxic_cloud_is_inside(
+                    toxic_cloud, ctrl->toxic_escape_target);
+            }
+            if (tank && ctrl->toxic_escape_path.valid) {
+                path_target = pz_path_get_target(&ctrl->toxic_escape_path);
+                path_goal = pz_path_get_goal(&ctrl->toxic_escape_path);
+                path_target_dist = pz_vec2_dist(tank->pos, path_target);
+                path_goal_dist = pz_vec2_dist(tank->pos, path_goal);
+                if (path_target_dist > 0.01f) {
+                    pz_vec2 to_target = pz_vec2_sub(path_target, tank->pos);
+                    path_dir
+                        = pz_vec2_scale(to_target, 1.0f / path_target_dist);
+                }
+            }
+
+            fprintf(f,
+                "tank_id=%d level=%s state=%s pos=(%.3f, %.3f) "
+                "toxic_escaping=%d toxic_urgency=%.2f in_toxic=%d "
+                "toxic_at_end=%d target=(%.3f, %.3f) target_in_toxic=%d "
+                "path_valid=%d path_count=%d path_current=%d "
+                "path_complete=%d path_target=(%.3f, %.3f) "
+                "path_target_dist=%.3f path_goal=(%.3f, %.3f) "
+                "path_goal_dist=%.3f move_dir=(%.3f, %.3f)\n",
+                ctrl->tank_id, level_name ? level_name : "unknown",
+                pz_debug_ai_state_name(ctrl->state), tank ? tank->pos.x : 0.0f,
+                tank ? tank->pos.y : 0.0f, ctrl->toxic_escaping ? 1 : 0,
+                ctrl->toxic_urgency, in_toxic ? 1 : 0, toxic_at_end ? 1 : 0,
+                ctrl->toxic_escape_target.x, ctrl->toxic_escape_target.y,
+                target_in_toxic ? 1 : 0, ctrl->toxic_escape_path.valid ? 1 : 0,
+                ctrl->toxic_escape_path.count, ctrl->toxic_escape_path.current,
+                pz_path_is_complete(&ctrl->toxic_escape_path) ? 1 : 0,
+                path_target.x, path_target.y, path_target_dist, path_goal.x,
+                path_goal.y, path_goal_dist, path_dir.x, path_dir.y);
+        }
+        fprintf(f, "\n");
+    }
+
+    // Toxic cloud summary
+    if (toxic_cloud && toxic_cloud->config.enabled) {
+        float left = 0.0f;
+        float right = 0.0f;
+        float top = 0.0f;
+        float bottom = 0.0f;
+        float radius = 0.0f;
+        pz_toxic_cloud_get_boundary(
+            toxic_cloud, &left, &right, &top, &bottom, &radius);
+        fprintf(f, "[toxic_cloud]\n");
+        fprintf(f, "progress: %.3f\n", toxic_cloud->closing_progress);
+        fprintf(f, "boundary: left=%.3f right=%.3f top=%.3f bottom=%.3f\n",
+            left, right, top, bottom);
+        fprintf(f, "corner_radius: %.3f\n", radius);
         fprintf(f, "\n");
     }
 

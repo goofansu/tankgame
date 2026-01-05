@@ -2682,7 +2682,8 @@ end_frame:;
     }
     if (script_should_dump && script_dump_path[0]) {
         pz_debug_script_dump_state(script_dump_path, g_app.session.tank_mgr,
-            g_app.session.projectile_mgr, g_app.session.player_tank,
+            g_app.session.projectile_mgr, g_app.session.ai_mgr,
+            g_app.session.toxic_cloud, g_app.session.player_tank,
             g_app.frame_count);
     }
 

@@ -23,6 +23,8 @@ typedef struct pz_renderer pz_renderer;
 typedef struct pz_tank_manager pz_tank_manager;
 typedef struct pz_projectile_manager pz_projectile_manager;
 typedef struct pz_tank pz_tank;
+typedef struct pz_ai_manager pz_ai_manager;
+typedef struct pz_toxic_cloud pz_toxic_cloud;
 
 // Script input state (directly usable by game code)
 typedef struct pz_debug_script_input {
@@ -102,6 +104,7 @@ bool pz_debug_script_get_god_mode(const pz_debug_script *script);
 // Dump game state to file
 // This is a helper that game code can call with its state
 void pz_debug_script_dump_state(const char *path, pz_tank_manager *tank_mgr,
-    pz_projectile_manager *proj_mgr, pz_tank *player, int frame_count);
+    pz_projectile_manager *proj_mgr, pz_ai_manager *ai_mgr,
+    const pz_toxic_cloud *toxic_cloud, pz_tank *player, int frame_count);
 
 #endif // PZ_DEBUG_SCRIPT_H

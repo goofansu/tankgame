@@ -522,9 +522,15 @@ ai_update_toxic_escape(pz_ai_controller *ctrl, const pz_map *map,
 
     // Get a safe target position with spreading so AIs don't all converge
     // on the same point. Each AI gets a different position around the safe
-    // zone.
-    pz_vec2 safe_target = pz_toxic_cloud_get_safe_position_spread(
-        toxic_cloud, current_pos, AI_TOXIC_SAFE_MARGIN, ai_index, total_ais);
+    // zone. If we'll be toxic at the final closure, target the final safe
+    // zone immediately so we don't stall in a temporarily safe area.
+    bool will_be_toxic_at_end
+        = pz_toxic_cloud_will_be_inside(toxic_cloud, current_pos, 1.0f);
+    float target_progress
+        = will_be_toxic_at_end ? 1.0f : toxic_cloud->closing_progress;
+    pz_vec2 safe_target = pz_toxic_cloud_get_safe_position_spread_at_progress(
+        toxic_cloud, current_pos, AI_TOXIC_SAFE_MARGIN, ai_index, total_ais,
+        target_progress);
 
     // Log what we're targeting
     pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
