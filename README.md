@@ -8,6 +8,8 @@ A multiplayer tank combat game built in C17 with Sokol (sokol_app + sokol_gfx) w
 
 Terrible and work in progress.
 
+You can [play it online](https://mitsuhiko.github.io/tankgame/)
+
 ## Building
 
 ### Prerequisites
