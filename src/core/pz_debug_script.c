@@ -679,7 +679,7 @@ pz_debug_script_dump_state(const char *path, pz_tank_manager *tank_mgr,
         for (int i = 0; i < ai_mgr->controller_count; i++) {
             pz_ai_controller *ctrl = &ai_mgr->controllers[i];
             pz_tank *tank = pz_debug_find_tank_by_id(tank_mgr, ctrl->tank_id);
-            const char *level_name = pz_enemy_level_name(ctrl->level);
+            const char *type_name = pz_enemy_type_name(ctrl->type);
             bool in_toxic = false;
             bool toxic_at_end = false;
             bool target_in_toxic = false;
@@ -712,7 +712,7 @@ pz_debug_script_dump_state(const char *path, pz_tank_manager *tank_mgr,
             }
 
             fprintf(f,
-                "tank_id=%d level=%s state=%s pos=(%.3f, %.3f) "
+                "tank_id=%d type=%s state=%s pos=(%.3f, %.3f) "
                 "toxic_escaping=%d toxic_urgency=%.2f in_toxic=%d "
                 "toxic_at_end=%d target=(%.3f, %.3f) target_in_toxic=%d "
                 "path_valid=%d path_count=%d path_current=%d "
@@ -721,7 +721,7 @@ pz_debug_script_dump_state(const char *path, pz_tank_manager *tank_mgr,
                 "path_goal_dist=%.3f move_dir=(%.3f, %.3f) detour=%d "
                 "detour_timer=%.2f detour_blocked=%.2f detour_target=(%.3f, "
                 "%.3f)\n",
-                ctrl->tank_id, level_name ? level_name : "unknown",
+                ctrl->tank_id, type_name ? type_name : "unknown",
                 pz_debug_ai_state_name(ctrl->state), tank ? tank->pos.x : 0.0f,
                 tank ? tank->pos.y : 0.0f, ctrl->toxic_escaping ? 1 : 0,
                 ctrl->toxic_urgency, in_toxic ? 1 : 0, toxic_at_end ? 1 : 0,

@@ -22,82 +22,128 @@
  */
 
 static const pz_enemy_stats ENEMY_STATS[] = {
-    // Level 0 (unused, placeholder)
+    // Index 0 (unused, placeholder)
     { .health = 10,
         .max_bounces = 1,
-        .fire_cooldown = 1.0f,
+        .fire_cooldown_scale = 1.0f,
         .aim_speed = 1.0f,
+        .aim_tolerance = 0.26f,
+        .move_speed = 3.0f,
         .body_color = { 0.5f, 0.5f, 0.5f, 1.0f },
         .weapon_type = PZ_POWERUP_NONE,
         .projectile_speed_scale = 1.0f,
         .bounce_shot_range = 30.0f,
-        .projectile_defense_chance = 0.0f },
+        .projectile_defense_chance = 0.0f,
+        .bounce_shot_samples = 36,
+        .max_shots_per_peek = 1,
+        .max_projectiles_direct = 1,
+        .max_projectiles_bounce = 1,
+        .behavior_flags = 0 },
 
-    // Level 1: Sentry (stationary turret, fires often, uses bounce shots)
+    // Sentry (stationary turret, fires often, uses bounce shots)
     { .health = 10,
         .max_bounces = 1,
-        .fire_cooldown = 0.6f,
+        .fire_cooldown_scale = 1.0f,
         .aim_speed = 1.2f,
+        .aim_tolerance = 0.26f,
+        .move_speed = 3.0f,
         .body_color = { 0.6f, 0.25f, 0.25f, 1.0f }, // Dark red
         .weapon_type = PZ_POWERUP_NONE,
         .projectile_speed_scale = 1.0f,
         .bounce_shot_range = 30.0f,
-        .projectile_defense_chance = 0.6f },
+        .projectile_defense_chance = 0.6f,
+        .bounce_shot_samples = 36,
+        .max_shots_per_peek = 1,
+        .max_projectiles_direct = 3,
+        .max_projectiles_bounce = 1,
+        .behavior_flags = PZ_AI_BEHAVIOR_BOUNCE_SHOTS
+            | PZ_AI_BEHAVIOR_DEFEND_PROJECTILES | PZ_AI_BEHAVIOR_TARGET_MINES
+            | PZ_AI_BEHAVIOR_TOXIC_ESCAPE },
 
-    // Level 2: Skirmisher (uses cover)
+    // Skirmisher (uses cover)
     { .health = 15,
         .max_bounces = 1,
-        .fire_cooldown = 0.8f,
+        .fire_cooldown_scale = 1.0f,
         .aim_speed = 1.3f,
+        .aim_tolerance = 0.26f,
+        .move_speed = 3.0f,
         .body_color = { 0.7f, 0.4f, 0.1f, 1.0f }, // Orange-brown
         .weapon_type = PZ_POWERUP_NONE,
         .projectile_speed_scale = 1.0f,
-        .bounce_shot_range = 0.0f,
-        .projectile_defense_chance = 0.0f },
+        .bounce_shot_range = 30.0f,
+        .projectile_defense_chance = 0.0f,
+        .bounce_shot_samples = 36,
+        .max_shots_per_peek = 2,
+        .max_projectiles_direct = 2,
+        .max_projectiles_bounce = 1,
+        .behavior_flags = PZ_AI_BEHAVIOR_MOVE | PZ_AI_BEHAVIOR_PATHFIND
+            | PZ_AI_BEHAVIOR_USE_COVER | PZ_AI_BEHAVIOR_BOUNCE_SHOTS
+            | PZ_AI_BEHAVIOR_TARGET_MINES | PZ_AI_BEHAVIOR_TOXIC_ESCAPE },
 
-    // Level 3: Hunter (aggressive, machine gun burst)
+    // Hunter (aggressive, machine gun burst)
     { .health = 20,
         .max_bounces = 0,
-        .fire_cooldown = 0.2f,
+        .fire_cooldown_scale = 0.8f,
         .aim_speed = 2.0f,
+        .aim_tolerance = 0.52f,
+        .move_speed = 6.0f,
         .body_color = { 0.2f, 0.5f, 0.2f, 1.0f }, // Dark green (hunter)
         .weapon_type = PZ_POWERUP_MACHINE_GUN,
         .projectile_speed_scale = 1.0f,
         .bounce_shot_range = 0.0f,
-        .projectile_defense_chance = 0.0f },
+        .projectile_defense_chance = 0.0f,
+        .bounce_shot_samples = 0,
+        .max_shots_per_peek = 3,
+        .max_projectiles_direct = 0,
+        .max_projectiles_bounce = 0,
+        .behavior_flags = PZ_AI_BEHAVIOR_MOVE | PZ_AI_BEHAVIOR_PATHFIND
+            | PZ_AI_BEHAVIOR_USE_COVER | PZ_AI_BEHAVIOR_CHASE
+            | PZ_AI_BEHAVIOR_FLANK | PZ_AI_BEHAVIOR_EVADE
+            | PZ_AI_BEHAVIOR_STRAFE | PZ_AI_BEHAVIOR_TARGET_MINES
+            | PZ_AI_BEHAVIOR_TOXIC_ESCAPE },
 
-    // Level 4: Sniper (stationary, long-range ricochet)
+    // Sniper (stationary, long-range ricochet)
     { .health = 12,
         .max_bounces = 3,
-        .fire_cooldown = 2.2f,
+        .fire_cooldown_scale = 1.0f,
         .aim_speed = 0.9f,
+        .aim_tolerance = 0.14f,
+        .move_speed = 3.0f,
         .body_color = { 0.35f, 0.4f, 0.7f, 1.0f }, // Steel blue
         .weapon_type = PZ_POWERUP_RICOCHET,
         .projectile_speed_scale = 1.4f,
         .bounce_shot_range = 60.0f,
-        .projectile_defense_chance = 0.9f },
+        .projectile_defense_chance = 0.9f,
+        .bounce_shot_samples = 90,
+        .max_shots_per_peek = 1,
+        .max_projectiles_direct = 1,
+        .max_projectiles_bounce = 1,
+        .behavior_flags = PZ_AI_BEHAVIOR_BOUNCE_SHOTS
+            | PZ_AI_BEHAVIOR_DEFEND_PROJECTILES | PZ_AI_BEHAVIOR_TARGET_MINES
+            | PZ_AI_BEHAVIOR_TOXIC_ESCAPE
+            | PZ_AI_BEHAVIOR_REQUIRE_BOUNCE_SHOT },
 };
 
 const pz_enemy_stats *
-pz_enemy_get_stats(pz_enemy_level level)
+pz_enemy_get_stats(pz_enemy_type type)
 {
-    if (level < 1 || level > PZ_ENEMY_LEVEL_SNIPER) {
-        return &ENEMY_STATS[1]; // Default to level 1
+    if (type < 1 || type > PZ_ENEMY_TYPE_SNIPER) {
+        return &ENEMY_STATS[1]; // Default to sentry
     }
-    return &ENEMY_STATS[level];
+    return &ENEMY_STATS[type];
 }
 
 const char *
-pz_enemy_level_name(pz_enemy_level level)
+pz_enemy_type_name(pz_enemy_type type)
 {
-    switch (level) {
-    case PZ_ENEMY_LEVEL_1:
+    switch (type) {
+    case PZ_ENEMY_TYPE_SENTRY:
         return "sentry";
-    case PZ_ENEMY_LEVEL_2:
+    case PZ_ENEMY_TYPE_SKIRMISHER:
         return "skirmisher";
-    case PZ_ENEMY_LEVEL_3:
+    case PZ_ENEMY_TYPE_HUNTER:
         return "hunter";
-    case PZ_ENEMY_LEVEL_SNIPER:
+    case PZ_ENEMY_TYPE_SNIPER:
         return "sniper";
     default:
         return "sentry";
@@ -108,6 +154,8 @@ pz_enemy_level_name(pz_enemy_level level)
  * AI Manager
  * ============================================================================
  */
+
+static bool ai_has_behavior(const pz_ai_controller *ctrl, uint32_t flag);
 
 pz_ai_manager *
 pz_ai_manager_create(pz_tank_manager *tank_mgr, const pz_map *map)
@@ -151,7 +199,7 @@ pz_ai_manager_set_map(pz_ai_manager *ai_mgr, const pz_map *map)
 
 pz_tank *
 pz_ai_spawn_enemy(
-    pz_ai_manager *ai_mgr, pz_vec2 pos, float angle, pz_enemy_level level)
+    pz_ai_manager *ai_mgr, pz_vec2 pos, float angle, pz_enemy_type type)
 {
     if (!ai_mgr || !ai_mgr->tank_mgr) {
         return NULL;
@@ -166,7 +214,7 @@ pz_ai_spawn_enemy(
     }
 
     // Get enemy stats
-    const pz_enemy_stats *stats = pz_enemy_get_stats(level);
+    const pz_enemy_stats *stats = pz_enemy_get_stats(type);
 
     // Spawn the tank (not a player)
     pz_tank *tank
@@ -191,7 +239,8 @@ pz_ai_spawn_enemy(
     memset(ctrl, 0, sizeof(pz_ai_controller));
 
     ctrl->tank_id = tank->id;
-    ctrl->level = level;
+    ctrl->type = type;
+    ctrl->behavior_flags = stats->behavior_flags;
     ctrl->current_aim_angle = angle;
     ctrl->target_aim_angle = angle;
     // Match player behavior: allow immediate fire, then use weapon cooldown.
@@ -215,20 +264,12 @@ pz_ai_spawn_enemy(
     ctrl->cover_search_timer = 0.0f;
     ctrl->has_cover = false;
     ctrl->shots_fired = 0;
-    if (level == PZ_ENEMY_LEVEL_2) {
-        ctrl->max_shots_per_peek = 2;
-    } else if (level == PZ_ENEMY_LEVEL_3) {
-        ctrl->max_shots_per_peek = 3;
-    } else {
-        ctrl->max_shots_per_peek = 1;
-    }
+    ctrl->max_shots_per_peek = stats->max_shots_per_peek;
 
-    // Initialize pathfinding for Level 2 and 3
+    // Initialize pathfinding
     pz_path_clear(&ctrl->path);
     ctrl->path_goal = pos;
     ctrl->path_update_timer = 0.0f;
-    ctrl->use_pathfinding
-        = (level == PZ_ENEMY_LEVEL_2 || level == PZ_ENEMY_LEVEL_3);
 
     // Initialize toxic escape state
     ctrl->toxic_escaping = false;
@@ -245,8 +286,9 @@ pz_ai_spawn_enemy(
 
     pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
         "Spawned %s enemy at (%.1f, %.1f), tank_id=%d%s",
-        pz_enemy_level_name(level), pos.x, pos.y, tank->id,
-        ctrl->use_pathfinding ? " (with pathfinding)" : "");
+        pz_enemy_type_name(type), pos.x, pos.y, tank->id,
+        ai_has_behavior(ctrl, PZ_AI_BEHAVIOR_PATHFIND) ? " (with pathfinding)"
+                                                       : "");
 
     return tank;
 }
@@ -255,6 +297,12 @@ pz_ai_spawn_enemy(
  * AI Helpers
  * ============================================================================
  */
+
+static bool
+ai_has_behavior(const pz_ai_controller *ctrl, uint32_t flag)
+{
+    return ctrl && (ctrl->behavior_flags & flag);
+}
 
 // Normalize angle to [-PI, PI]
 static float
@@ -1559,228 +1607,7 @@ ai_should_repath(pz_ai_controller *ctrl, pz_vec2 new_goal, float dt)
 }
 
 /* ============================================================================
- * Level 2 Cover AI Update
- * ============================================================================
- */
-
-static void
-update_level2_ai(pz_ai_controller *ctrl, pz_tank *tank,
-    pz_tank_manager *tank_mgr, const pz_map *map, pz_vec2 player_pos,
-    const pz_mine_manager *mine_mgr, pz_rng *rng,
-    const pz_toxic_cloud *toxic_cloud, float dt, int ai_index, int total_ais)
-{
-    const float move_speed = 3.0f; // Movement speed for AI
-    const float arrive_threshold = 0.5f; // How close to target to stop
-    const float cover_wait_time = 1.5f; // Time to wait in cover before peeking
-    const float firing_time = 2.0f; // Max time exposed while firing
-    const float cover_search_cooldown = 3.0f; // Time between cover searches
-
-    // Update cover search timer
-    if (ctrl->cover_search_timer > 0.0f) {
-        ctrl->cover_search_timer -= dt;
-    }
-
-    // State machine for cover behavior
-    pz_vec2 move_dir = { 0.0f, 0.0f };
-
-    switch (ctrl->state) {
-    case PZ_AI_STATE_IDLE:
-        // Initial state - look for cover
-        pz_path_clear(&ctrl->path);
-        if (!ctrl->has_cover && ctrl->cover_search_timer <= 0.0f) {
-            if (find_cover_position(map, tank->pos, player_pos, mine_mgr,
-                    &ctrl->cover_pos, &ctrl->peek_pos)) {
-                ctrl->has_cover = true;
-                ctrl->state = PZ_AI_STATE_SEEKING_COVER;
-                ctrl->move_target = ctrl->cover_pos;
-                // Request path to cover
-                ai_request_path(ctrl, map, tank->pos, ctrl->cover_pos);
-                pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
-                    "AI %d found cover at (%.1f, %.1f)", tank->id,
-                    ctrl->cover_pos.x, ctrl->cover_pos.y);
-            } else {
-                ctrl->cover_search_timer = cover_search_cooldown;
-            }
-        }
-        break;
-
-    case PZ_AI_STATE_SEEKING_COVER: {
-        // Use pathfinding to move toward cover position
-        float dist = pz_vec2_dist(ctrl->cover_pos, tank->pos);
-
-        if (dist < arrive_threshold) {
-            // Arrived at cover
-            ctrl->state = PZ_AI_STATE_IN_COVER;
-            ctrl->state_timer
-                = cover_wait_time * (0.5f + 0.5f * pz_rng_float(rng));
-            pz_path_clear(&ctrl->path);
-            pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME, "AI %d arrived at cover",
-                tank->id);
-        } else {
-            // Update path if needed
-            if (ai_should_repath(ctrl, ctrl->cover_pos, dt)) {
-                ai_request_path(ctrl, map, tank->pos, ctrl->cover_pos);
-            }
-            // Follow path
-            move_dir = ai_follow_path(ctrl, tank->pos);
-            // Fallback to direct movement if no path
-            if (pz_vec2_len(move_dir) < 0.01f && dist > arrive_threshold) {
-                pz_vec2 to_cover = pz_vec2_sub(ctrl->cover_pos, tank->pos);
-                move_dir = pz_vec2_scale(to_cover, 1.0f / dist);
-            }
-        }
-        break;
-    }
-
-    case PZ_AI_STATE_IN_COVER:
-        if (check_line_of_sight(map, tank->pos, player_pos)) {
-            ctrl->has_cover = false;
-            ctrl->state = PZ_AI_STATE_IDLE;
-            ctrl->state_timer = 0.0f;
-            break;
-        }
-        // Wait in cover, then peek out
-        ctrl->state_timer -= dt;
-        if (ctrl->state_timer <= 0.0f) {
-            if (pz_rng_int(rng, 0, 99) < 25) {
-                ctrl->has_cover = false;
-                ctrl->state = PZ_AI_STATE_IDLE;
-                ctrl->state_timer = 0.0f;
-            } else {
-                ctrl->state = PZ_AI_STATE_PEEKING;
-                ctrl->move_target = ctrl->peek_pos;
-                ctrl->shots_fired = 0;
-                // Request path to peek position
-                ai_request_path(ctrl, map, tank->pos, ctrl->peek_pos);
-                pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
-                    "AI %d peeking from cover", tank->id);
-            }
-        }
-        break;
-
-    case PZ_AI_STATE_PEEKING: {
-        // Use pathfinding to move to peek position
-        float dist = pz_vec2_dist(ctrl->peek_pos, tank->pos);
-
-        if (dist < arrive_threshold) {
-            // Arrived at peek position, start firing
-            ctrl->state = PZ_AI_STATE_FIRING;
-            ctrl->state_timer = firing_time;
-            pz_path_clear(&ctrl->path);
-        } else {
-            // Update path if needed
-            if (ai_should_repath(ctrl, ctrl->peek_pos, dt)) {
-                ai_request_path(ctrl, map, tank->pos, ctrl->peek_pos);
-            }
-            // Follow path
-            move_dir = ai_follow_path(ctrl, tank->pos);
-            // Fallback to direct movement if no path
-            if (pz_vec2_len(move_dir) < 0.01f && dist > arrive_threshold) {
-                pz_vec2 to_peek = pz_vec2_sub(ctrl->peek_pos, tank->pos);
-                move_dir = pz_vec2_scale(to_peek, 1.0f / dist);
-            }
-        }
-        break;
-    }
-
-    case PZ_AI_STATE_FIRING:
-        // Stay exposed and fire (firing happens in pz_ai_fire)
-        // Retreat after timer expires or we've fired enough shots
-        ctrl->state_timer -= dt;
-        if (ctrl->state_timer <= 0.0f
-            || ctrl->shots_fired >= ctrl->max_shots_per_peek) {
-            ctrl->state = PZ_AI_STATE_RETREATING;
-            ctrl->move_target = ctrl->cover_pos;
-            // Request path back to cover
-            ai_request_path(ctrl, map, tank->pos, ctrl->cover_pos);
-            pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
-                "AI %d retreating to cover after %d shots", tank->id,
-                ctrl->shots_fired);
-        }
-        break;
-
-    case PZ_AI_STATE_RETREATING: {
-        // Use pathfinding to move back to cover
-        float dist = pz_vec2_dist(ctrl->cover_pos, tank->pos);
-
-        if (dist < arrive_threshold) {
-            // Back in cover
-            ctrl->state = PZ_AI_STATE_IN_COVER;
-            ctrl->state_timer
-                = cover_wait_time * (0.5f + 0.5f * pz_rng_float(rng));
-            pz_path_clear(&ctrl->path);
-
-            // Occasionally search for new cover
-            if (pz_rng_int(rng, 0, 99) < 50) {
-                ctrl->has_cover = false;
-                ctrl->state = PZ_AI_STATE_IDLE;
-                pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
-                    "AI %d looking for new cover", tank->id);
-            }
-        } else {
-            // Update path if needed
-            if (ai_should_repath(ctrl, ctrl->cover_pos, dt)) {
-                ai_request_path(ctrl, map, tank->pos, ctrl->cover_pos);
-            }
-            // Follow path
-            move_dir = ai_follow_path(ctrl, tank->pos);
-            // Fallback to direct movement if no path
-            if (pz_vec2_len(move_dir) < 0.01f && dist > arrive_threshold) {
-                pz_vec2 to_cover = pz_vec2_sub(ctrl->cover_pos, tank->pos);
-                move_dir = pz_vec2_scale(to_cover, 1.0f / dist);
-            }
-        }
-        break;
-    }
-
-    default:
-        break;
-    }
-
-    // Toxic cloud escape takes priority over normal behavior
-    if (ai_update_toxic_escape(
-            ctrl, map, toxic_cloud, tank->pos, dt, ai_index, total_ais)) {
-        pz_vec2 escape_dir
-            = ai_get_toxic_escape_move(ctrl, toxic_cloud, tank->pos);
-        if (pz_vec2_len_sq(escape_dir) > 0.001f) {
-            move_dir = escape_dir;
-            // Only suppress firing in critical urgency
-            if (ctrl->toxic_urgency > 1.0f) {
-                ctrl->wants_to_fire = false;
-            }
-        }
-    }
-
-    move_dir = steer_away_from_mines(mine_mgr, tank->pos, move_dir,
-        AI_MINE_AVOID_RADIUS, AI_MINE_PANIC_RADIUS);
-
-    // Apply separation steering to avoid crowding other tanks
-    // Use stronger separation when escaping toxic - can't afford to get stuck!
-    float sep_urgency = 0.0f;
-    pz_vec2 separation = ai_compute_separation(
-        tank_mgr, tank->pos, tank->id, 3.0f, &sep_urgency);
-    float sep_blend = (ctrl->toxic_urgency > 0.5f) ? 1.5f : 0.8f;
-    move_dir
-        = ai_apply_separation(move_dir, separation, sep_urgency, sep_blend);
-    ai_apply_detour(ctrl, tank, map, tank_mgr, &move_dir, rng, dt);
-
-    // Apply movement - faster when escaping toxic
-    float current_speed = move_speed;
-    if (ctrl->toxic_escaping && ctrl->toxic_urgency > 0.5f) {
-        current_speed = move_speed * 1.5f; // Hustle!
-    }
-
-    pz_tank_input input = {
-        .move_dir = pz_vec2_scale(move_dir, current_speed),
-        .target_turret = ctrl->current_aim_angle,
-        .fire = false,
-    };
-
-    pz_tank_update(tank_mgr, tank, &input, map, toxic_cloud, dt);
-}
-
-/* ============================================================================
- * Level 3 Aggressive Hunter AI
+ * Unified AI Behavior Update
  * ============================================================================
  */
 
@@ -1819,7 +1646,6 @@ check_incoming_projectiles(pz_ai_controller *ctrl, pz_tank *tank,
 
         // Check distance to predicted position
         pz_vec2 to_proj = pz_vec2_sub(proj->pos, tank->pos);
-        pz_vec2 to_future = pz_vec2_sub(proj_future, tank->pos);
 
         // Check if projectile is heading toward us
         float proj_speed = pz_vec2_len(proj->velocity);
@@ -1912,6 +1738,414 @@ find_flank_position(const pz_map *map, const pz_mine_manager *mine_mgr,
     }
 
     return found;
+}
+
+static pz_vec2
+ai_move_toward_goal(pz_ai_controller *ctrl, const pz_map *map,
+    pz_vec2 current_pos, pz_vec2 goal, float arrive_threshold, float dt,
+    bool use_path)
+{
+    float dist = pz_vec2_dist(goal, current_pos);
+    if (dist < arrive_threshold) {
+        return pz_vec2_zero();
+    }
+
+    if (use_path && map) {
+        if (ai_should_repath(ctrl, goal, dt)) {
+            ai_request_path(ctrl, map, current_pos, goal);
+        }
+        pz_vec2 move_dir = ai_follow_path(ctrl, current_pos);
+        if (pz_vec2_len(move_dir) < 0.01f && dist > arrive_threshold) {
+            pz_vec2 to_goal = pz_vec2_sub(goal, current_pos);
+            return pz_vec2_scale(to_goal, 1.0f / dist);
+        }
+        return move_dir;
+    }
+
+    if (dist > 0.01f) {
+        pz_vec2 to_goal = pz_vec2_sub(goal, current_pos);
+        return pz_vec2_scale(to_goal, 1.0f / dist);
+    }
+
+    return pz_vec2_zero();
+}
+
+static void
+ai_update_behavior(pz_ai_controller *ctrl, pz_tank *tank,
+    pz_tank_manager *tank_mgr, const pz_map *map, pz_vec2 player_pos,
+    pz_projectile_manager *proj_mgr, const pz_mine_manager *mine_mgr,
+    pz_rng *rng, const pz_toxic_cloud *toxic_cloud, float dt, int ai_index,
+    int total_ais, const pz_enemy_stats *stats)
+{
+    const float arrive_threshold = 0.5f;
+    const float cover_wait_time = 1.5f;
+    const float firing_time = 2.0f;
+    const float cover_search_cooldown = 3.0f;
+    const float engage_distance = 12.0f;
+    const float chase_distance = 20.0f;
+    const float too_close_distance = 3.0f;
+    const float evade_duration = 0.3f;
+    const float health_retreat_threshold = 0.2f;
+
+    bool can_move = ai_has_behavior(ctrl, PZ_AI_BEHAVIOR_MOVE);
+    bool can_pathfind = ai_has_behavior(ctrl, PZ_AI_BEHAVIOR_PATHFIND);
+    bool can_use_cover = ai_has_behavior(ctrl, PZ_AI_BEHAVIOR_USE_COVER);
+    bool can_chase = ai_has_behavior(ctrl, PZ_AI_BEHAVIOR_CHASE);
+    bool can_flank = ai_has_behavior(ctrl, PZ_AI_BEHAVIOR_FLANK);
+    bool can_evade = ai_has_behavior(ctrl, PZ_AI_BEHAVIOR_EVADE);
+    bool can_strafe = ai_has_behavior(ctrl, PZ_AI_BEHAVIOR_STRAFE);
+    bool can_escape_toxic = ai_has_behavior(ctrl, PZ_AI_BEHAVIOR_TOXIC_ESCAPE);
+    bool avoid_mines = ai_has_behavior(ctrl, PZ_AI_BEHAVIOR_TARGET_MINES);
+
+    // Timers
+    if (ctrl->evade_timer > 0.0f) {
+        ctrl->evade_timer -= dt;
+    }
+    if (ctrl->aggression_timer > 0.0f) {
+        ctrl->aggression_timer -= dt;
+    }
+    if (ctrl->cover_search_timer > 0.0f) {
+        ctrl->cover_search_timer -= dt;
+    }
+
+    float dist_to_player = pz_vec2_dist(tank->pos, player_pos);
+    float health_ratio = (float)tank->health / (float)tank->max_health;
+
+    ctrl->wants_to_fire = false;
+    pz_vec2 move_dir = pz_vec2_zero();
+
+    // a) Decide where to go (if moving)
+    if (can_evade && proj_mgr) {
+        pz_vec2 evade_dir = pz_vec2_zero();
+        if (check_incoming_projectiles(ctrl, tank, proj_mgr, &evade_dir)
+            && ctrl->evade_timer <= 0.0f) {
+            ctrl->state = PZ_AI_STATE_EVADING;
+            ctrl->evade_dir = evade_dir;
+            ctrl->evade_timer = evade_duration;
+            ctrl->wants_to_fire = false;
+            pz_path_clear(&ctrl->path);
+        }
+    }
+
+    switch (ctrl->state) {
+    case PZ_AI_STATE_IDLE:
+        if (can_chase) {
+            ctrl->state = PZ_AI_STATE_CHASING;
+            ctrl->aggression_timer = 1.0f + pz_rng_float(rng);
+            pz_path_clear(&ctrl->path);
+        } else if (can_use_cover && ctrl->cover_search_timer <= 0.0f) {
+            if (find_cover_position(map, tank->pos, player_pos, mine_mgr,
+                    &ctrl->cover_pos, &ctrl->peek_pos)) {
+                ctrl->has_cover = true;
+                ctrl->state = PZ_AI_STATE_SEEKING_COVER;
+                ctrl->move_target = ctrl->cover_pos;
+                if (can_pathfind) {
+                    ai_request_path(ctrl, map, tank->pos, ctrl->cover_pos);
+                }
+                pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
+                    "AI %d found cover at (%.1f, %.1f)", tank->id,
+                    ctrl->cover_pos.x, ctrl->cover_pos.y);
+            } else {
+                ctrl->cover_search_timer = cover_search_cooldown;
+            }
+        } else {
+            ctrl->wants_to_fire = ctrl->can_see_player || ctrl->has_bounce_shot
+                || ctrl->defending_projectile || ctrl->targeting_mine;
+        }
+        break;
+
+    case PZ_AI_STATE_SEEKING_COVER:
+        if (!can_use_cover) {
+            ctrl->state = can_chase ? PZ_AI_STATE_CHASING : PZ_AI_STATE_IDLE;
+            pz_path_clear(&ctrl->path);
+            break;
+        }
+        move_dir = ai_move_toward_goal(ctrl, map, tank->pos, ctrl->cover_pos,
+            arrive_threshold, dt, can_pathfind);
+        if (pz_vec2_len(move_dir) < 0.01f) {
+            ctrl->state = PZ_AI_STATE_IN_COVER;
+            ctrl->state_timer
+                = cover_wait_time * (0.5f + 0.5f * pz_rng_float(rng));
+            pz_path_clear(&ctrl->path);
+            pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME, "AI %d arrived at cover",
+                tank->id);
+        }
+        break;
+
+    case PZ_AI_STATE_IN_COVER:
+        if (!can_use_cover) {
+            ctrl->state = can_chase ? PZ_AI_STATE_CHASING : PZ_AI_STATE_IDLE;
+            pz_path_clear(&ctrl->path);
+            break;
+        }
+        if (check_line_of_sight(map, tank->pos, player_pos)) {
+            ctrl->has_cover = false;
+            ctrl->state = PZ_AI_STATE_IDLE;
+            ctrl->state_timer = 0.0f;
+            break;
+        }
+        ctrl->state_timer -= dt;
+        if (ctrl->state_timer <= 0.0f) {
+            if (pz_rng_int(rng, 0, 99) < 25) {
+                ctrl->has_cover = false;
+                ctrl->state = PZ_AI_STATE_IDLE;
+                ctrl->state_timer = 0.0f;
+            } else {
+                ctrl->state = PZ_AI_STATE_PEEKING;
+                ctrl->move_target = ctrl->peek_pos;
+                ctrl->shots_fired = 0;
+                if (can_pathfind) {
+                    ai_request_path(ctrl, map, tank->pos, ctrl->peek_pos);
+                }
+            }
+        }
+        break;
+
+    case PZ_AI_STATE_PEEKING:
+        if (!can_use_cover) {
+            ctrl->state = can_chase ? PZ_AI_STATE_CHASING : PZ_AI_STATE_IDLE;
+            pz_path_clear(&ctrl->path);
+            break;
+        }
+        move_dir = ai_move_toward_goal(ctrl, map, tank->pos, ctrl->peek_pos,
+            arrive_threshold, dt, can_pathfind);
+        if (pz_vec2_len(move_dir) < 0.01f) {
+            ctrl->state = PZ_AI_STATE_FIRING;
+            ctrl->state_timer = firing_time;
+            pz_path_clear(&ctrl->path);
+        }
+        ctrl->wants_to_fire = ctrl->can_see_player;
+        break;
+
+    case PZ_AI_STATE_FIRING:
+        if (!can_use_cover) {
+            ctrl->state = can_chase ? PZ_AI_STATE_CHASING : PZ_AI_STATE_IDLE;
+            pz_path_clear(&ctrl->path);
+            break;
+        }
+        ctrl->state_timer -= dt;
+        ctrl->wants_to_fire = ctrl->can_see_player;
+        if (ctrl->state_timer <= 0.0f
+            || ctrl->shots_fired >= ctrl->max_shots_per_peek) {
+            ctrl->state = PZ_AI_STATE_RETREATING;
+            ctrl->move_target = ctrl->cover_pos;
+            if (can_pathfind) {
+                ai_request_path(ctrl, map, tank->pos, ctrl->cover_pos);
+            }
+        }
+        break;
+
+    case PZ_AI_STATE_RETREATING:
+        if (!can_use_cover) {
+            ctrl->state = can_chase ? PZ_AI_STATE_CHASING : PZ_AI_STATE_IDLE;
+            pz_path_clear(&ctrl->path);
+            break;
+        }
+        move_dir = ai_move_toward_goal(ctrl, map, tank->pos, ctrl->cover_pos,
+            arrive_threshold, dt, can_pathfind);
+        if (pz_vec2_len(move_dir) < 0.01f) {
+            ctrl->state = PZ_AI_STATE_IN_COVER;
+            ctrl->state_timer
+                = cover_wait_time * (0.5f + 0.5f * pz_rng_float(rng));
+            pz_path_clear(&ctrl->path);
+            if (pz_rng_int(rng, 0, 99) < 50) {
+                ctrl->has_cover = false;
+                ctrl->state = PZ_AI_STATE_IDLE;
+            }
+        }
+        break;
+
+    case PZ_AI_STATE_CHASING:
+        if (!can_chase) {
+            ctrl->state
+                = can_use_cover ? PZ_AI_STATE_SEEKING_COVER : PZ_AI_STATE_IDLE;
+            pz_path_clear(&ctrl->path);
+            break;
+        }
+        move_dir = ai_move_toward_goal(ctrl, map, tank->pos, player_pos,
+            arrive_threshold, dt, can_pathfind);
+        if (can_strafe && dist_to_player < engage_distance
+            && ctrl->can_see_player) {
+            ctrl->state = PZ_AI_STATE_ENGAGING;
+            ctrl->state_timer = 4.0f + pz_rng_range(rng, 0.0f, 2.0f);
+            pz_path_clear(&ctrl->path);
+        }
+        if (can_flank && ctrl->aggression_timer <= 0.0f
+            && dist_to_player < chase_distance) {
+            if (find_flank_position(map, mine_mgr, tank->pos, player_pos,
+                    &ctrl->flank_target)) {
+                ctrl->state = PZ_AI_STATE_FLANKING;
+                ctrl->aggression_timer = 2.0f;
+                if (can_pathfind) {
+                    ai_request_path(ctrl, map, tank->pos, ctrl->flank_target);
+                }
+            } else {
+                ctrl->aggression_timer = 1.0f;
+            }
+        }
+        if (can_use_cover && health_ratio < health_retreat_threshold) {
+            ctrl->state = PZ_AI_STATE_SEEKING_COVER;
+            ctrl->has_cover = false;
+            pz_path_clear(&ctrl->path);
+        }
+        ctrl->wants_to_fire = ctrl->can_see_player;
+        break;
+
+    case PZ_AI_STATE_FLANKING:
+        if (!can_flank) {
+            ctrl->state = can_chase ? PZ_AI_STATE_CHASING : PZ_AI_STATE_IDLE;
+            pz_path_clear(&ctrl->path);
+            break;
+        }
+        move_dir = ai_move_toward_goal(ctrl, map, tank->pos, ctrl->flank_target,
+            arrive_threshold, dt, can_pathfind);
+        if (pz_vec2_len(move_dir) < 0.01f) {
+            ctrl->state
+                = can_strafe ? PZ_AI_STATE_ENGAGING : PZ_AI_STATE_CHASING;
+            ctrl->state_timer = 2.0f;
+            pz_path_clear(&ctrl->path);
+        }
+        ctrl->wants_to_fire = ctrl->can_see_player;
+        if (can_use_cover && health_ratio < health_retreat_threshold) {
+            ctrl->state = PZ_AI_STATE_SEEKING_COVER;
+            ctrl->has_cover = false;
+            pz_path_clear(&ctrl->path);
+        }
+        break;
+
+    case PZ_AI_STATE_ENGAGING:
+        if (!can_strafe) {
+            ctrl->state = can_chase ? PZ_AI_STATE_CHASING : PZ_AI_STATE_IDLE;
+            pz_path_clear(&ctrl->path);
+            break;
+        }
+        ctrl->state_timer -= dt;
+        if (dist_to_player > 0.1f) {
+            pz_vec2 to_player = pz_vec2_sub(player_pos, tank->pos);
+            pz_vec2 dir_to_player
+                = pz_vec2_scale(to_player, 1.0f / dist_to_player);
+            pz_vec2 strafe = { -dir_to_player.y, dir_to_player.x };
+            if (((int)(ctrl->state_timer * 2.0f)) % 2 == 0) {
+                strafe = pz_vec2_scale(strafe, -1.0f);
+            }
+
+            if (dist_to_player > engage_distance * 0.7f) {
+                move_dir
+                    = pz_vec2_add(strafe, pz_vec2_scale(dir_to_player, 0.5f));
+            } else if (dist_to_player < too_close_distance) {
+                move_dir
+                    = pz_vec2_add(strafe, pz_vec2_scale(dir_to_player, -0.8f));
+            } else {
+                move_dir = strafe;
+            }
+
+            float len = pz_vec2_len(move_dir);
+            if (len > 0.1f) {
+                move_dir = pz_vec2_scale(move_dir, 1.0f / len);
+            }
+        }
+
+        ctrl->wants_to_fire = ctrl->can_see_player;
+        if (ctrl->state_timer <= 0.0f) {
+            if (can_use_cover && health_ratio < health_retreat_threshold) {
+                ctrl->state = PZ_AI_STATE_SEEKING_COVER;
+                ctrl->has_cover = false;
+            } else if (can_chase && pz_rng_int(rng, 0, 99) < 40) {
+                ctrl->state = PZ_AI_STATE_CHASING;
+                ctrl->aggression_timer = 1.5f;
+            } else {
+                ctrl->state_timer = 2.0f + pz_rng_range(rng, 0.0f, 2.0f);
+            }
+        }
+        if (!ctrl->can_see_player) {
+            ctrl->state = can_chase ? PZ_AI_STATE_CHASING : PZ_AI_STATE_IDLE;
+            pz_path_clear(&ctrl->path);
+        }
+        if (can_use_cover && health_ratio < health_retreat_threshold) {
+            ctrl->state = PZ_AI_STATE_SEEKING_COVER;
+            ctrl->has_cover = false;
+        }
+        break;
+
+    case PZ_AI_STATE_EVADING:
+        if (!can_evade) {
+            ctrl->state = can_chase ? PZ_AI_STATE_CHASING : PZ_AI_STATE_IDLE;
+            pz_path_clear(&ctrl->path);
+            break;
+        }
+        move_dir = ctrl->evade_dir;
+        ctrl->wants_to_fire = false;
+        if (ctrl->evade_timer <= 0.0f) {
+            if (can_use_cover && health_ratio < health_retreat_threshold) {
+                ctrl->state = PZ_AI_STATE_SEEKING_COVER;
+                ctrl->has_cover = false;
+            } else if (can_strafe && dist_to_player < engage_distance) {
+                ctrl->state = PZ_AI_STATE_ENGAGING;
+            } else if (can_chase) {
+                ctrl->state = PZ_AI_STATE_CHASING;
+            } else {
+                ctrl->state = PZ_AI_STATE_IDLE;
+            }
+            pz_path_clear(&ctrl->path);
+        }
+        break;
+
+    default:
+        ctrl->state = can_chase ? PZ_AI_STATE_CHASING : PZ_AI_STATE_IDLE;
+        pz_path_clear(&ctrl->path);
+        break;
+    }
+
+    // b) Move there
+    // c) Consider a different goal (done inside state transitions)
+
+    if (ctrl->targeting_mine && ctrl->state != PZ_AI_STATE_EVADING) {
+        ctrl->wants_to_fire = true;
+    }
+
+    // d) Check evasive moves if necessary (toxic escape overrides)
+    if (can_escape_toxic
+        && ai_update_toxic_escape(
+            ctrl, map, toxic_cloud, tank->pos, dt, ai_index, total_ais)) {
+        pz_vec2 escape_dir
+            = ai_get_toxic_escape_move(ctrl, toxic_cloud, tank->pos);
+        if (pz_vec2_len_sq(escape_dir) > 0.001f) {
+            move_dir = escape_dir;
+            float suppress_threshold = can_strafe ? 1.2f : 1.0f;
+            if (ctrl->toxic_urgency > suppress_threshold) {
+                ctrl->wants_to_fire = false;
+            }
+        }
+    }
+
+    if (avoid_mines) {
+        move_dir = steer_away_from_mines(mine_mgr, tank->pos, move_dir,
+            AI_MINE_AVOID_RADIUS, AI_MINE_PANIC_RADIUS);
+    }
+
+    if (can_move || (can_escape_toxic && ctrl->toxic_escaping)
+        || (avoid_mines && pz_vec2_len_sq(move_dir) > 0.0f)) {
+        float sep_urgency = 0.0f;
+        pz_vec2 separation = ai_compute_separation(
+            tank_mgr, tank->pos, tank->id, 3.0f, &sep_urgency);
+        float sep_blend = (ctrl->toxic_urgency > 0.5f) ? 1.5f : 0.8f;
+        move_dir
+            = ai_apply_separation(move_dir, separation, sep_urgency, sep_blend);
+        ai_apply_detour(ctrl, tank, map, tank_mgr, &move_dir, rng, dt);
+    }
+
+    float current_speed = stats->move_speed;
+    if (ctrl->toxic_escaping && ctrl->toxic_urgency > 0.5f) {
+        current_speed *= can_strafe ? 1.3f : 1.5f;
+    }
+
+    pz_tank_input input = {
+        .move_dir = pz_vec2_scale(move_dir, current_speed),
+        .target_turret = ctrl->current_aim_angle,
+        .fire = false,
+    };
+
+    pz_tank_update(tank_mgr, tank, &input, map, toxic_cloud, dt);
 }
 
 static bool
@@ -2421,7 +2655,15 @@ pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
         }
 
         // Get enemy stats for behavior parameters
-        const pz_enemy_stats *stats = pz_enemy_get_stats(ctrl->level);
+        const pz_enemy_stats *stats = pz_enemy_get_stats(ctrl->type);
+        bool uses_bounce_shots
+            = ai_has_behavior(ctrl, PZ_AI_BEHAVIOR_BOUNCE_SHOTS);
+        bool requires_bounce_shot
+            = ai_has_behavior(ctrl, PZ_AI_BEHAVIOR_REQUIRE_BOUNCE_SHOT);
+        bool can_defend_projectiles
+            = ai_has_behavior(ctrl, PZ_AI_BEHAVIOR_DEFEND_PROJECTILES);
+        bool can_target_mines
+            = ai_has_behavior(ctrl, PZ_AI_BEHAVIOR_TARGET_MINES);
 
         // Calculate angle to player
         float dx = player_pos.x - tank->pos.x;
@@ -2433,7 +2675,8 @@ pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
             = check_line_of_sight(ai_mgr->map, tank->pos, player_pos);
 
         // Check for incoming projectiles to defend against.
-        if (stats->projectile_defense_chance > 0.0f && proj_mgr) {
+        if (can_defend_projectiles && stats->projectile_defense_chance > 0.0f
+            && proj_mgr) {
             if (ctrl->defense_check_timer > 0.0f) {
                 ctrl->defense_check_timer -= dt;
             }
@@ -2461,7 +2704,7 @@ pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
 
         ctrl->targeting_mine = false;
         ctrl->mine_target_dist = 0.0f;
-        if (mine_mgr) {
+        if (can_target_mines && mine_mgr) {
             pz_vec2 mine_pos = tank->pos;
             float mine_dist = 0.0f;
             if (find_mine_target(mine_mgr, ai_mgr->map, tank, player_pos,
@@ -2473,9 +2716,6 @@ pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
         }
 
         // Stationary enemies use ricochet shots when player is not visible.
-        bool uses_bounce_shots = (ctrl->level == PZ_ENEMY_LEVEL_1
-            || ctrl->level == PZ_ENEMY_LEVEL_2
-            || ctrl->level == PZ_ENEMY_LEVEL_SNIPER);
         if (ctrl->defending_projectile) {
             ctrl->target_aim_angle = ctrl->defense_aim_angle;
             ctrl->has_bounce_shot = false;
@@ -2504,9 +2744,9 @@ pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
                     if (bounce_range <= 0.0f) {
                         bounce_range = 30.0f;
                     }
-                    int sample_count = 36;
-                    if (ctrl->level == PZ_ENEMY_LEVEL_SNIPER) {
-                        sample_count = 90;
+                    int sample_count = stats->bounce_shot_samples;
+                    if (sample_count <= 0) {
+                        sample_count = 36;
                     }
                     float self_radius = 1.0f;
                     float self_ignore_dist = 1.7f;
@@ -2527,8 +2767,7 @@ pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
                 if (ctrl->has_bounce_shot) {
                     ctrl->target_aim_angle = ctrl->bounce_shot_angle;
                 } else {
-                    if (ctrl->level == PZ_ENEMY_LEVEL_SNIPER) {
-                        // Snipers hold fire without a validated ricochet.
+                    if (requires_bounce_shot) {
                         ctrl->target_aim_angle = ctrl->current_aim_angle;
                     } else {
                         // Fallback: aim at player anyway (for when they become
@@ -2538,7 +2777,7 @@ pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
                 }
             }
         } else {
-            // Level 2/3: Always aim directly at player
+            // Default: aim directly at the player.
             ctrl->target_aim_angle = direct_angle;
         }
 
@@ -2558,72 +2797,9 @@ pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
 
         ctrl->current_aim_angle = normalize_angle(ctrl->current_aim_angle);
 
-        // Level-specific behavior
-        if (ctrl->level == PZ_ENEMY_LEVEL_3) {
-            // Level 3: Aggressive hunter
-            update_level3_ai(ctrl, tank, ai_mgr->tank_mgr, ai_mgr->map,
-                player_pos, proj_mgr, mine_mgr, rng, toxic_cloud, dt, i,
-                ai_mgr->controller_count);
-        } else if (ctrl->level == PZ_ENEMY_LEVEL_2) {
-            // Level 2: Cover-based
-            update_level2_ai(ctrl, tank, ai_mgr->tank_mgr, ai_mgr->map,
-                player_pos, mine_mgr, rng, toxic_cloud, dt, i,
-                ai_mgr->controller_count);
-        } else {
-            // Stationary turret only (sentry, sniper)
-            // But they WILL move to escape toxic cloud!
-            pz_vec2 move_dir = { 0.0f, 0.0f };
-            float move_speed = 3.0f;
-
-            // Check for mine threats first
-            if (ctrl->targeting_mine) {
-                pz_vec2 away = steer_away_from_mines(mine_mgr, tank->pos,
-                    (pz_vec2) { 0.0f, 0.0f }, AI_MINE_AVOID_RADIUS,
-                    AI_MINE_PANIC_RADIUS);
-                move_dir = away;
-            }
-
-            // Toxic cloud escape is high priority - use A* pathfinding
-            if (ai_update_toxic_escape(ctrl, ai_mgr->map, toxic_cloud,
-                    tank->pos, dt, i, ai_mgr->controller_count)) {
-                pz_vec2 escape_dir
-                    = ai_get_toxic_escape_move(ctrl, toxic_cloud, tank->pos);
-                if (pz_vec2_len_sq(escape_dir) > 0.001f) {
-                    move_dir = escape_dir;
-                    // Move faster when escaping toxic
-                    if (ctrl->toxic_urgency > 0.5f) {
-                        move_speed = 4.5f;
-                    }
-                }
-            }
-
-            // Apply mine avoidance steering to final direction
-            move_dir = steer_away_from_mines(mine_mgr, tank->pos, move_dir,
-                AI_MINE_AVOID_RADIUS, AI_MINE_PANIC_RADIUS);
-
-            // Apply separation steering to avoid crowding other tanks
-            // Use stronger separation when escaping toxic!
-            float sep_urgency = 0.0f;
-            pz_vec2 separation = ai_compute_separation(
-                ai_mgr->tank_mgr, tank->pos, tank->id, 3.0f, &sep_urgency);
-            float sep_blend = (ctrl->toxic_urgency > 0.5f) ? 1.5f : 0.8f;
-            move_dir = ai_apply_separation(
-                move_dir, separation, sep_urgency, sep_blend);
-
-            // Apply detour logic when escaping toxic and blocked by other tanks
-            if (ctrl->toxic_escaping) {
-                ai_apply_detour(ctrl, tank, ai_mgr->map, ai_mgr->tank_mgr,
-                    &move_dir, rng, dt);
-            }
-
-            pz_tank_input input = {
-                .move_dir = pz_vec2_scale(move_dir, move_speed),
-                .target_turret = ctrl->current_aim_angle,
-                .fire = false,
-            };
-            pz_tank_update(
-                ai_mgr->tank_mgr, tank, &input, ai_mgr->map, toxic_cloud, dt);
-        }
+        ai_update_behavior(ctrl, tank, ai_mgr->tank_mgr, ai_mgr->map,
+            player_pos, proj_mgr, mine_mgr, rng, toxic_cloud, dt, i,
+            ai_mgr->controller_count, stats);
 
         // Update fire timer
         if (ctrl->fire_timer > 0.0f) {
@@ -2637,10 +2813,10 @@ pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
 
         // Calculate fire confidence for sentry and skirmisher
         // Higher confidence = more bullets allowed, lower hesitation
-        if (ctrl->level == PZ_ENEMY_LEVEL_1
-            || ctrl->level == PZ_ENEMY_LEVEL_2) {
+        if (uses_bounce_shots
+            && !ai_has_behavior(ctrl, PZ_AI_BEHAVIOR_STRAFE)) {
             bool has_target = ctrl->can_see_player || ctrl->has_bounce_shot
-                || ctrl->defending_projectile;
+                || ctrl->defending_projectile || ctrl->targeting_mine;
 
             // Trigger hesitation when acquiring a new target
             if (has_target && !ctrl->had_target_last_frame) {
@@ -2743,28 +2919,18 @@ pz_ai_fire(pz_ai_manager *ai_mgr, pz_projectile_manager *proj_mgr)
             continue;
         }
 
-        // Level-specific firing conditions
-        if (ctrl->level == PZ_ENEMY_LEVEL_3) {
-            // Level 3: Use wants_to_fire flag set by state machine
-            if (!ctrl->wants_to_fire && !ctrl->targeting_mine) {
-                continue;
-            }
-        } else if (ctrl->level == PZ_ENEMY_LEVEL_2) {
-            // Level 2: Fire whenever not behind cover (unless clearing mines)
-            if (ctrl->state == PZ_AI_STATE_IN_COVER && !ctrl->targeting_mine) {
-                continue;
-            }
+        const pz_enemy_stats *stats = pz_enemy_get_stats(ctrl->type);
+
+        if (!ctrl->wants_to_fire && !ctrl->targeting_mine) {
+            continue;
         }
-        // Level 1: Always try to fire (stationary turret, including bounce
-        // shots)
 
         // Check if we can fire
         // Level 1: Can fire if we see player OR have a bounce shot
         // Others: Need to see the player
         bool can_attempt_fire = ctrl->can_see_player || ctrl->targeting_mine;
-        bool uses_bounce_shots = (ctrl->level == PZ_ENEMY_LEVEL_1
-            || ctrl->level == PZ_ENEMY_LEVEL_2
-            || ctrl->level == PZ_ENEMY_LEVEL_SNIPER);
+        bool uses_bounce_shots
+            = ai_has_behavior(ctrl, PZ_AI_BEHAVIOR_BOUNCE_SHOTS);
         if (uses_bounce_shots && ctrl->has_bounce_shot) {
             can_attempt_fire = true;
         }
@@ -2787,20 +2953,10 @@ pz_ai_fire(pz_ai_manager *ai_mgr, pz_projectile_manager *proj_mgr)
 
         float aim_error = fabsf(
             normalize_angle(ctrl->target_aim_angle - ctrl->current_aim_angle));
-        float aim_tolerance = 0.26f; // ~15 degrees
-        if (ctrl->level == PZ_ENEMY_LEVEL_3) {
-            // Machine gun hunters can fire with looser alignment.
-            aim_tolerance = 0.52f; // ~30 degrees
-        } else if (ctrl->level == PZ_ENEMY_LEVEL_SNIPER) {
-            // Snipers are precise and only shoot when nearly aligned.
-            aim_tolerance = 0.14f; // ~8 degrees
-        }
+        float aim_tolerance = stats->aim_tolerance;
         if (aim_error > aim_tolerance) {
             continue;
         }
-
-        // Get enemy stats for weapon properties
-        const pz_enemy_stats *stats = pz_enemy_get_stats(ctrl->level);
 
         // Get weapon stats for this enemy
         const pz_weapon_stats *weapon = pz_weapon_get_stats(stats->weapon_type);
@@ -2809,14 +2965,15 @@ pz_ai_fire(pz_ai_manager *ai_mgr, pz_projectile_manager *proj_mgr)
         // High confidence (direct LOS): allow more bullets
         // Low confidence (bounce shot): limit to fewer bullets
         int max_projectiles = weapon->max_active_projectiles;
-        if (ctrl->level == PZ_ENEMY_LEVEL_1
-            || ctrl->level == PZ_ENEMY_LEVEL_2) {
+        if (uses_bounce_shots) {
             if (ctrl->fire_confidence >= 0.8f) {
-                // Direct LOS: sentry gets 3, skirmisher gets 2
-                max_projectiles = (ctrl->level == PZ_ENEMY_LEVEL_1) ? 3 : 2;
+                if (stats->max_projectiles_direct > 0) {
+                    max_projectiles = stats->max_projectiles_direct;
+                }
             } else if (ctrl->fire_confidence > 0.0f) {
-                // Bounce shot: only 1 bullet at a time
-                max_projectiles = 1;
+                if (stats->max_projectiles_bounce > 0) {
+                    max_projectiles = stats->max_projectiles_bounce;
+                }
             }
             if (ctrl->defending_projectile) {
                 max_projectiles = 1;
@@ -2839,7 +2996,7 @@ pz_ai_fire(pz_ai_manager *ai_mgr, pz_projectile_manager *proj_mgr)
         // Friendly fire check - don't shoot if we'd hit another enemy tank
         // Use a reasonable range for the check (longer for ricochet weapons)
         float ff_check_range = 15.0f;
-        const pz_enemy_stats *stats_ff = pz_enemy_get_stats(ctrl->level);
+        const pz_enemy_stats *stats_ff = pz_enemy_get_stats(ctrl->type);
         if (stats_ff->max_bounces > 0) {
             ff_check_range = 25.0f; // Longer range for ricochet weapons
         }
@@ -2870,13 +3027,7 @@ pz_ai_fire(pz_ai_manager *ai_mgr, pz_projectile_manager *proj_mgr)
         }
 
         // Reset fire timer to the weapon's max fire rate (same as player).
-        float fire_cooldown = weapon->fire_cooldown;
-        if (ctrl->level == PZ_ENEMY_LEVEL_3) {
-            // Keep the hunter firing aggressively without affecting other
-            // types.
-            fire_cooldown *= 0.8f;
-        }
-        ctrl->fire_timer = fire_cooldown;
+        ctrl->fire_timer = weapon->fire_cooldown * stats->fire_cooldown_scale;
         fired++;
 
         // Trigger visual recoil
@@ -2885,7 +3036,7 @@ pz_ai_fire(pz_ai_manager *ai_mgr, pz_projectile_manager *proj_mgr)
         // Track shots for cover behavior
         ctrl->shots_fired++;
 
-        // Level 1: After firing a bounce shot, search for a new one next time
+        // After firing a bounce shot, search for a new one next time.
         if (uses_bounce_shots && ctrl->has_bounce_shot) {
             ctrl->has_bounce_shot = false;
             ctrl->bounce_shot_search_timer = 0.3f; // Brief delay before
@@ -2893,7 +3044,7 @@ pz_ai_fire(pz_ai_manager *ai_mgr, pz_projectile_manager *proj_mgr)
         }
 
         pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME, "AI tank %d fired (%s)", tank->id,
-            pz_enemy_level_name(ctrl->level));
+            pz_enemy_type_name(ctrl->type));
     }
 
     return fired;
@@ -2926,7 +3077,7 @@ pz_ai_count_alive(const pz_ai_manager *ai_mgr)
 }
 
 bool
-pz_ai_has_level3_alive(const pz_ai_manager *ai_mgr)
+pz_ai_has_elite_alive(const pz_ai_manager *ai_mgr)
 {
     if (!ai_mgr || !ai_mgr->tank_mgr) {
         return false;
@@ -2934,8 +3085,8 @@ pz_ai_has_level3_alive(const pz_ai_manager *ai_mgr)
 
     for (int i = 0; i < ai_mgr->controller_count; i++) {
         const pz_ai_controller *ctrl = &ai_mgr->controllers[i];
-        if (ctrl->level == PZ_ENEMY_LEVEL_3
-            || ctrl->level == PZ_ENEMY_LEVEL_SNIPER) {
+        if (ctrl->type == PZ_ENEMY_TYPE_HUNTER
+            || ctrl->type == PZ_ENEMY_TYPE_SNIPER) {
             pz_tank *tank = pz_tank_get_by_id(ai_mgr->tank_mgr, ctrl->tank_id);
             if (tank && !(tank->flags & PZ_TANK_FLAG_DEAD)) {
                 return true;

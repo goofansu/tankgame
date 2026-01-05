@@ -51,7 +51,7 @@ typedef struct pz_spawn_point {
 typedef struct pz_enemy_spawn {
     pz_vec2 pos;
     float angle; // Facing direction in radians
-    int level; // Enemy type (named in map files, stored as enum value)
+    int type; // Enemy type (named in map files, stored as enum value)
 } pz_enemy_spawn;
 
 // Powerup spawn data

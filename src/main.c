@@ -485,7 +485,7 @@ map_session_load(map_session *session, const char *map_path)
         const pz_enemy_spawn *es = pz_map_get_enemy(session->map, i);
         if (es) {
             pz_ai_spawn_enemy(
-                session->ai_mgr, es->pos, es->angle, (pz_enemy_level)es->level);
+                session->ai_mgr, es->pos, es->angle, (pz_enemy_type)es->type);
         }
     }
     session->initial_enemy_count = enemy_count;
@@ -581,7 +581,7 @@ map_session_reset(map_session *session)
             const pz_enemy_spawn *es = pz_map_get_enemy(session->map, i);
             if (es) {
                 pz_ai_spawn_enemy(session->ai_mgr, es->pos, es->angle,
-                    (pz_enemy_level)es->level);
+                    (pz_enemy_type)es->type);
             }
         }
     }
@@ -1965,9 +1965,9 @@ done_script_commands:
 
     if (g_app.game_music && g_app.session.tank_mgr) {
         int enemies_alive = pz_tank_count_enemies_alive(g_app.session.tank_mgr);
-        bool has_level3 = pz_ai_has_level3_alive(g_app.session.ai_mgr);
+        bool has_elite = pz_ai_has_elite_alive(g_app.session.ai_mgr);
         bool level_complete = (g_app.state == GAME_STATE_LEVEL_COMPLETE);
-        pz_game_music_update(g_app.game_music, enemies_alive, has_level3,
+        pz_game_music_update(g_app.game_music, enemies_alive, has_elite,
             level_complete, frame_dt);
     }
 

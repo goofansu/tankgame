@@ -1017,7 +1017,7 @@ parse_spawn_tag(const char *params, pz_spawn_point *spawn)
 }
 
 static int
-parse_enemy_level_value(const char *value)
+parse_enemy_type_value(const char *value)
 {
     if (!value || !*value) {
         return 1;
@@ -1044,9 +1044,9 @@ parse_enemy_level_value(const char *value)
 }
 
 static const char *
-enemy_level_name(int level)
+enemy_type_name(int type)
 {
-    switch (level) {
+    switch (type) {
     case 1:
         return "sentry";
     case 2:
@@ -1065,7 +1065,7 @@ static bool
 parse_enemy_tag(const char *params, pz_enemy_spawn *enemy)
 {
     enemy->angle = 0.0f;
-    enemy->level = 1;
+    enemy->type = 1;
 
     const char *p = params;
     while (*p) {
@@ -1090,7 +1090,7 @@ parse_enemy_tag(const char *params, pz_enemy_spawn *enemy)
             }
             strncpy(value, start, len);
             value[len] = '\0';
-            enemy->level = parse_enemy_level_value(value);
+            enemy->type = parse_enemy_type_value(value);
             p = end;
             continue;
         } else if (strncmp(p, "type=", 5) == 0) {
@@ -1106,7 +1106,7 @@ parse_enemy_tag(const char *params, pz_enemy_spawn *enemy)
             }
             strncpy(value, start, len);
             value[len] = '\0';
-            enemy->level = parse_enemy_level_value(value);
+            enemy->type = parse_enemy_type_value(value);
             p = end;
             continue;
         }
@@ -1572,15 +1572,15 @@ pz_map_load(const char *path)
         // Legacy enemy format: enemy x y angle level|type
         else if (strncmp(p, "enemy ", 6) == 0) {
             float ex, ey, angle;
-            char level_value[32];
-            if (sscanf(p + 6, "%f %f %f %31s", &ex, &ey, &angle, level_value)
+            char type_value[32];
+            if (sscanf(p + 6, "%f %f %f %31s", &ex, &ey, &angle, type_value)
                 == 4) {
-                int level = parse_enemy_level_value(level_value);
+                int type = parse_enemy_type_value(type_value);
                 if (map->enemy_count < PZ_MAP_MAX_ENEMIES) {
                     map->enemies[map->enemy_count++] = (pz_enemy_spawn) {
                         .pos = { ex, ey },
                         .angle = angle,
-                        .level = level,
+                        .type = type,
                     };
                 }
             }
@@ -1941,7 +1941,7 @@ pz_map_save(const pz_map *map, const char *path)
         for (int i = 0; i < map->enemy_count; i++) {
             const pz_enemy_spawn *es = &map->enemies[i];
             written = snprintf(p, remaining, "enemy %.2f %.2f %.3f %s\n",
-                es->pos.x, es->pos.y, es->angle, enemy_level_name(es->level));
+                es->pos.x, es->pos.y, es->angle, enemy_type_name(es->type));
             p += written;
             remaining -= written;
         }

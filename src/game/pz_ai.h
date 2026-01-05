@@ -29,19 +29,19 @@ typedef struct pz_toxic_cloud pz_toxic_cloud;
  * Enemy Types
  * ============================================================================
  *
- * Level 1: Sentry enemy
+ * Sentry enemy
  *   - 10 HP
  *   - Default weapon (1 bounce)
  *   - Normal fire rate
  *   - Stationary (turret only)
  *
- * Level 2: Skirmisher enemy
+ * Skirmisher enemy
  *   - 15 HP
  *   - Default weapon (1 bounce)
  *   - Faster fire rate
  *   - Uses cover: hides behind walls, peeks out to fire
  *
- * Level 3: Hunter enemy
+ * Hunter enemy
  *   - 20 HP
  *   - Machine gun (no bounces)
  *   - Fast fire rate
@@ -49,7 +49,7 @@ typedef struct pz_toxic_cloud pz_toxic_cloud;
  *   - Evades incoming bullets
  *   - Seeks cover when low health or reloading
  *
- * Level 4: Sniper enemy
+ * Sniper enemy
  *   - 12 HP
  *   - Ricochet weapon (3 bounces)
  *   - Slow fire rate, long-range shots
@@ -57,28 +57,50 @@ typedef struct pz_toxic_cloud pz_toxic_cloud;
  */
 
 typedef enum {
-    PZ_ENEMY_LEVEL_1 = 1,
-    PZ_ENEMY_LEVEL_2 = 2,
-    PZ_ENEMY_LEVEL_3 = 3,
-    PZ_ENEMY_LEVEL_SNIPER = 4,
-} pz_enemy_level;
+    PZ_ENEMY_TYPE_SENTRY = 1,
+    PZ_ENEMY_TYPE_SKIRMISHER = 2,
+    PZ_ENEMY_TYPE_HUNTER = 3,
+    PZ_ENEMY_TYPE_SNIPER = 4,
+} pz_enemy_type;
 
-// Enemy stats based on level
+typedef enum {
+    PZ_AI_BEHAVIOR_MOVE = 1u << 0,
+    PZ_AI_BEHAVIOR_PATHFIND = 1u << 1,
+    PZ_AI_BEHAVIOR_USE_COVER = 1u << 2,
+    PZ_AI_BEHAVIOR_CHASE = 1u << 3,
+    PZ_AI_BEHAVIOR_FLANK = 1u << 4,
+    PZ_AI_BEHAVIOR_EVADE = 1u << 5,
+    PZ_AI_BEHAVIOR_STRAFE = 1u << 6,
+    PZ_AI_BEHAVIOR_BOUNCE_SHOTS = 1u << 7,
+    PZ_AI_BEHAVIOR_DEFEND_PROJECTILES = 1u << 8,
+    PZ_AI_BEHAVIOR_TARGET_MINES = 1u << 9,
+    PZ_AI_BEHAVIOR_TOXIC_ESCAPE = 1u << 10,
+    PZ_AI_BEHAVIOR_REQUIRE_BOUNCE_SHOT = 1u << 11,
+} pz_ai_behavior_flags;
+
+// Enemy stats based on type
 typedef struct pz_enemy_stats {
     int health;
     int max_bounces; // Weapon bounces
-    float fire_cooldown; // Seconds between shots
+    float fire_cooldown_scale; // Multiplier applied to weapon cooldown
     float aim_speed; // Turret rotation speed multiplier
+    float aim_tolerance; // Allowed aim error in radians
+    float move_speed; // Base movement speed for AI movement
     pz_vec4 body_color; // Tank body color
     pz_powerup_type weapon_type; // Default weapon for this enemy
     float projectile_speed_scale; // Multiplier applied to weapon speed
     float bounce_shot_range; // Bounce-search range for stationary types
     float projectile_defense_chance; // 0.0 disables incoming-shot defense
+    int bounce_shot_samples; // Angular samples for ricochet search
+    int max_shots_per_peek; // Cover peek firing limit
+    int max_projectiles_direct; // Max active shots for direct LOS
+    int max_projectiles_bounce; // Max active shots for bounce shots
+    uint32_t behavior_flags; // pz_ai_behavior_flags
 } pz_enemy_stats;
 
-// Get stats for an enemy level
-const pz_enemy_stats *pz_enemy_get_stats(pz_enemy_level level);
-const char *pz_enemy_level_name(pz_enemy_level level);
+// Get stats for an enemy type
+const pz_enemy_stats *pz_enemy_get_stats(pz_enemy_type type);
+const char *pz_enemy_type_name(pz_enemy_type type);
 
 /* ============================================================================
  * AI Controller
@@ -103,7 +125,8 @@ typedef enum {
 // AI state for a single enemy
 typedef struct pz_ai_controller {
     int tank_id; // Which tank this AI controls
-    pz_enemy_level level; // Enemy level (determines behavior)
+    pz_enemy_type type; // Enemy type (determines behavior)
+    uint32_t behavior_flags; // pz_ai_behavior_flags
 
     // Aiming state
     float current_aim_angle; // Current turret aim (for smoothing)
@@ -117,7 +140,7 @@ typedef struct pz_ai_controller {
     float reaction_delay; // Delay before reacting to player movement
     float last_seen_time; // When we last saw the player
 
-    // Cover behavior (Level 2+)
+    // Cover behavior
     pz_ai_state state; // Current behavior state
     pz_vec2 cover_pos; // Position behind cover
     pz_vec2 peek_pos; // Position when peeking out to fire
@@ -128,7 +151,7 @@ typedef struct pz_ai_controller {
     int shots_fired; // Number of shots fired while peeking
     int max_shots_per_peek; // How many shots to fire before retreating
 
-    // Level 3 aggressive behavior
+    // Aggressive behavior
     pz_vec2 evade_dir; // Direction to evade when dodging
     float evade_timer; // Duration of current evade
     float aggression_timer; // Time until switching to aggressive behavior
@@ -137,7 +160,7 @@ typedef struct pz_ai_controller {
     pz_vec2 flank_target; // Target position for flanking
     bool wants_to_fire; // Request to fire (checked in pz_ai_fire)
 
-    // Bounce shot targeting (Level 1)
+    // Bounce shot targeting
     bool has_bounce_shot; // Whether we found a valid bounce shot
     float bounce_shot_angle; // Angle to aim for bounce shot
     float bounce_shot_search_timer; // Cooldown for searching new bounce shots
@@ -155,11 +178,10 @@ typedef struct pz_ai_controller {
     pz_vec2 mine_target_pos; // Mine position we're targeting
     float mine_target_dist; // Distance to targeted mine
 
-    // A* Pathfinding (Level 2/3)
+    // A* Pathfinding
     pz_path path; // Current path being followed
     pz_vec2 path_goal; // Goal position for current path
     float path_update_timer; // Time until next repath
-    bool use_pathfinding; // Whether this AI uses pathfinding
 
     // Toxic cloud escape behavior
     bool toxic_escaping; // Currently in toxic escape mode
@@ -204,7 +226,7 @@ void pz_ai_manager_set_map(pz_ai_manager *ai_mgr, const pz_map *map);
 // Spawn an AI-controlled enemy tank
 // Returns the tank pointer, or NULL if failed
 pz_tank *pz_ai_spawn_enemy(
-    pz_ai_manager *ai_mgr, pz_vec2 pos, float angle, pz_enemy_level level);
+    pz_ai_manager *ai_mgr, pz_vec2 pos, float angle, pz_enemy_type type);
 
 // Update all AI controllers
 // This generates pz_tank_input for each AI-controlled tank
@@ -222,7 +244,7 @@ int pz_ai_fire(pz_ai_manager *ai_mgr, pz_projectile_manager *proj_mgr);
 
 // Get count of alive AI-controlled enemies
 int pz_ai_count_alive(const pz_ai_manager *ai_mgr);
-bool pz_ai_has_level3_alive(const pz_ai_manager *ai_mgr);
+bool pz_ai_has_elite_alive(const pz_ai_manager *ai_mgr);
 
 // Check if a tank is AI-controlled
 bool pz_ai_is_controlled(const pz_ai_manager *ai_mgr, int tank_id);
