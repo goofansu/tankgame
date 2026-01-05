@@ -1,0 +1,16 @@
+---
+# Clang-Tidy Configuration for Tank Game
+# Only enable compiler-like checks, disable noisy stylistic ones
+Checks: >
+  clang-diagnostic-*,
+  clang-analyzer-*,
+  -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,
+  -clang-analyzer-security.FloatLoopCounter,
+  -clang-diagnostic-pedantic,
+  -clang-diagnostic-gnu-redeclared-enum
+
+WarningsAsErrors: ''
+
+HeaderFilterRegex: 'src/.*'
+
+FormatStyle: file
