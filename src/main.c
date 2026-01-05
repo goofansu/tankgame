@@ -823,21 +823,57 @@ app_init(void)
     pz_log_init();
     pz_time_init();
 
-    g_app.audio = pz_audio_init();
-    if (g_app.audio) {
-        int sample_rate = pz_audio_get_sample_rate(g_app.audio);
-        g_app.game_music = pz_game_music_create("assets/sounds/soundfont.sf2");
-        g_app.game_sfx = pz_game_sfx_create(sample_rate);
+    // Check environment variables for audio control
+    // PZ_MUSIC=0 disables music, PZ_SOUNDS=0 disables sound effects
+    // Debug scripts automatically disable all audio
+    bool enable_music = true;
+    bool enable_sounds = true;
 
-        if (g_app.game_music || g_app.game_sfx) {
-            pz_audio_set_callback(g_app.audio, audio_callback, NULL);
-        } else {
-            pz_audio_shutdown(g_app.audio);
-            g_app.audio = NULL;
+    const char *env_music = getenv("PZ_MUSIC");
+    const char *env_sounds = getenv("PZ_SOUNDS");
+
+    if (env_music && strcmp(env_music, "0") == 0) {
+        enable_music = false;
+        pz_log(PZ_LOG_INFO, PZ_LOG_CAT_AUDIO, "Music disabled via PZ_MUSIC=0");
+    }
+    if (env_sounds && strcmp(env_sounds, "0") == 0) {
+        enable_sounds = false;
+        pz_log(
+            PZ_LOG_INFO, PZ_LOG_CAT_AUDIO, "Sounds disabled via PZ_SOUNDS=0");
+    }
+
+    // Debug scripts run silently
+    if (g_app.debug_script_path_arg) {
+        enable_music = false;
+        enable_sounds = false;
+        pz_log(PZ_LOG_INFO, PZ_LOG_CAT_AUDIO,
+            "Audio disabled for debug script execution");
+    }
+
+    g_app.audio = NULL;
+    g_app.game_music = NULL;
+    g_app.game_sfx = NULL;
+
+    if (enable_music || enable_sounds) {
+        g_app.audio = pz_audio_init();
+        if (g_app.audio) {
+            int sample_rate = pz_audio_get_sample_rate(g_app.audio);
+
+            if (enable_music) {
+                g_app.game_music
+                    = pz_game_music_create("assets/sounds/soundfont.sf2");
+            }
+            if (enable_sounds) {
+                g_app.game_sfx = pz_game_sfx_create(sample_rate);
+            }
+
+            if (g_app.game_music || g_app.game_sfx) {
+                pz_audio_set_callback(g_app.audio, audio_callback, NULL);
+            } else {
+                pz_audio_shutdown(g_app.audio);
+                g_app.audio = NULL;
+            }
         }
-    } else {
-        g_app.game_music = NULL;
-        g_app.game_sfx = NULL;
     }
 
     // Initialize core systems (persistent across maps)

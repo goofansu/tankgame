@@ -14,6 +14,24 @@ For gameplay scripting (if added later), use a proper language like Lua.
 ./build/tankgame --debug-script path/to/script.dbgscript
 ```
 
+**Note:** Audio is automatically disabled when running debug scripts.
+
+## Environment Variables
+
+These environment variables control audio independently of debug scripts:
+
+| Variable | Description |
+|----------|-------------|
+| `PZ_MUSIC=0` | Disable music |
+| `PZ_SOUNDS=0` | Disable sound effects |
+
+Example:
+```bash
+PZ_MUSIC=0 ./build/tankgame                    # Play without music
+PZ_SOUNDS=0 ./build/tankgame                   # Play without sound effects
+PZ_MUSIC=0 PZ_SOUNDS=0 ./build/tankgame        # Silent mode
+```
+
 ## Temporary Files
 
 Place all temporary debug artifacts (screenshots, state dumps) in `debug-temp/` which is gitignored.
