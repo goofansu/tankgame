@@ -103,7 +103,7 @@ pz_toxic_cloud_spawn_particles(
         return;
     }
 
-    float density = 6.0f;
+    float density = 2.0f;
     float target_active = toxic_area / density;
     float avg_lifetime = 3.2f;
     float spawn_rate = target_active / avg_lifetime;

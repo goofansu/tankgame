@@ -1,0 +1,8 @@
+# Slime - slippery hazard tile
+name slime
+ground_texture assets/textures/slime.png
+speed_multiplier 0.7
+friction 0.3
+ground_texture_scale 6
+wall_texture_scale 6
+blend true

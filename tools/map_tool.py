@@ -40,6 +40,40 @@ class TileDef:
     def __str__(self):
         return f"tile {self.symbol} {self.name}"
 
+@dataclass
+class BackgroundGradient:
+    direction: str  # "vertical" or "horizontal"
+    top_color: tuple[float, float, float]
+    bottom_color: tuple[float, float, float]
+    
+    def __str__(self):
+        return (f"{self.direction} "
+                f"{self.top_color[0]} {self.top_color[1]} {self.top_color[2]} "
+                f"{self.bottom_color[0]} {self.bottom_color[1]} {self.bottom_color[2]}")
+
+@dataclass
+class InlineSpawn:
+    """Inline spawn definition (spawn X Y ANGLE [TEAM TEAM_SPAWN])"""
+    x: int
+    y: int
+    angle: float
+    team: int = 0
+    team_spawn: int = 0
+    
+    def __str__(self):
+        return f"spawn {self.x} {self.y} {self.angle} {self.team} {self.team_spawn}"
+
+@dataclass
+class InlineEnemy:
+    """Inline enemy definition (enemy X Y ANGLE TYPE)"""
+    x: int
+    y: int
+    angle: float
+    enemy_type: str
+    
+    def __str__(self):
+        return f"enemy {self.x} {self.y} {self.angle} {self.enemy_type}"
+
 @dataclass 
 class Map:
     name: str = "Unnamed"
@@ -51,6 +85,10 @@ class Map:
     tile_defs: list[TileDef] = field(default_factory=list)
     tag_defs: list[TagDef] = field(default_factory=list)
     
+    # Inline spawns and enemies (alternative to tags)
+    inline_spawns: list[InlineSpawn] = field(default_factory=list)
+    inline_enemies: list[InlineEnemy] = field(default_factory=list)
+    
     # Lighting
     sun_direction: Optional[tuple[float, float, float]] = None
     sun_color: Optional[tuple[float, float, float]] = None
@@ -58,12 +96,14 @@ class Map:
     ambient_darkness: Optional[float] = None
     
     # Background
-    background_gradient: Optional[str] = None
+    background_gradient: Optional[BackgroundGradient] = None
     
     # Water
     water_level: Optional[int] = None
     water_color: Optional[tuple[float, float, float]] = None
     wave_strength: Optional[float] = None
+    wind_direction: Optional[float] = None
+    wind_strength: Optional[float] = None
     
     # Fog
     fog_level: Optional[int] = None
@@ -276,7 +316,16 @@ def parse_map(content: str) -> Map:
         elif cmd == 'ambient_darkness':
             m.ambient_darkness = float(rest)
         elif cmd == 'background_gradient':
-            m.background_gradient = rest
+            # Parse: vertical/horizontal R G B R G B
+            parts = rest.split()
+            if len(parts) >= 7:
+                direction = parts[0]
+                top_color = (float(parts[1]), float(parts[2]), float(parts[3]))
+                bottom_color = (float(parts[4]), float(parts[5]), float(parts[6]))
+                m.background_gradient = BackgroundGradient(direction, top_color, bottom_color)
+            elif len(parts) == 1:
+                # Simple string fallback
+                m.background_gradient = BackgroundGradient(parts[0], (0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
         elif cmd == 'water_level':
             m.water_level = int(rest)
         elif cmd == 'water_color':
@@ -316,6 +365,29 @@ def parse_map(content: str) -> Map:
             vals = [float(x) for x in rest.split()]
             if len(vals) == 2:
                 m.toxic_center = (vals[0], vals[1])
+        elif cmd == 'wind_direction':
+            m.wind_direction = float(rest)
+        elif cmd == 'wind_strength':
+            m.wind_strength = float(rest)
+        elif cmd == 'spawn':
+            # Inline spawn: spawn X Y ANGLE [TEAM [TEAM_SPAWN]]
+            parts = rest.split()
+            if len(parts) >= 3:
+                x = int(parts[0])
+                y = int(parts[1])
+                angle = float(parts[2])
+                team = int(parts[3]) if len(parts) > 3 else 0
+                team_spawn = int(parts[4]) if len(parts) > 4 else 0
+                m.inline_spawns.append(InlineSpawn(x, y, angle, team, team_spawn))
+        elif cmd == 'enemy':
+            # Inline enemy: enemy X Y ANGLE TYPE
+            parts = rest.split()
+            if len(parts) >= 4:
+                x = int(parts[0])
+                y = int(parts[1])
+                angle = float(parts[2])
+                enemy_type = parts[3]
+                m.inline_enemies.append(InlineEnemy(x, y, angle, enemy_type))
     
     # Parse grid
     if grid_lines:
@@ -380,6 +452,10 @@ def serialize_map(m: Map) -> str:
         lines.append(f"water_color {m.water_color[0]} {m.water_color[1]} {m.water_color[2]}")
     if m.wave_strength is not None and m.wave_strength != 1.0:
         lines.append(f"wave_strength {m.wave_strength}")
+    if m.wind_direction is not None:
+        lines.append(f"wind_direction {m.wind_direction}")
+    if m.wind_strength is not None:
+        lines.append(f"wind_strength {m.wind_strength}")
     
     # Fog
     if m.fog_level is not None:
@@ -407,6 +483,12 @@ def serialize_map(m: Map) -> str:
         lines.append(f"toxic_color {m.toxic_color[0]} {m.toxic_color[1]} {m.toxic_color[2]}")
     if m.toxic_center:
         lines.append(f"toxic_center {m.toxic_center[0]} {m.toxic_center[1]}")
+    
+    # Inline spawns and enemies
+    for spawn in m.inline_spawns:
+        lines.append(str(spawn))
+    for enemy in m.inline_enemies:
+        lines.append(str(enemy))
     
     return "\n".join(lines) + "\n"
 
@@ -446,8 +528,16 @@ def print_map_info(m: Map):
             spawns.append(tag.name)
         elif tag.type == 'enemy':
             enemies.append(tag.name)
-    print(f"Spawns: {spawns}")
-    print(f"Enemies: {enemies}")
+    print(f"Spawns (tags): {spawns}")
+    print(f"Enemies (tags): {enemies}")
+    if m.inline_spawns:
+        print(f"Inline spawns: {len(m.inline_spawns)}")
+    if m.inline_enemies:
+        print(f"Inline enemies: {len(m.inline_enemies)}")
+    if m.wind_direction is not None:
+        print(f"Wind direction: {m.wind_direction}")
+    if m.wind_strength is not None:
+        print(f"Wind strength: {m.wind_strength}")
 
 
 def print_help():
@@ -477,11 +567,23 @@ CLASSES:
     TileDef(symbol: str, name: str)
         Maps a symbol (like '#') to a tile name (like 'wall').
     
+    BackgroundGradient(direction: str, top_color: tuple, bottom_color: tuple)
+        Background gradient with direction ("vertical"/"horizontal") and two RGB colors.
+    
+    InlineSpawn(x: int, y: int, angle: float, team: int, team_spawn: int)
+        Inline spawn point (alternative to using tags).
+    
+    InlineEnemy(x: int, y: int, angle: float, enemy_type: str)
+        Inline enemy definition (alternative to using tags).
+    
     Map
         The main map container with cells, definitions, and properties.
         Properties: name, tile_size, width, height, cells, tile_defs, tag_defs
+        Inline objects: inline_spawns, inline_enemies
         Lighting: sun_direction, sun_color, ambient_color, ambient_darkness
-        Effects: water_level, water_color, wave_strength, fog_level, fog_color, background_gradient
+        Background: background_gradient (BackgroundGradient object)
+        Water: water_level, water_color, wave_strength, wind_direction, wind_strength
+        Fog: fog_level, fog_color
         Toxic: toxic_enabled, toxic_delay, toxic_duration, toxic_safe_zone, toxic_damage, toxic_interval, toxic_slowdown, toxic_color, toxic_center
 
 MAP METHODS:
@@ -504,7 +606,8 @@ FUNCTIONS:
     serialize_map(map) -> str        Serialize map to string
 
 EXAMPLE USAGE:
-    from tools.map_tool import load_map, save_map, Map, Cell, TagDef, TileDef
+    from tools.map_tool import (load_map, save_map, Map, Cell, TagDef, TileDef,
+                                 BackgroundGradient, InlineSpawn, InlineEnemy)
     
     # Load and modify existing map
     m = load_map("assets/maps/arena.map")
@@ -537,6 +640,19 @@ EXAMPLE USAGE:
     m.sun_direction = (-0.5, -1.0, -0.3)
     m.sun_color = (1.0, 0.95, 0.8)
     m.ambient_color = (0.3, 0.35, 0.4)
+    
+    # Set background gradient
+    m.background_gradient = BackgroundGradient("vertical", (0.5, 0.6, 0.8), (0.8, 0.7, 0.5))
+    
+    # Set water with wind
+    m.water_level = -1
+    m.water_color = (0.2, 0.4, 0.6)
+    m.wind_direction = 2.36  # radians
+    m.wind_strength = 3.0
+    
+    # Use inline spawns (alternative to tags)
+    m.inline_spawns.append(InlineSpawn(5, 5, 0.0, team=0))
+    m.inline_enemies.append(InlineEnemy(8, 8, 3.14, "hunter"))
     
     save_map(m, "assets/maps/test.map")
 

@@ -601,7 +601,7 @@ pz_particle_spawn_toxic(pz_particle_manager *mgr, pz_vec3 position,
     p.scale = p.scale_start;
 
     edge_fade = pz_clampf(edge_fade, 0.3f, 1.0f);
-    p.alpha_start = pz_rng_range(&mgr->rng, 0.25f, 0.45f) * edge_fade;
+    p.alpha_start = pz_rng_range(&mgr->rng, 0.50f, 0.75f) * edge_fade;
     p.alpha_end = 0.0f;
     p.alpha = p.alpha_start;
 

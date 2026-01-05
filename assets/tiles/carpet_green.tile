@@ -1,0 +1,8 @@
+# Green carpet - slightly slower movement
+name carpet_green
+ground_texture assets/textures/carpet_green.png
+wall_texture assets/textures/wood_pine_light.png
+speed_multiplier 0.9
+friction 1.0
+ground_texture_scale 6
+blend true
