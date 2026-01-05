@@ -143,4 +143,7 @@ void pz_sim_hash_vec2(pz_sim *sim, float x, float y);
 // Get the hash from the last completed tick
 uint32_t pz_sim_get_hash(const pz_sim *sim);
 
+// Set RNG seed (useful for script reproducibility)
+void pz_sim_set_seed(pz_sim *sim, uint32_t seed);
+
 #endif // PZ_SIM_H

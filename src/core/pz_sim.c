@@ -238,3 +238,12 @@ pz_sim_get_hash(const pz_sim *sim)
 {
     return sim->last_hash_value;
 }
+
+void
+pz_sim_set_seed(pz_sim *sim, uint32_t seed)
+{
+    if (sim) {
+        sim->initial_seed = seed;
+        pz_rng_seed(&sim->rng, seed);
+    }
+}

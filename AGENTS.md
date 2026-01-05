@@ -88,15 +88,49 @@ Run `./tools/map_tool.py --help` for full API documentation and examples.
 
 **Always validate visual changes with screenshots.** Don't assume rendering code works - verify it.
 
-Quick screenshot (runs 3 frames then exits):
+Place temporary debug artifacts in `debug-temp/` (gitignored).
+
+### Quick Screenshot
+
 ```bash
-./build/tankgame --screenshot screenshots/test.png --screenshot-frames 3
+./build/tankgame --screenshot debug-temp/test.png --screenshot-frames 3
 ```
 
-Live debugging (while game is running):
+### Debug Scripts (Recommended)
+
+For testing movement, firing, and gameplay mechanics, use debug scripts.
+See `docs/debug-script.md` for full documentation.
+
 ```bash
-echo "screenshot screenshots/debug.png" > /tmp/tankgame_cmd
-echo "quit" > /tmp/tankgame_cmd
+./build/tankgame --debug-script path/to/script.dbgscript
+```
+
+Example:
+```
+frames 5
+screenshot debug-temp/start.png
+
+input +down
+input +right
+frames 60
+screenshot debug-temp/moved.png
+
+input stop
+aim 10.0 5.0
+fire
+frames 30
+screenshot debug-temp/fired.png
+
+dump debug-temp/state.txt
+frames 1
+quit
+```
+
+### Live Debugging
+
+While game is running:
+```bash
+echo "screenshot debug-temp/live.png" > /tmp/tankgame_cmd
 ```
 
 View screenshots with the `read` tool - PNG files display as images.

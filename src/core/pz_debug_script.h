@@ -1,0 +1,92 @@
+/*
+ * Tank Game - Debug Script Execution System
+ *
+ * A simple scripting system for automated testing and validation.
+ * This is NOT a gameplay scripting language - it's specifically for:
+ *   - Automated visual regression testing
+ *   - Reproducing bugs with specific input sequences
+ *   - Validating rendering and gameplay changes
+ *
+ * For gameplay scripting (if added later), use a proper language like Lua.
+ *
+ * See docs/debug-script.md for full documentation.
+ */
+
+#ifndef PZ_DEBUG_SCRIPT_H
+#define PZ_DEBUG_SCRIPT_H
+
+#include <stdbool.h>
+#include <stdint.h>
+
+// Forward declarations
+typedef struct pz_renderer pz_renderer;
+typedef struct pz_tank_manager pz_tank_manager;
+typedef struct pz_projectile_manager pz_projectile_manager;
+typedef struct pz_tank pz_tank;
+
+// Script input state (directly usable by game code)
+typedef struct pz_debug_script_input {
+    float move_x; // -1 (left) to +1 (right)
+    float move_y; // -1 (forward) to +1 (back)
+    float aim_x; // World X coordinate to aim at
+    float aim_y; // World Y coordinate to aim at
+    bool has_aim; // Whether aim coordinates are set
+    bool fire; // Fire this frame (single press, auto-clears)
+    bool hold_fire; // Hold fire continuously
+} pz_debug_script_input;
+
+// Script execution context
+typedef struct pz_debug_script pz_debug_script;
+
+// Create script context from file
+// Returns NULL if file doesn't exist or is invalid
+pz_debug_script *pz_debug_script_load(const char *path);
+
+// Destroy script context
+void pz_debug_script_destroy(pz_debug_script *script);
+
+// Check if script execution is complete
+bool pz_debug_script_is_done(const pz_debug_script *script);
+
+// Check if we should render this frame
+bool pz_debug_script_should_render(const pz_debug_script *script);
+
+// Check if turbo mode is enabled (skip frame timing)
+bool pz_debug_script_is_turbo(const pz_debug_script *script);
+
+// Get current input state
+const pz_debug_script_input *pz_debug_script_get_input(
+    const pz_debug_script *script);
+
+// Action types returned by update
+typedef enum {
+    PZ_DEBUG_SCRIPT_CONTINUE,
+    PZ_DEBUG_SCRIPT_QUIT,
+    PZ_DEBUG_SCRIPT_LOAD_MAP,
+    PZ_DEBUG_SCRIPT_SCREENSHOT,
+    PZ_DEBUG_SCRIPT_DUMP,
+    PZ_DEBUG_SCRIPT_SET_SEED,
+} pz_debug_script_action;
+
+// Advance script state by one frame
+// May return multiple actions (call repeatedly until CONTINUE)
+pz_debug_script_action pz_debug_script_update(pz_debug_script *script);
+
+// Get path for LOAD_MAP action
+const char *pz_debug_script_get_map_path(const pz_debug_script *script);
+
+// Get path for SCREENSHOT action
+const char *pz_debug_script_get_screenshot_path(const pz_debug_script *script);
+
+// Get path for DUMP action
+const char *pz_debug_script_get_dump_path(const pz_debug_script *script);
+
+// Get seed for SET_SEED action
+uint32_t pz_debug_script_get_seed(const pz_debug_script *script);
+
+// Dump game state to file
+// This is a helper that game code can call with its state
+void pz_debug_script_dump_state(const char *path, pz_tank_manager *tank_mgr,
+    pz_projectile_manager *proj_mgr, pz_tank *player, int frame_count);
+
+#endif // PZ_DEBUG_SCRIPT_H

@@ -12,6 +12,7 @@
 #include "third_party/sokol/sokol_app.h"
 
 #include "core/pz_debug_cmd.h"
+#include "core/pz_debug_script.h"
 #include "core/pz_log.h"
 #include "core/pz_math.h"
 #include "core/pz_mem.h"
@@ -235,6 +236,10 @@ typedef struct app_state {
     const char *campaign_path_arg;
     bool show_debug_overlay;
     bool show_debug_texture_scale;
+    const char *debug_script_path_arg;
+
+    // Debug script execution (for automated testing, not gameplay scripting)
+    pz_debug_script *debug_script;
 
     // Core systems (persistent across maps)
     pz_renderer *renderer;
@@ -793,6 +798,8 @@ parse_args(int argc, char *argv[])
             g_app.show_debug_overlay = true;
         } else if (strcmp(argv[i], "--debug-texture-scale") == 0) {
             g_app.show_debug_texture_scale = true;
+        } else if (strcmp(argv[i], "--debug-script") == 0 && i + 1 < argc) {
+            g_app.debug_script_path_arg = argv[++i];
         }
     }
 }
@@ -990,6 +997,18 @@ app_init(void)
     g_app.scroll_accumulator = 0.0f;
     g_app.key_f_just_pressed = false;
     g_app.key_g_just_pressed = false;
+
+    // Load debug script if specified
+    g_app.debug_script = NULL;
+    if (g_app.debug_script_path_arg) {
+        g_app.debug_script = pz_debug_script_load(g_app.debug_script_path_arg);
+        if (!g_app.debug_script) {
+            pz_log(PZ_LOG_ERROR, PZ_LOG_CAT_CORE,
+                "Failed to load debug script, exiting");
+            sapp_quit();
+            return;
+        }
+    }
 }
 
 // Render music debug overlay (called when debug overlay is visible)
@@ -1123,38 +1142,134 @@ app_frame(void)
         return;
     }
 
+    // Process debug script commands (may trigger actions like load map,
+    // screenshot). Paths are copied because the script reuses action_path.
+    bool script_should_screenshot = false;
+    bool script_should_dump = false;
+    char script_screenshot_path[256] = { 0 };
+    char script_dump_path[256] = { 0 };
+
+    if (g_app.debug_script && !pz_debug_script_is_done(g_app.debug_script)) {
+        pz_debug_script_action action;
+        while ((action = pz_debug_script_update(g_app.debug_script))
+            != PZ_DEBUG_SCRIPT_CONTINUE) {
+            switch (action) {
+            case PZ_DEBUG_SCRIPT_QUIT:
+                sapp_quit();
+                return;
+
+            case PZ_DEBUG_SCRIPT_LOAD_MAP: {
+                const char *map_path
+                    = pz_debug_script_get_map_path(g_app.debug_script);
+                if (map_path) {
+                    map_session_load(&g_app.session, map_path);
+                }
+                break;
+            }
+
+            case PZ_DEBUG_SCRIPT_SCREENSHOT: {
+                script_should_screenshot = true;
+                const char *path
+                    = pz_debug_script_get_screenshot_path(g_app.debug_script);
+                if (path) {
+                    strncpy(script_screenshot_path, path,
+                        sizeof(script_screenshot_path) - 1);
+                }
+                break;
+            }
+
+            case PZ_DEBUG_SCRIPT_DUMP: {
+                script_should_dump = true;
+                const char *path
+                    = pz_debug_script_get_dump_path(g_app.debug_script);
+                if (path) {
+                    strncpy(
+                        script_dump_path, path, sizeof(script_dump_path) - 1);
+                }
+                break;
+            }
+
+            case PZ_DEBUG_SCRIPT_SET_SEED:
+                pz_sim_set_seed(
+                    g_app.sim, pz_debug_script_get_seed(g_app.debug_script));
+                break;
+
+            default:
+                break;
+            }
+        }
+    }
+
+    // Check debug script modes
+    bool script_turbo
+        = g_app.debug_script && pz_debug_script_is_turbo(g_app.debug_script);
+    bool script_render = !g_app.debug_script
+        || pz_debug_script_should_render(g_app.debug_script);
+
     double current_time = pz_time_now();
     float frame_dt = (float)(current_time - g_app.last_frame_time);
     g_app.last_frame_time = current_time;
-    if (frame_dt > 0.1f)
-        frame_dt = 0.1f;
-    if (frame_dt < 0.0001f)
-        frame_dt = 0.0001f;
+
+    // In turbo mode, use fixed dt for consistent simulation
+    if (script_turbo) {
+        frame_dt = pz_sim_dt(); // Use fixed timestep
+    } else {
+        if (frame_dt > 0.1f)
+            frame_dt = 0.1f;
+        if (frame_dt < 0.0001f)
+            frame_dt = 0.0001f;
+    }
     g_app.total_time += frame_dt;
 
     // Determine number of simulation ticks to run this frame
-    int sim_ticks = pz_sim_accumulate(g_app.sim, frame_dt);
+    int sim_ticks = script_turbo ? 1 : pz_sim_accumulate(g_app.sim, frame_dt);
     float dt = pz_sim_dt(); // Fixed timestep for simulation
 
     // Gather input (once per frame)
     pz_tank_input player_input = { 0 };
-    if (g_app.key_down[SAPP_KEYCODE_W] || g_app.key_down[SAPP_KEYCODE_UP])
-        player_input.move_dir.y -= 1.0f;
-    if (g_app.key_down[SAPP_KEYCODE_S] || g_app.key_down[SAPP_KEYCODE_DOWN])
-        player_input.move_dir.y += 1.0f;
-    if (g_app.key_down[SAPP_KEYCODE_A] || g_app.key_down[SAPP_KEYCODE_LEFT])
-        player_input.move_dir.x -= 1.0f;
-    if (g_app.key_down[SAPP_KEYCODE_D] || g_app.key_down[SAPP_KEYCODE_RIGHT])
-        player_input.move_dir.x += 1.0f;
 
-    if (g_app.session.player_tank
-        && !(g_app.session.player_tank->flags & PZ_TANK_FLAG_DEAD)) {
-        pz_vec3 mouse_world = pz_camera_screen_to_world(
-            &g_app.camera, (int)g_app.mouse_x, (int)g_app.mouse_y);
-        float aim_dx = mouse_world.x - g_app.session.player_tank->pos.x;
-        float aim_dz = mouse_world.z - g_app.session.player_tank->pos.y;
-        player_input.target_turret = atan2f(aim_dx, aim_dz);
-        player_input.fire = g_app.mouse_left_down || g_app.space_down;
+    // Check if debug script is providing input
+    const pz_debug_script_input *script_input = g_app.debug_script
+        ? pz_debug_script_get_input(g_app.debug_script)
+        : NULL;
+    bool use_script_input = script_input && g_app.debug_script
+        && !pz_debug_script_is_done(g_app.debug_script);
+
+    if (use_script_input) {
+        // Use script input
+        player_input.move_dir.x = script_input->move_x;
+        player_input.move_dir.y = script_input->move_y;
+
+        if (script_input->has_aim && g_app.session.player_tank) {
+            float aim_dx
+                = script_input->aim_x - g_app.session.player_tank->pos.x;
+            float aim_dz
+                = script_input->aim_y - g_app.session.player_tank->pos.y;
+            player_input.target_turret = atan2f(aim_dx, aim_dz);
+        }
+
+        player_input.fire = script_input->fire || script_input->hold_fire;
+    } else {
+        // Normal keyboard/mouse input
+        if (g_app.key_down[SAPP_KEYCODE_W] || g_app.key_down[SAPP_KEYCODE_UP])
+            player_input.move_dir.y -= 1.0f;
+        if (g_app.key_down[SAPP_KEYCODE_S] || g_app.key_down[SAPP_KEYCODE_DOWN])
+            player_input.move_dir.y += 1.0f;
+        if (g_app.key_down[SAPP_KEYCODE_A] || g_app.key_down[SAPP_KEYCODE_LEFT])
+            player_input.move_dir.x -= 1.0f;
+        if (g_app.key_down[SAPP_KEYCODE_D]
+            || g_app.key_down[SAPP_KEYCODE_RIGHT])
+            player_input.move_dir.x += 1.0f;
+
+        if (g_app.session.player_tank
+            && !(g_app.session.player_tank->flags & PZ_TANK_FLAG_DEAD)) {
+            pz_vec3 mouse_world = pz_camera_screen_to_world(
+                &g_app.camera, (int)g_app.mouse_x, (int)g_app.mouse_y);
+            float aim_dx = mouse_world.x - g_app.session.player_tank->pos.x;
+            float aim_dz = mouse_world.z - g_app.session.player_tank->pos.y;
+            player_input.target_turret = atan2f(aim_dx, aim_dz);
+            player_input.fire = g_app.mouse_left_down || g_app.space_down;
+        }
     }
 
     // Handle weapon cycling (once per frame, not per sim tick)
@@ -1671,6 +1786,11 @@ app_frame(void)
     pz_debug_overlay_begin_frame(g_app.debug_overlay);
     pz_renderer_begin_frame(g_app.renderer);
     pz_renderer_clear(g_app.renderer, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+
+    // Skip rendering if debug script says so (but still need begin/end frame)
+    if (!script_render) {
+        goto end_frame;
+    }
 
     // Render background (sky gradient) first
     int vp_width, vp_height;
@@ -2275,8 +2395,20 @@ app_frame(void)
     pz_debug_overlay_render(g_app.debug_overlay);
     pz_debug_overlay_end_frame(g_app.debug_overlay);
 
+end_frame:;
     bool should_quit = false;
     g_app.frame_count++;
+
+    // Handle debug script screenshot/dump requests
+    if (script_should_screenshot && script_screenshot_path[0]) {
+        pz_renderer_save_screenshot(g_app.renderer, script_screenshot_path);
+    }
+    if (script_should_dump && script_dump_path[0]) {
+        pz_debug_script_dump_state(script_dump_path, g_app.session.tank_mgr,
+            g_app.session.projectile_mgr, g_app.session.player_tank,
+            g_app.frame_count);
+    }
+
     if (g_app.auto_screenshot && g_app.frame_count >= g_app.screenshot_frames) {
         pz_renderer_save_screenshot(g_app.renderer, g_app.screenshot_path);
         should_quit = true;
