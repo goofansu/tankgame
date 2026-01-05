@@ -10,7 +10,9 @@ cmake-build-*/
 # IDE
 .idea/
 .vscode/
-.beads/
+
+# Local stuff
+TODOS
 
 # Python
 .venv/

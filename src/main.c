@@ -152,11 +152,17 @@ spawn_projectile_fog(pz_particle_manager *particle_mgr,
     }
 }
 
+typedef enum {
+    EXPLOSION_LIGHT_BULLET, // Bullet impact (blue-white)
+    EXPLOSION_LIGHT_TANK, // Tank explosion (orange-red)
+    EXPLOSION_LIGHT_MINE, // Mine explosion (yellow)
+} explosion_light_type;
+
 typedef struct {
     pz_vec2 pos;
     float timer; // Remaining time
     float duration; // Total duration
-    bool is_tank; // Tank explosion vs bullet impact
+    explosion_light_type type;
 } explosion_light;
 
 #define MAX_EXPLOSION_LIGHTS 16
@@ -1395,8 +1401,8 @@ app_frame(void)
                                 <= 0.0f) {
                                 g_app.session.explosion_lights[j].pos
                                     = barrier->pos;
-                                g_app.session.explosion_lights[j].is_tank
-                                    = false;
+                                g_app.session.explosion_lights[j].type
+                                    = EXPLOSION_LIGHT_BULLET;
                                 g_app.session.explosion_lights[j].duration
                                     = 0.3f;
                                 g_app.session.explosion_lights[j].timer = 0.3f;
@@ -1478,7 +1484,8 @@ app_frame(void)
             for (int j = 0; j < MAX_EXPLOSION_LIGHTS; j++) {
                 if (g_app.session.explosion_lights[j].timer <= 0.0f) {
                     g_app.session.explosion_lights[j].pos = hits[i].pos;
-                    g_app.session.explosion_lights[j].is_tank = false;
+                    g_app.session.explosion_lights[j].type
+                        = EXPLOSION_LIGHT_BULLET;
                     g_app.session.explosion_lights[j].duration = 0.15f;
                     g_app.session.explosion_lights[j].timer
                         = g_app.session.explosion_lights[j].duration;
@@ -1505,11 +1512,12 @@ app_frame(void)
             explosion.spread = 1.5f;
             pz_particle_spawn_smoke(g_app.session.particle_mgr, &explosion);
 
-            // Add explosion light
+            // Add explosion light (yellow for mines)
             for (int j = 0; j < MAX_EXPLOSION_LIGHTS; j++) {
                 if (g_app.session.explosion_lights[j].timer <= 0.0f) {
                     g_app.session.explosion_lights[j].pos = explosions[i].pos;
-                    g_app.session.explosion_lights[j].is_tank = false;
+                    g_app.session.explosion_lights[j].type
+                        = EXPLOSION_LIGHT_MINE;
                     g_app.session.explosion_lights[j].duration = 0.35f;
                     g_app.session.explosion_lights[j].timer = 0.35f;
                     break;
@@ -1551,7 +1559,8 @@ app_frame(void)
             for (int j = 0; j < MAX_EXPLOSION_LIGHTS; j++) {
                 if (g_app.session.explosion_lights[j].timer <= 0.0f) {
                     g_app.session.explosion_lights[j].pos = death_events[i].pos;
-                    g_app.session.explosion_lights[j].is_tank = true;
+                    g_app.session.explosion_lights[j].type
+                        = EXPLOSION_LIGHT_TANK;
                     g_app.session.explosion_lights[j].duration = 0.4f;
                     g_app.session.explosion_lights[j].timer
                         = g_app.session.explosion_lights[j].duration;
@@ -1739,17 +1748,35 @@ app_frame(void)
                     / g_app.session.explosion_lights[i].duration;
                 float intensity = t * t;
 
-                if (g_app.session.explosion_lights[i].is_tank) {
-                    pz_vec3 exp_color = { 1.0f, 0.3f + 0.5f * t, 0.1f * t };
-                    pz_lighting_add_point_light(g_app.session.lighting,
-                        g_app.session.explosion_lights[i].pos, exp_color,
-                        3.0f * intensity, 6.0f);
-                } else {
-                    pz_vec3 exp_color = { 0.7f, 0.8f, 1.0f };
-                    pz_lighting_add_point_light(g_app.session.lighting,
-                        g_app.session.explosion_lights[i].pos, exp_color,
-                        2.0f * intensity, 4.0f);
+                pz_vec3 exp_color;
+                float exp_intensity;
+                float exp_radius;
+
+                switch (g_app.session.explosion_lights[i].type) {
+                case EXPLOSION_LIGHT_TANK:
+                    // Orange-red for tank explosions
+                    exp_color = (pz_vec3) { 1.0f, 0.3f + 0.5f * t, 0.1f * t };
+                    exp_intensity = 3.0f * intensity;
+                    exp_radius = 6.0f;
+                    break;
+                case EXPLOSION_LIGHT_MINE:
+                    // Yellow for mine explosions
+                    exp_color = (pz_vec3) { 1.0f, 0.9f, 0.3f * t };
+                    exp_intensity = 2.5f * intensity;
+                    exp_radius = 5.0f;
+                    break;
+                case EXPLOSION_LIGHT_BULLET:
+                default:
+                    // Blue-white for bullet impacts
+                    exp_color = (pz_vec3) { 0.7f, 0.8f, 1.0f };
+                    exp_intensity = 2.0f * intensity;
+                    exp_radius = 4.0f;
+                    break;
                 }
+
+                pz_lighting_add_point_light(g_app.session.lighting,
+                    g_app.session.explosion_lights[i].pos, exp_color,
+                    exp_intensity, exp_radius);
             }
         }
 

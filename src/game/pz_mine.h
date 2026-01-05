@@ -41,6 +41,8 @@ typedef struct pz_mine {
     float arm_timer; // Time until armed (0 = armed)
     float bob_offset; // For floating animation (random offset)
     float rotation; // Current rotation angle
+
+    bool owner_left_safe_zone; // Has owner left the safe activation zone?
 } pz_mine;
 
 // Mine manager
@@ -68,6 +70,9 @@ typedef struct pz_mine_manager {
 #define PZ_MINE_DAMAGE_RADIUS 2.0f // Radius for explosion damage
 #define PZ_MINE_DAMAGE 10 // Damage dealt by mine explosion
 #define PZ_MINE_MAX_PER_TANK 2 // Maximum mines a tank can carry
+// Safe zone: owner must leave this radius before mine activates for them
+// (1.5x the mine diameter = 1.5 * 2 * trigger_radius)
+#define PZ_MINE_SAFE_ZONE_RADIUS (PZ_MINE_TRIGGER_RADIUS * 3.0f)
 
 /* ============================================================================
  * Manager API

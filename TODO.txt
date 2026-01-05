@@ -1,6 +1,0 @@
-tech:
-* spatial audio panning/attenuation (M8.2)
-
-debt:
-* kill init_default_tile_defs
-* replace fallback texture with orange checkerboard

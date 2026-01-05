@@ -13,10 +13,11 @@
 #include "../core/pz_mem.h"
 
 // Visual parameters
-static const float MINE_BOB_SPEED = 2.0f;
-static const float MINE_BOB_AMPLITUDE = 0.08f;
-static const float MINE_ROTATE_SPEED = 0.0f; // No rotation for sphere
-static const float MINE_BASE_HEIGHT = 0.3f;
+static const float MINE_BOB_SPEED = 1.5f;
+static const float MINE_BOB_AMPLITUDE = 0.15f; // More pronounced bobbing
+static const float MINE_ROTATE_SPEED
+    = 0.8f; // Slow rotation for visual interest
+static const float MINE_BASE_HEIGHT = 0.35f;
 static const float MINE_SCALE = 1.2f; // Bigger than projectile for visibility
 
 // Collision radius for projectile hits
@@ -171,6 +172,8 @@ pz_mine_place(pz_mine_manager *mgr, pz_vec2 pos, int owner_id)
     mine->arm_timer = PZ_MINE_ARM_TIME;
     mine->bob_offset = (float)(slot % 7) * 0.9f; // Stagger animation
     mine->rotation = 0.0f;
+    mine->owner_left_safe_zone
+        = false; // Owner must leave before it arms for them
 
     mgr->active_count++;
 
@@ -212,6 +215,25 @@ pz_mine_update(pz_mine_manager *mgr, pz_tank_manager *tank_mgr,
             continue; // Not armed yet, skip proximity check
         }
 
+        // Check if owner has left the safe zone (if not already)
+        if (!mine->owner_left_safe_zone && mine->owner_id >= 0 && tank_mgr) {
+            pz_tank *owner = pz_tank_get_by_id(tank_mgr, mine->owner_id);
+            if (owner && (owner->flags & PZ_TANK_FLAG_ACTIVE)
+                && !(owner->flags & PZ_TANK_FLAG_DEAD)) {
+                float dx = owner->pos.x - mine->pos.x;
+                float dz = owner->pos.y - mine->pos.y;
+                float dist = sqrtf(dx * dx + dz * dz);
+                // Owner must be outside safe zone + their collision radius
+                if (dist
+                    >= PZ_MINE_SAFE_ZONE_RADIUS + tank_mgr->collision_radius) {
+                    mine->owner_left_safe_zone = true;
+                }
+            } else {
+                // Owner is dead or gone, mine is now active for everyone
+                mine->owner_left_safe_zone = true;
+            }
+        }
+
         // Check proximity to tanks
         if (tank_mgr) {
             for (int t = 0; t < PZ_MAX_TANKS; t++) {
@@ -227,6 +249,11 @@ pz_mine_update(pz_mine_manager *mgr, pz_tank_manager *tank_mgr,
 
                 if (dist
                     < PZ_MINE_TRIGGER_RADIUS + tank_mgr->collision_radius) {
+                    // Skip owner if they haven't left the safe zone yet
+                    if (tank->id == mine->owner_id
+                        && !mine->owner_left_safe_zone) {
+                        continue;
+                    }
                     mine_explode(mgr, mine, tank_mgr);
                     break;
                 }
@@ -300,8 +327,6 @@ pz_mine_render(pz_mine_manager *mgr, pz_renderer *renderer,
     if (params && params->light_texture != PZ_INVALID_HANDLE
         && params->light_texture != 0) {
         pz_renderer_bind_texture(renderer, 0, params->light_texture);
-        pz_renderer_set_uniform_int(
-            renderer, mgr->shader, "u_light_texture", 0);
         pz_renderer_set_uniform_int(renderer, mgr->shader, "u_use_lighting", 1);
         pz_renderer_set_uniform_vec2(renderer, mgr->shader, "u_light_scale",
             (pz_vec2) { params->light_scale_x, params->light_scale_z });
@@ -316,15 +341,19 @@ pz_mine_render(pz_mine_manager *mgr, pz_renderer *renderer,
         if (!mine->active)
             continue;
 
-        // Calculate bob offset
+        // Calculate bob offset (vertical bobbing)
         float bob = sinf(mgr->time * MINE_BOB_SPEED + mine->bob_offset)
             * MINE_BOB_AMPLITUDE;
 
-        // Build model matrix
+        // Calculate rotation angle
+        float rot_angle = mine->rotation;
+
+        // Build model matrix: translate, rotate around Y, then scale
         pz_mat4 model = pz_mat4_identity();
         model = pz_mat4_mul(model,
             pz_mat4_translate((pz_vec3) {
                 mine->pos.x, MINE_BASE_HEIGHT + bob, mine->pos.y }));
+        model = pz_mat4_mul(model, pz_mat4_rotate_y(rot_angle));
         model = pz_mat4_mul(model,
             pz_mat4_scale((pz_vec3) { MINE_SCALE, MINE_SCALE, MINE_SCALE }));
 
