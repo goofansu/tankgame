@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.16)
-project(tankgame C OBJC)
+project(tankgame C)
+
+if(APPLE AND NOT EMSCRIPTEN)
+    enable_language(OBJC)
+endif()
 
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -11,6 +15,11 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Dev" "Release")
+
+option(PZ_WEB_BUILD "Build WebAssembly version" OFF)
+if(PZ_WEB_BUILD AND NOT EMSCRIPTEN)
+    message(FATAL_ERROR "PZ_WEB_BUILD requires the Emscripten toolchain.")
+endif()
 
 # Compiler flags per build type
 set(CMAKE_C_FLAGS_DEBUG "-g -O0 -DDEBUG -DPZ_DEBUG")
@@ -27,7 +36,13 @@ endif()
 # Emscripten web build
 if(EMSCRIPTEN)
     set(CMAKE_EXECUTABLE_SUFFIX ".html")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -s USE_WEBGL2=1 -s FULL_ES3=1")
+endif()
+
+# Sokol implementation source (Objective-C for macOS, C elsewhere)
+if(APPLE AND NOT EMSCRIPTEN)
+    set(SOKOL_IMPL_SOURCE src/engine/pz_sokol.m)
+else()
+    set(SOKOL_IMPL_SOURCE src/engine/pz_sokol.c)
 endif()
 
 # Sources
@@ -56,7 +71,7 @@ set(ENGINE_SOURCES
     src/engine/pz_cursor.c
     src/engine/pz_font.c
     src/engine/pz_music.c
-    src/engine/pz_sokol.m
+    ${SOKOL_IMPL_SOURCE}
     # src/engine/pz_engine.c
     # src/engine/pz_window.c
     # src/engine/pz_input.c
@@ -156,7 +171,7 @@ if(EXISTS ${SOKOL_SHDC_BIN})
         COMMAND ${SOKOL_SHDC_BIN}
             --input ${SHADER_INPUT}
             --output ${SHADER_OUTPUT}
-            --slang glsl410:metal_macos
+            --slang glsl410:glsl300es:metal_macos
             --reflection
         DEPENDS ${SHADER_INPUT} ${SHADER_PROGRAMS}
         COMMENT "Compiling shaders with sokol-shdc"
@@ -169,10 +184,25 @@ else()
 endif()
 
 # Dependencies
-target_compile_definitions(tankgame PRIVATE SOKOL_GLCORE PZ_ENABLE_SOKOL)
+target_compile_definitions(tankgame PRIVATE PZ_ENABLE_SOKOL)
+
+if(EMSCRIPTEN)
+    target_compile_definitions(tankgame PRIVATE SOKOL_GLES3)
+    target_link_options(tankgame PRIVATE
+        "SHELL:-s USE_WEBGL2=1"
+        "SHELL:-s FULL_ES3=1"
+        "SHELL:-s ALLOW_MEMORY_GROWTH=1"
+        "SHELL:-s INITIAL_MEMORY=64MB"
+        "SHELL:-s STACK_SIZE=1MB"
+        "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/assets@/assets"
+        "SHELL:--shell-file ${CMAKE_SOURCE_DIR}/web/shell.html"
+    )
+else()
+    target_compile_definitions(tankgame PRIVATE SOKOL_GLCORE)
+endif()
 
 # macOS framework dependencies
-if(APPLE)
+if(APPLE AND NOT EMSCRIPTEN)
     target_link_libraries(tankgame PRIVATE
         "-framework OpenGL"
         "-framework Cocoa"
@@ -180,7 +210,7 @@ if(APPLE)
         "-framework CoreVideo"
         "-framework AudioToolbox"
     )
-elseif(UNIX)
+elseif(UNIX AND NOT EMSCRIPTEN)
     target_link_libraries(tankgame PRIVATE asound)
 endif()
 

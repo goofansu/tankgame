@@ -11,7 +11,9 @@
 #include <unistd.h>
 
 // Platform-specific includes
-#ifdef __APPLE__
+#ifdef __EMSCRIPTEN__
+#    include <emscripten/emscripten.h>
+#elif defined(__APPLE__)
 #    include <mach/mach_time.h>
 #else
 #    include <time.h>
@@ -22,7 +24,9 @@
  * ============================================================================
  */
 
-#ifdef __APPLE__
+#ifdef __EMSCRIPTEN__
+static double s_time_start;
+#elif defined(__APPLE__)
 // macOS uses mach_absolute_time
 static mach_timebase_info_data_t s_timebase_info;
 static uint64_t s_time_start;
@@ -34,7 +38,9 @@ static struct timespec s_time_start;
 void
 pz_time_init(void)
 {
-#ifdef __APPLE__
+#ifdef __EMSCRIPTEN__
+    s_time_start = emscripten_get_now();
+#elif defined(__APPLE__)
     mach_timebase_info(&s_timebase_info);
     s_time_start = mach_absolute_time();
 #else
@@ -45,7 +51,9 @@ pz_time_init(void)
 double
 pz_time_now(void)
 {
-#ifdef __APPLE__
+#ifdef __EMSCRIPTEN__
+    return (emscripten_get_now() - s_time_start) / 1000.0;
+#elif defined(__APPLE__)
     uint64_t elapsed = mach_absolute_time() - s_time_start;
     uint64_t ns = elapsed * s_timebase_info.numer / s_timebase_info.denom;
     return (double)ns / 1e9;
@@ -61,7 +69,9 @@ pz_time_now(void)
 uint64_t
 pz_time_now_ms(void)
 {
-#ifdef __APPLE__
+#ifdef __EMSCRIPTEN__
+    return (uint64_t)(emscripten_get_now() - s_time_start);
+#elif defined(__APPLE__)
     uint64_t elapsed = mach_absolute_time() - s_time_start;
     uint64_t ns = elapsed * s_timebase_info.numer / s_timebase_info.denom;
     return ns / 1000000;
@@ -77,7 +87,9 @@ pz_time_now_ms(void)
 uint64_t
 pz_time_now_us(void)
 {
-#ifdef __APPLE__
+#ifdef __EMSCRIPTEN__
+    return (uint64_t)((emscripten_get_now() - s_time_start) * 1000.0);
+#elif defined(__APPLE__)
     uint64_t elapsed = mach_absolute_time() - s_time_start;
     uint64_t ns = elapsed * s_timebase_info.numer / s_timebase_info.denom;
     return ns / 1000;
@@ -93,7 +105,11 @@ pz_time_now_us(void)
 void
 pz_time_sleep_ms(uint32_t ms)
 {
+#ifdef __EMSCRIPTEN__
+    (void)ms;
+#else
     usleep(ms * 1000);
+#endif
 }
 
 /* ============================================================================
