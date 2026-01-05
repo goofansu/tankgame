@@ -53,6 +53,7 @@ set(ENGINE_SOURCES
     src/engine/pz_sfx.c
     src/engine/pz_camera.c
     src/engine/pz_debug_overlay.c
+    src/engine/pz_cursor.c
     src/engine/pz_font.c
     src/engine/pz_music.c
     src/engine/pz_sokol.m

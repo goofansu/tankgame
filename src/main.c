@@ -21,6 +21,7 @@
 #include "core/pz_str.h"
 #include "engine/pz_audio.h"
 #include "engine/pz_camera.h"
+#include "engine/pz_cursor.h"
 #include "engine/pz_debug_overlay.h"
 #include "engine/pz_font.h"
 #include "engine/pz_music.h"
@@ -246,6 +247,7 @@ typedef struct app_state {
     pz_tile_registry *tile_registry;
     pz_camera camera;
     pz_debug_overlay *debug_overlay;
+    pz_cursor *cursor;
     pz_font_manager *font_mgr;
     pz_font *font_russo;
     pz_font *font_caveat;
@@ -1009,6 +1011,14 @@ app_init(void)
         pz_log(PZ_LOG_WARN, PZ_LOG_CAT_CORE, "Failed to create debug overlay");
     } else if (g_app.show_debug_overlay) {
         pz_debug_overlay_set_visible(g_app.debug_overlay, true);
+    }
+
+    // Hide OS cursor and create custom cursor
+    sapp_show_mouse(false);
+    g_app.cursor = pz_cursor_create(g_app.renderer);
+    if (g_app.cursor) {
+        pz_cursor_set_position(
+            g_app.cursor, (float)width * 0.5f, (float)height * 0.5f);
     }
 
     // Initialize font system
@@ -2545,6 +2555,18 @@ done_script_commands:
     pz_debug_overlay_render(g_app.debug_overlay);
     pz_debug_overlay_end_frame(g_app.debug_overlay);
 
+    // Render custom cursor (on top of everything including debug overlay)
+    // Don't render when mouse is locked (fullscreen mode)
+    if (g_app.cursor && !sapp_mouse_locked()) {
+        // Use crosshair during gameplay, arrow during menus/overlays
+        if (g_app.state == GAME_STATE_PLAYING) {
+            pz_cursor_set_type(g_app.cursor, PZ_CURSOR_CROSSHAIR);
+        } else {
+            pz_cursor_set_type(g_app.cursor, PZ_CURSOR_ARROW);
+        }
+        pz_cursor_render(g_app.cursor);
+    }
+
 end_frame:;
     bool should_quit = false;
     g_app.frame_count++;
@@ -2713,6 +2735,7 @@ app_event(const sapp_event *event)
     case SAPP_EVENTTYPE_MOUSE_MOVE:
         g_app.mouse_x = event->mouse_x;
         g_app.mouse_y = event->mouse_y;
+        pz_cursor_set_position(g_app.cursor, g_app.mouse_x, g_app.mouse_y);
         break;
     case SAPP_EVENTTYPE_MOUSE_DOWN:
         if (event->mouse_button == SAPP_MOUSEBUTTON_LEFT) {
@@ -2755,6 +2778,7 @@ app_cleanup(void)
     // Destroy persistent systems
     pz_font_manager_destroy(g_app.font_mgr);
     pz_debug_overlay_destroy(g_app.debug_overlay);
+    pz_cursor_destroy(g_app.cursor);
     pz_debug_cmd_shutdown();
 
     if (g_app.laser_vb != PZ_INVALID_HANDLE) {

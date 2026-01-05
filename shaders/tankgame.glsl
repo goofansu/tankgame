@@ -17,3 +17,4 @@
 @include programs/debug_line_3d.glsl
 @include programs/sdf_text.glsl
 @include programs/background.glsl
+@include programs/cursor.glsl

@@ -70,6 +70,7 @@ static const shader_desc_entry SHADER_DESC_TABLE[] = {
     { "debug_line_3d", tankgame_debug_line_3d_shader_desc },
     { "sdf_text", tankgame_sdf_text_shader_desc },
     { "background", tankgame_background_shader_desc },
+    { "cursor", tankgame_cursor_shader_desc },
 };
 
 typedef int (*pz_uniform_offset_fn)(const char *ub_name, const char *u_name);
@@ -113,6 +114,7 @@ static const char *SHADER_BLOCKS_DEBUG_LINE_3D[]
     = { "debug_line_3d_vs_params" };
 static const char *SHADER_BLOCKS_SDF_TEXT[] = { "sdf_text_vs_params" };
 static const char *SHADER_BLOCKS_BACKGROUND[] = { "background_fs_params" };
+static const char *SHADER_BLOCKS_CURSOR[] = { "cursor_vs_params" };
 
 static const shader_reflection SHADER_REFLECTION_TABLE[] = {
     { "test", tankgame_test_uniform_offset, tankgame_test_uniform_desc,
@@ -206,6 +208,10 @@ static const shader_reflection SHADER_REFLECTION_TABLE[] = {
         tankgame_background_uniformblock_size, SHADER_BLOCKS_BACKGROUND,
         (int)(sizeof(SHADER_BLOCKS_BACKGROUND)
             / sizeof(SHADER_BLOCKS_BACKGROUND[0])) },
+    { "cursor", tankgame_cursor_uniform_offset, tankgame_cursor_uniform_desc,
+        tankgame_cursor_uniformblock_slot, tankgame_cursor_uniformblock_size,
+        SHADER_BLOCKS_CURSOR,
+        (int)(sizeof(SHADER_BLOCKS_CURSOR) / sizeof(SHADER_BLOCKS_CURSOR[0])) },
 };
 
 static const sg_shader_desc *
