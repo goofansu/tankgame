@@ -713,6 +713,14 @@ pz_tank_update_all(pz_tank_manager *mgr, const pz_map *map,
                         tank->toxic_damage_timer
                             = toxic_cloud->config.damage_interval;
                     }
+                    // Record respawn event
+                    if (mgr->respawn_event_count < PZ_MAX_RESPAWN_EVENTS) {
+                        pz_tank_respawn_event *event
+                            = &mgr->respawn_events[mgr->respawn_event_count++];
+                        event->tank_id = tank->id;
+                        event->is_player
+                            = (tank->flags & PZ_TANK_FLAG_PLAYER) != 0;
+                    }
                 }
             }
             // Non-player tanks stay dead (but remain active for cleanup)
@@ -865,6 +873,9 @@ pz_tank_respawn(pz_tank *tank)
     tank->toxic_damage_timer = 0.0f;
     tank->in_toxic_cloud = false;
 
+    // Reset loadout to default (lose all collected weapons/powerups)
+    pz_tank_reset_loadout(tank);
+
     pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME, "Tank %d respawned at (%.2f, %.2f)",
         tank->id, tank->spawn_pos.x, tank->spawn_pos.y);
 }
@@ -950,6 +961,15 @@ pz_tank_reset_loadout(pz_tank *tank)
     tank->loadout[0] = PZ_POWERUP_NONE;
     tank->loadout_count = 1;
     tank->loadout_index = 0;
+
+    // Reset barrier placer state
+    tank->barrier_placer.barrier_tile[0] = '\0';
+    tank->barrier_placer.barrier_health = 0.0f;
+    tank->barrier_placer.max_barriers = 0;
+    tank->barrier_placer.placed_count = 0;
+    for (int i = 0; i < PZ_MAX_PLACED_BARRIERS; i++) {
+        tank->barrier_placer.placed_barrier_ids[i] = -1;
+    }
 
     update_turret_color(tank);
 
@@ -1400,5 +1420,31 @@ pz_tank_clear_death_events(pz_tank_manager *mgr)
 {
     if (mgr) {
         mgr->death_event_count = 0;
+    }
+}
+
+int
+pz_tank_get_respawn_events(
+    const pz_tank_manager *mgr, pz_tank_respawn_event *events, int max_events)
+{
+    if (!mgr || !events || max_events <= 0)
+        return 0;
+
+    int count = mgr->respawn_event_count;
+    if (count > max_events)
+        count = max_events;
+
+    for (int i = 0; i < count; i++) {
+        events[i] = mgr->respawn_events[i];
+    }
+
+    return count;
+}
+
+void
+pz_tank_clear_respawn_events(pz_tank_manager *mgr)
+{
+    if (mgr) {
+        mgr->respawn_event_count = 0;
     }
 }

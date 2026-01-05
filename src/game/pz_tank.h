@@ -22,12 +22,21 @@
 // Maximum death events per frame
 #define PZ_MAX_DEATH_EVENTS 8
 
+// Maximum respawn events per frame
+#define PZ_MAX_RESPAWN_EVENTS 8
+
 // Death event - records when a tank dies
 typedef struct pz_tank_death_event {
     int tank_id;
     pz_vec2 pos;
     bool is_player;
 } pz_tank_death_event;
+
+// Respawn event - records when a tank respawns
+typedef struct pz_tank_respawn_event {
+    int tank_id;
+    bool is_player;
+} pz_tank_respawn_event;
 
 // Tank state flags
 typedef enum {
@@ -118,6 +127,10 @@ typedef struct pz_tank_manager {
     // Death events for this frame (cleared each tick)
     pz_tank_death_event death_events[PZ_MAX_DEATH_EVENTS];
     int death_event_count;
+
+    // Respawn events for this frame (cleared each tick)
+    pz_tank_respawn_event respawn_events[PZ_MAX_RESPAWN_EVENTS];
+    int respawn_event_count;
 
     // Shared rendering resources
     pz_mesh *body_mesh;
@@ -293,5 +306,13 @@ int pz_tank_get_death_events(
 
 // Clear death events (call at start of each frame)
 void pz_tank_clear_death_events(pz_tank_manager *mgr);
+
+// Get respawn events from this frame
+// Returns number of events, fills events array
+int pz_tank_get_respawn_events(
+    const pz_tank_manager *mgr, pz_tank_respawn_event *events, int max_events);
+
+// Clear respawn events (call at start of each frame)
+void pz_tank_clear_respawn_events(pz_tank_manager *mgr);
 
 #endif // PZ_TANK_H

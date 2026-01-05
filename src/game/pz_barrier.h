@@ -135,6 +135,9 @@ int pz_barrier_count(const pz_barrier_manager *mgr);
 // Clear all barriers (for map reload)
 void pz_barrier_clear(pz_barrier_manager *mgr);
 
+// Clear all barriers owned by a specific tank (for respawn)
+void pz_barrier_clear_owned_by(pz_barrier_manager *mgr, int tank_id);
+
 // Get barrier by index (for iteration)
 pz_barrier *pz_barrier_get(pz_barrier_manager *mgr, int index);
 

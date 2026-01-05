@@ -13,16 +13,16 @@
  * ============================================================================
  */
 
-#define CURSOR_SIZE 32.0f // Base cursor size in pixels
-#define CROSSHAIR_RADIUS 14.0f // Circle radius
-#define CROSSHAIR_TICK_LEN 8.0f // Length of tick marks outside circle
-#define CROSSHAIR_GAP 4.0f // Gap at center
-#define CROSSHAIR_CENTER_SIZE 3.0f // Size of center cross
+#define CURSOR_SIZE 96.0f // Base cursor size in pixels (3x)
+#define CROSSHAIR_RADIUS 21.0f // Circle radius (1.5x)
+#define CROSSHAIR_TICK_LEN 12.0f // Length of tick marks outside circle (1.5x)
+#define CROSSHAIR_GAP 6.0f // Gap at center (1.5x)
+#define CROSSHAIR_CENTER_SIZE 4.5f // Size of center cross (1.5x)
 #define CIRCLE_SEGMENTS 48 // Number of segments for circle
-#define OUTLINE_WIDTH 2.5f // Black outline thickness
+#define OUTLINE_WIDTH 7.5f // Black outline thickness (3x)
 
-#define ARROW_LENGTH 24.0f // Arrow length
-#define ARROW_WIDTH 16.0f // Arrow width at base
+#define ARROW_LENGTH 36.0f // Arrow length (1.5x)
+#define ARROW_WIDTH 24.0f // Arrow width at base (1.5x)
 
 #define MAX_VERTICES 1024 // Maximum vertices for cursor rendering
 
@@ -147,9 +147,9 @@ build_crosshair(pz_cursor *cursor, float cx, float cy)
     float gap = CROSSHAIR_GAP;
     float center_size = CROSSHAIR_CENTER_SIZE;
 
-    // Draw outline (black, thicker)
-    float outline_thick = 3.0f;
-    float fill_thick = 1.5f;
+    // Draw outline (black, thicker) - scaled 1.5x
+    float outline_thick = 4.5f;
+    float fill_thick = 2.25f;
 
     // Circle outline
     add_circle(cursor, cx, cy, radius, black, outline_thick);
@@ -213,72 +213,25 @@ build_arrow(pz_cursor *cursor, float x, float y)
     pz_vec4 black = { 0.0f, 0.0f, 0.0f, 1.0f };
     pz_vec4 white = { 1.0f, 1.0f, 1.0f, 1.0f };
 
-    // Arrow points:
-    // Tip at (x, y), pointing up-left
-    // Main body goes down-right
+    // Simple triangle cursor
+    float scale = ARROW_LENGTH / 24.0f;
 
-    float len = ARROW_LENGTH;
-    float width = ARROW_WIDTH;
+    // Three vertices: tip, bottom-left, right point
+    float p0_x = x; // Tip (hotspot)
+    float p0_y = y;
+    float p1_x = x; // Bottom of left edge
+    float p1_y = y + 32.0f * scale;
+    float p2_x = x + 22.0f * scale; // Right point
+    float p2_y = y + 20.0f * scale;
 
-    // Arrow shape vertices (tip at origin, pointing up-left style)
-    // Point 0: Tip (hotspot)
-    // Point 1: Bottom of main triangle (right side)
-    // Point 2: Notch (where stem meets head)
-    // Point 3: Bottom of main triangle (left side, along edge)
-    // Point 4: End of stem (right)
-    // Point 5: End of stem (left)
+    // Draw black outline
+    float line_thick = 4.5f * scale;
+    add_line(cursor, p0_x, p0_y, p1_x, p1_y, black, line_thick);
+    add_line(cursor, p1_x, p1_y, p2_x, p2_y, black, line_thick);
+    add_line(cursor, p2_x, p2_y, p0_x, p0_y, black, line_thick);
 
-    float tip_x = x;
-    float tip_y = y;
-
-    // Main arrow body direction (pointing down-right from tip)
-    float dir_x = 0.7071f; // 45 degrees
-    float dir_y = 0.7071f;
-
-    // Perpendicular for width
-    float perp_x = -dir_y;
-    float perp_y = dir_x;
-
-    // Key points
-    float base_x = tip_x + dir_x * len;
-    float base_y = tip_y + dir_y * len;
-
-    float left_x = tip_x + dir_x * len * 0.7f + perp_x * width * 0.5f;
-    float left_y = tip_y + dir_y * len * 0.7f + perp_y * width * 0.5f;
-
-    float right_x = tip_x + dir_x * len * 0.35f - perp_x * width * 0.15f;
-    float right_y = tip_y + dir_y * len * 0.35f - perp_y * width * 0.15f;
-
-    float notch_x = tip_x + dir_x * len * 0.45f + perp_x * width * 0.1f;
-    float notch_y = tip_y + dir_y * len * 0.45f + perp_y * width * 0.1f;
-
-    float stem_end_x = base_x + perp_x * width * 0.15f;
-    float stem_end_y = base_y + perp_y * width * 0.15f;
-
-    // Draw black outline (slightly larger)
-    float o = 1.5f; // Outline offset
-
-    // Outline - draw as thick lines around the shape
-    add_line(cursor, tip_x, tip_y, left_x, left_y, black, 4.0f);
-    add_line(cursor, left_x, left_y, notch_x, notch_y, black, 4.0f);
-    add_line(cursor, notch_x, notch_y, stem_end_x, stem_end_y, black, 4.0f);
-    add_line(cursor, stem_end_x, stem_end_y, base_x, base_y, black, 4.0f);
-    add_line(cursor, base_x, base_y, right_x, right_y, black, 4.0f);
-    add_line(cursor, right_x, right_y, tip_x, tip_y, black, 4.0f);
-
-    // Fill - main arrow triangles (white)
-    // Main head triangle
-    add_triangle(cursor, tip_x, tip_y, left_x, left_y, right_x, right_y, white);
-
-    // Connect to notch area
-    add_triangle(
-        cursor, right_x, right_y, left_x, left_y, notch_x, notch_y, white);
-
-    // Stem
-    add_triangle(cursor, notch_x, notch_y, stem_end_x, stem_end_y, base_x,
-        base_y, white);
-    add_triangle(
-        cursor, notch_x, notch_y, base_x, base_y, right_x, right_y, white);
+    // Fill with white
+    add_triangle(cursor, p0_x, p0_y, p1_x, p1_y, p2_x, p2_y, white);
 }
 
 /* ============================================================================

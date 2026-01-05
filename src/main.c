@@ -562,10 +562,9 @@ map_session_reset(map_session *session)
         pz_particle_clear(session->particle_mgr);
     }
 
-    // Reset player
+    // Reset player (respawn also resets loadout)
     if (session->player_tank) {
         pz_tank_respawn(session->player_tank);
-        pz_tank_reset_loadout(session->player_tank);
         session->player_tank->mine_count = PZ_MINE_MAX_PER_TANK;
         if (session->toxic_cloud) {
             session->player_tank->toxic_grace_timer
@@ -2019,6 +2018,27 @@ done_script_commands:
         pz_tank_clear_death_events(g_app.session.tank_mgr);
     }
 
+    // Process tank respawn events
+    {
+        pz_tank_respawn_event respawn_events[PZ_MAX_RESPAWN_EVENTS];
+        int respawn_count = pz_tank_get_respawn_events(
+            g_app.session.tank_mgr, respawn_events, PZ_MAX_RESPAWN_EVENTS);
+
+        for (int i = 0; i < respawn_count; i++) {
+            // Clear barriers placed by the respawned tank
+            if (g_app.session.barrier_mgr) {
+                pz_barrier_clear_owned_by(
+                    g_app.session.barrier_mgr, respawn_events[i].tank_id);
+            }
+
+            pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME, "Tank %d respawned%s",
+                respawn_events[i].tank_id,
+                respawn_events[i].is_player ? " (player)" : "");
+        }
+
+        pz_tank_clear_respawn_events(g_app.session.tank_mgr);
+    }
+
     uint64_t events_end_us = pz_time_now_us();
     uint64_t visual_start_us = events_end_us;
 
@@ -2960,6 +2980,14 @@ app_event(const sapp_event *event)
         pz_log(PZ_LOG_INFO, PZ_LOG_CAT_CORE, "Window resized: %dx%d", width,
             height);
     } break;
+    case SAPP_EVENTTYPE_FOCUSED:
+    case SAPP_EVENTTYPE_RESTORED:
+        // Re-hide OS cursor when window regains focus or is restored
+        // macOS can reset cursor visibility in these cases
+        // Toggle state to force sokol to re-apply the hide
+        sapp_show_mouse(true);
+        sapp_show_mouse(false);
+        break;
     default:
         break;
     }

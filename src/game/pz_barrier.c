@@ -796,6 +796,24 @@ pz_barrier_clear(pz_barrier_manager *mgr)
     mgr->active_count = 0;
 }
 
+void
+pz_barrier_clear_owned_by(pz_barrier_manager *mgr, int tank_id)
+{
+    if (!mgr || tank_id < 0)
+        return;
+
+    for (int i = 0; i < PZ_MAX_BARRIERS; i++) {
+        pz_barrier *barrier = &mgr->barriers[i];
+        if (barrier->active && barrier->owner_tank_id == tank_id) {
+            barrier->active = false;
+            barrier->destroyed = false;
+            mgr->active_count--;
+            pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
+                "Cleared barrier %d owned by tank %d", i, tank_id);
+        }
+    }
+}
+
 pz_barrier *
 pz_barrier_get(pz_barrier_manager *mgr, int index)
 {
