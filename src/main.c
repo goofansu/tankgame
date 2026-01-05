@@ -2137,6 +2137,45 @@ done_script_commands:
             }
         }
 
+        // Add toxic cloud glow lights
+        if (g_app.session.toxic_cloud
+            && g_app.session.toxic_cloud->config.enabled
+            && g_app.session.toxic_cloud->closing_progress > 0.0f) {
+            pz_toxic_cloud *cloud = g_app.session.toxic_cloud;
+
+            // Green glow color - slightly more saturated green than the cloud
+            // particles
+            pz_vec3 toxic_light_color = {
+                cloud->config.color.x * 0.6f,
+                cloud->config.color.y * 1.1f,
+                cloud->config.color.z * 0.7f,
+            };
+            // Clamp to valid range
+            toxic_light_color.y = pz_minf(toxic_light_color.y, 1.0f);
+
+            // Light intensity scales with cloud progress
+            float base_intensity = 0.35f * cloud->closing_progress;
+            float light_radius = 6.0f;
+
+            // Sample lights in a grid across the map
+            float half_w = cloud->map_width * 0.5f;
+            float half_h = cloud->map_height * 0.5f;
+            float spacing = 4.0f; // Grid spacing
+
+            for (float x = -half_w + spacing * 0.5f; x < half_w; x += spacing) {
+                for (float y = -half_h + spacing * 0.5f; y < half_h;
+                     y += spacing) {
+                    pz_vec2 pos = { x, y };
+
+                    // Only add light if position is in the toxic zone
+                    if (pz_toxic_cloud_is_inside(cloud, pos)) {
+                        pz_lighting_add_point_light(g_app.session.lighting, pos,
+                            toxic_light_color, base_intensity, light_radius);
+                    }
+                }
+            }
+        }
+
         pz_lighting_render(g_app.session.lighting);
     }
     uint64_t lighting_end_us = pz_time_now_us();

@@ -229,8 +229,13 @@ pz_ai_spawn_enemy(
     ctrl->path_update_timer = 0.0f;
     ctrl->use_pathfinding
         = (level == PZ_ENEMY_LEVEL_2 || level == PZ_ENEMY_LEVEL_3);
-    ctrl->has_relocated_for_toxic = false;
-    ctrl->was_in_toxic_cloud = false;
+
+    // Initialize toxic escape state
+    ctrl->toxic_escaping = false;
+    ctrl->toxic_escape_target = pos;
+    pz_path_clear(&ctrl->toxic_escape_path);
+    ctrl->toxic_check_timer = 0.0f;
+    ctrl->toxic_urgency = 0.0f;
 
     pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
         "Spawned %s enemy at (%.1f, %.1f), tank_id=%d%s",
@@ -288,15 +293,209 @@ ai_in_toxic_cloud(const pz_toxic_cloud *toxic_cloud, pz_vec2 pos)
     return toxic_cloud && pz_toxic_cloud_is_inside(toxic_cloud, pos);
 }
 
-static pz_vec2
-ai_toxic_escape_dir(const pz_toxic_cloud *toxic_cloud, pz_vec2 pos)
+// Tank collision radius for pathfinding
+#define AI_TANK_RADIUS 0.9f
+// How close to waypoint before advancing
+#define AI_PATH_ARRIVE_THRESHOLD 0.8f
+
+// How far ahead (in progress units) to look for toxic threat
+#define AI_TOXIC_LOOKAHEAD_PROGRESS 0.15f
+// Distance margin from boundary to consider "safe enough"
+#define AI_TOXIC_SAFE_MARGIN 2.5f
+// How close to boundary before we start worrying (in world units)
+#define AI_TOXIC_DANGER_DISTANCE 4.0f
+// Time between toxic escape recalculations
+#define AI_TOXIC_CHECK_INTERVAL 0.5f
+
+// Calculate how urgent it is for the AI to escape the toxic cloud.
+// Returns 0.0 if safe, up to 1.0+ if in immediate danger.
+static float
+ai_calc_toxic_urgency(const pz_toxic_cloud *toxic_cloud, pz_vec2 pos)
 {
-    pz_vec2 dir = pz_toxic_cloud_escape_direction(toxic_cloud, pos);
-    if (pz_vec2_len_sq(dir) < 0.0001f) {
-        pz_vec2 to_center = pz_vec2_sub(toxic_cloud->config.center, pos);
-        dir = pz_vec2_normalize(to_center);
+    if (!toxic_cloud || !toxic_cloud->config.enabled) {
+        return 0.0f;
     }
-    return dir;
+
+    // Already in toxic = maximum urgency
+    if (pz_toxic_cloud_is_inside(toxic_cloud, pos)) {
+        return 1.5f;
+    }
+
+    // Check if cloud will reach us soon
+    float current_progress = pz_toxic_cloud_get_progress(toxic_cloud);
+    float future_progress = current_progress + AI_TOXIC_LOOKAHEAD_PROGRESS;
+
+    if (pz_toxic_cloud_will_be_inside(toxic_cloud, pos, future_progress)) {
+        // Cloud is approaching - calculate urgency based on how close
+        float dist = pz_toxic_cloud_distance_to_boundary(toxic_cloud, pos);
+        // dist is negative when inside safe zone (distance from edge)
+        float urgency = 1.0f - ((-dist) / AI_TOXIC_DANGER_DISTANCE);
+        return pz_clampf(urgency, 0.3f, 1.0f);
+    }
+
+    // Check distance to boundary for early warning
+    float dist = pz_toxic_cloud_distance_to_boundary(toxic_cloud, pos);
+    if (dist > -AI_TOXIC_DANGER_DISTANCE) {
+        // Getting close to boundary
+        float urgency = 0.5f * (1.0f - ((-dist) / AI_TOXIC_DANGER_DISTANCE));
+        return pz_clampf(urgency, 0.0f, 0.5f);
+    }
+
+    return 0.0f;
+}
+
+// Find a safe escape target and update the escape path.
+// Returns true if escape is needed and path was found.
+static bool
+ai_update_toxic_escape(pz_ai_controller *ctrl, const pz_map *map,
+    const pz_toxic_cloud *toxic_cloud, pz_vec2 current_pos, float dt)
+{
+    if (!toxic_cloud || !toxic_cloud->config.enabled) {
+        ctrl->toxic_escaping = false;
+        ctrl->toxic_urgency = 0.0f;
+        return false;
+    }
+
+    // Update check timer
+    ctrl->toxic_check_timer -= dt;
+
+    // Calculate current urgency
+    float urgency = ai_calc_toxic_urgency(toxic_cloud, current_pos);
+    ctrl->toxic_urgency = urgency;
+
+    // If not urgent, stop escaping
+    if (urgency < 0.1f) {
+        if (ctrl->toxic_escaping) {
+            pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
+                "AI reached safety, stopping toxic escape");
+        }
+        ctrl->toxic_escaping = false;
+        pz_path_clear(&ctrl->toxic_escape_path);
+        return false;
+    }
+
+    // Already escaping with valid path?
+    if (ctrl->toxic_escaping && ctrl->toxic_escape_path.valid) {
+        // Check if we've arrived at escape target
+        float dist_to_target
+            = pz_vec2_dist(current_pos, ctrl->toxic_escape_target);
+        if (dist_to_target < 1.5f) {
+            // Check if target is still safe
+            if (!pz_toxic_cloud_is_inside(
+                    toxic_cloud, ctrl->toxic_escape_target)
+                && !pz_toxic_cloud_will_be_inside(toxic_cloud,
+                    ctrl->toxic_escape_target,
+                    pz_toxic_cloud_get_progress(toxic_cloud)
+                        + AI_TOXIC_LOOKAHEAD_PROGRESS * 2.0f)) {
+                // Arrived at safe spot
+                ctrl->toxic_escaping = false;
+                pz_path_clear(&ctrl->toxic_escape_path);
+                return false;
+            }
+        }
+
+        // Only recalculate path periodically unless urgent
+        if (ctrl->toxic_check_timer > 0.0f && urgency < 1.0f) {
+            return true; // Keep following current path
+        }
+    }
+
+    // Need to find/update escape path
+    ctrl->toxic_check_timer = AI_TOXIC_CHECK_INTERVAL;
+
+    // Get a safe target position
+    pz_vec2 safe_target = pz_toxic_cloud_get_safe_position(
+        toxic_cloud, current_pos, AI_TOXIC_SAFE_MARGIN);
+
+    // Verify target is actually safe
+    if (pz_toxic_cloud_is_inside(toxic_cloud, safe_target)) {
+        // Fallback: move toward center
+        safe_target = toxic_cloud->config.center;
+    }
+
+    // Check if target is reachable (not inside a wall)
+    if (map && pz_map_is_solid(map, safe_target)) {
+        // Try to find a nearby valid position
+        const float offsets[] = { 0.0f, 1.0f, -1.0f, 2.0f, -2.0f };
+        bool found_valid = false;
+        for (int i = 0; i < 5 && !found_valid; i++) {
+            for (int j = 0; j < 5 && !found_valid; j++) {
+                pz_vec2 test = {
+                    safe_target.x + offsets[i],
+                    safe_target.y + offsets[j],
+                };
+                if (!pz_map_is_solid(map, test)
+                    && !pz_toxic_cloud_is_inside(toxic_cloud, test)) {
+                    safe_target = test;
+                    found_valid = true;
+                }
+            }
+        }
+    }
+
+    // Use A* to find path to safe target
+    ctrl->toxic_escape_target = safe_target;
+    ctrl->toxic_escape_path
+        = pz_pathfind(map, current_pos, safe_target, AI_TANK_RADIUS);
+
+    if (ctrl->toxic_escape_path.valid) {
+        pz_path_smooth(&ctrl->toxic_escape_path, map, AI_TANK_RADIUS);
+        ctrl->toxic_escaping = true;
+        pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
+            "AI found toxic escape path to (%.1f, %.1f), urgency=%.2f",
+            safe_target.x, safe_target.y, urgency);
+        return true;
+    }
+
+    // Pathfinding failed - use direct escape as fallback
+    ctrl->toxic_escaping = true;
+    pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
+        "AI toxic escape pathfinding failed, using direct escape");
+    return true;
+}
+
+// Get movement direction for toxic escape.
+// Returns zero vector if not escaping.
+static pz_vec2
+ai_get_toxic_escape_move(pz_ai_controller *ctrl,
+    const pz_toxic_cloud *toxic_cloud, pz_vec2 current_pos)
+{
+    if (!ctrl->toxic_escaping) {
+        return pz_vec2_zero();
+    }
+
+    // If we have a valid path, follow it
+    if (ctrl->toxic_escape_path.valid
+        && !pz_path_is_complete(&ctrl->toxic_escape_path)) {
+        // Advance through waypoints
+        while (pz_path_advance(&ctrl->toxic_escape_path, current_pos,
+            AI_PATH_ARRIVE_THRESHOLD)) { }
+
+        if (!pz_path_is_complete(&ctrl->toxic_escape_path)) {
+            pz_vec2 target = pz_path_get_target(&ctrl->toxic_escape_path);
+            pz_vec2 to_target = pz_vec2_sub(target, current_pos);
+            float dist = pz_vec2_len(to_target);
+            if (dist > 0.01f) {
+                return pz_vec2_scale(to_target, 1.0f / dist);
+            }
+        }
+    }
+
+    // Fallback: direct movement toward escape target or safe zone
+    if (ctrl->toxic_urgency > 0.5f) {
+        pz_vec2 dir = pz_toxic_cloud_escape_direction(toxic_cloud, current_pos);
+        if (pz_vec2_len_sq(dir) > 0.0001f) {
+            return dir;
+        }
+        // Last resort: move toward target
+        pz_vec2 to_target = pz_vec2_sub(ctrl->toxic_escape_target, current_pos);
+        float dist = pz_vec2_len(to_target);
+        if (dist > 0.01f) {
+            return pz_vec2_scale(to_target, 1.0f / dist);
+        }
+    }
+
+    return pz_vec2_zero();
 }
 
 // Look for an incoming projectile to shoot down.
@@ -377,8 +576,6 @@ find_projectile_defense_target(const pz_projectile_manager *proj_mgr,
     return true;
 }
 
-// Tank collision radius for pathfinding
-#define AI_TANK_RADIUS 0.9f
 // Mine avoidance behavior tuning
 #define AI_MINE_AVOID_RADIUS 4.0f
 #define AI_MINE_PANIC_RADIUS (PZ_MINE_DAMAGE_RADIUS + 0.4f)
@@ -793,9 +990,6 @@ find_cover_position(const pz_map *map, pz_vec2 ai_pos, pz_vec2 player_pos,
 // How often to update paths (seconds)
 #define AI_PATH_UPDATE_INTERVAL 0.5f
 
-// How close to waypoint before advancing
-#define AI_PATH_ARRIVE_THRESHOLD 0.8f
-
 // Request a new path to a goal position
 // Returns true if a valid path was found
 static bool
@@ -1065,17 +1259,30 @@ update_level2_ai(pz_ai_controller *ctrl, pz_tank *tank,
         break;
     }
 
-    if (ai_in_toxic_cloud(toxic_cloud, tank->pos)) {
-        move_dir = ai_toxic_escape_dir(toxic_cloud, tank->pos);
-        ctrl->wants_to_fire = false;
+    // Toxic cloud escape takes priority over normal behavior
+    if (ai_update_toxic_escape(ctrl, map, toxic_cloud, tank->pos, dt)) {
+        pz_vec2 escape_dir
+            = ai_get_toxic_escape_move(ctrl, toxic_cloud, tank->pos);
+        if (pz_vec2_len_sq(escape_dir) > 0.001f) {
+            move_dir = escape_dir;
+            // Only suppress firing in critical urgency
+            if (ctrl->toxic_urgency > 1.0f) {
+                ctrl->wants_to_fire = false;
+            }
+        }
     }
 
     move_dir = steer_away_from_mines(mine_mgr, tank->pos, move_dir,
         AI_MINE_AVOID_RADIUS, AI_MINE_PANIC_RADIUS);
 
-    // Apply movement
+    // Apply movement - faster when escaping toxic
+    float current_speed = move_speed;
+    if (ctrl->toxic_escaping && ctrl->toxic_urgency > 0.5f) {
+        current_speed = move_speed * 1.5f; // Hustle!
+    }
+
     pz_tank_input input = {
-        .move_dir = pz_vec2_scale(move_dir, move_speed),
+        .move_dir = pz_vec2_scale(move_dir, current_speed),
         .target_turret = ctrl->current_aim_angle,
         .fire = false,
     };
@@ -1653,16 +1860,30 @@ update_level3_ai(pz_ai_controller *ctrl, pz_tank *tank,
         ctrl->wants_to_fire = true;
     }
 
-    if (ai_in_toxic_cloud(toxic_cloud, tank->pos)) {
-        move_dir = ai_toxic_escape_dir(toxic_cloud, tank->pos);
+    // Toxic cloud escape takes priority over normal behavior
+    if (ai_update_toxic_escape(ctrl, map, toxic_cloud, tank->pos, dt)) {
+        pz_vec2 escape_dir
+            = ai_get_toxic_escape_move(ctrl, toxic_cloud, tank->pos);
+        if (pz_vec2_len_sq(escape_dir) > 0.001f) {
+            move_dir = escape_dir;
+            // Level 3 can still fire while escaping unless critical
+            if (ctrl->toxic_urgency > 1.2f) {
+                ctrl->wants_to_fire = false;
+            }
+        }
     }
 
     move_dir = steer_away_from_mines(mine_mgr, tank->pos, move_dir,
         AI_MINE_AVOID_RADIUS, AI_MINE_PANIC_RADIUS);
 
-    // Apply movement
+    // Apply movement - faster when escaping toxic
+    float current_speed = move_speed;
+    if (ctrl->toxic_escaping && ctrl->toxic_urgency > 0.5f) {
+        current_speed = move_speed * 1.3f; // Hustle!
+    }
+
     pz_tank_input input = {
-        .move_dir = pz_vec2_scale(move_dir, move_speed),
+        .move_dir = pz_vec2_scale(move_dir, current_speed),
         .target_turret = ctrl->current_aim_angle,
         .fire = false,
     };
@@ -1696,11 +1917,6 @@ pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
         // Skip dead tanks
         if (tank->flags & PZ_TANK_FLAG_DEAD) {
             continue;
-        }
-
-        bool in_toxic_cloud = ai_in_toxic_cloud(toxic_cloud, tank->pos);
-        if (in_toxic_cloud) {
-            ctrl->was_in_toxic_cloud = true;
         }
 
         // Get enemy stats for behavior parameters
@@ -1852,26 +2068,41 @@ pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
                 player_pos, mine_mgr, rng, toxic_cloud, dt);
         } else {
             // Stationary turret only (sentry, sniper)
-            pz_tank_input input = {
-                .move_dir = { 0.0f, 0.0f },
-                .target_turret = ctrl->current_aim_angle,
-                .fire = false,
-            };
+            // But they WILL move to escape toxic cloud!
+            pz_vec2 move_dir = { 0.0f, 0.0f };
+            float move_speed = 3.0f;
+
+            // Check for mine threats first
             if (ctrl->targeting_mine) {
                 pz_vec2 away = steer_away_from_mines(mine_mgr, tank->pos,
                     (pz_vec2) { 0.0f, 0.0f }, AI_MINE_AVOID_RADIUS,
                     AI_MINE_PANIC_RADIUS);
-                input.move_dir = pz_vec2_scale(away, 3.0f);
+                move_dir = away;
             }
-            if (ai_in_toxic_cloud(toxic_cloud, tank->pos)
-                && !ctrl->has_relocated_for_toxic) {
+
+            // Toxic cloud escape is high priority - use A* pathfinding
+            if (ai_update_toxic_escape(
+                    ctrl, ai_mgr->map, toxic_cloud, tank->pos, dt)) {
                 pz_vec2 escape_dir
-                    = ai_toxic_escape_dir(toxic_cloud, tank->pos);
-                input.move_dir = pz_vec2_scale(escape_dir, 3.0f);
-            } else if (!in_toxic_cloud && ctrl->was_in_toxic_cloud
-                && !ctrl->has_relocated_for_toxic && toxic_cloud) {
-                ctrl->has_relocated_for_toxic = true;
+                    = ai_get_toxic_escape_move(ctrl, toxic_cloud, tank->pos);
+                if (pz_vec2_len_sq(escape_dir) > 0.001f) {
+                    move_dir = escape_dir;
+                    // Move faster when escaping toxic
+                    if (ctrl->toxic_urgency > 0.5f) {
+                        move_speed = 4.5f;
+                    }
+                }
             }
+
+            // Apply mine avoidance steering to final direction
+            move_dir = steer_away_from_mines(mine_mgr, tank->pos, move_dir,
+                AI_MINE_AVOID_RADIUS, AI_MINE_PANIC_RADIUS);
+
+            pz_tank_input input = {
+                .move_dir = pz_vec2_scale(move_dir, move_speed),
+                .target_turret = ctrl->current_aim_angle,
+                .fire = false,
+            };
             pz_tank_update(
                 ai_mgr->tank_mgr, tank, &input, ai_mgr->map, toxic_cloud, dt);
         }

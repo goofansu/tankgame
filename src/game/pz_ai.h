@@ -161,9 +161,12 @@ typedef struct pz_ai_controller {
     float path_update_timer; // Time until next repath
     bool use_pathfinding; // Whether this AI uses pathfinding
 
-    // Toxic cloud behavior
-    bool has_relocated_for_toxic;
-    bool was_in_toxic_cloud;
+    // Toxic cloud escape behavior
+    bool toxic_escaping; // Currently in toxic escape mode
+    pz_vec2 toxic_escape_target; // Safe destination to reach
+    pz_path toxic_escape_path; // Path to escape destination
+    float toxic_check_timer; // Timer for rechecking toxic threat
+    float toxic_urgency; // 0.0 = safe, 1.0 = critical (in toxic now)
 } pz_ai_controller;
 
 /* ============================================================================

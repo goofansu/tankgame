@@ -80,6 +80,22 @@ void pz_toxic_cloud_get_boundary(const pz_toxic_cloud *cloud, float *left,
 pz_vec2 pz_toxic_cloud_escape_direction(
     const pz_toxic_cloud *cloud, pz_vec2 pos);
 
+// Distance to the safe zone boundary (negative if inside safe zone, positive
+// if in toxic zone). For AI to anticipate incoming cloud.
+float pz_toxic_cloud_distance_to_boundary(
+    const pz_toxic_cloud *cloud, pz_vec2 pos);
+
+// Get a safe position inside the safe zone given a starting position.
+// Returns a position that is safely inside the current safe zone.
+// margin: extra distance from the boundary edge to stay safe.
+pz_vec2 pz_toxic_cloud_get_safe_position(
+    const pz_toxic_cloud *cloud, pz_vec2 from, float margin);
+
+// Check if a position will be inside the toxic zone at a future progress level.
+// Used for AI to predict where the cloud will be.
+bool pz_toxic_cloud_will_be_inside(
+    const pz_toxic_cloud *cloud, pz_vec2 pos, float future_progress);
+
 // Particle rendering helper
 typedef struct pz_particle_manager pz_particle_manager;
 void pz_toxic_cloud_spawn_particles(

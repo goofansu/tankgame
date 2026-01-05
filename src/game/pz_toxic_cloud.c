@@ -278,3 +278,128 @@ pz_toxic_cloud_escape_direction(const pz_toxic_cloud *cloud, pz_vec2 pos)
     pz_vec2 target = { nearest_x, nearest_y };
     return pz_vec2_normalize(pz_vec2_sub(target, pos));
 }
+
+float
+pz_toxic_cloud_distance_to_boundary(const pz_toxic_cloud *cloud, pz_vec2 pos)
+{
+    if (!cloud || !cloud->config.enabled) {
+        return -1000.0f; // Very safe (negative = inside safe zone)
+    }
+
+    float left = cloud->boundary_left;
+    float right = cloud->boundary_right;
+    float top = cloud->boundary_top;
+    float bottom = cloud->boundary_bottom;
+    float radius = cloud->corner_radius;
+
+    // Handle corner radius - find inner rectangle
+    float inner_left = left + radius;
+    float inner_right = right - radius;
+    float inner_top = top + radius;
+    float inner_bottom = bottom - radius;
+
+    // Clamp to inner rectangle
+    float nearest_x = pz_clampf(pos.x, inner_left, inner_right);
+    float nearest_y = pz_clampf(pos.y, inner_top, inner_bottom);
+
+    float dx = pos.x - nearest_x;
+    float dy = pos.y - nearest_y;
+    float dist_to_inner = sqrtf(dx * dx + dy * dy);
+
+    // If in corner region, distance is relative to corner circle
+    if (dist_to_inner > 0.001f) {
+        // In corner region - distance is from corner circle edge
+        return dist_to_inner - radius;
+    }
+
+    // In the inner rectangle - find distance to nearest edge
+    float dist_left = pos.x - left;
+    float dist_right = right - pos.x;
+    float dist_top = pos.y - top;
+    float dist_bottom = bottom - pos.y;
+
+    float min_dist = pz_minf(
+        pz_minf(dist_left, dist_right), pz_minf(dist_top, dist_bottom));
+
+    // Negative distance means inside safe zone
+    return -min_dist;
+}
+
+pz_vec2
+pz_toxic_cloud_get_safe_position(
+    const pz_toxic_cloud *cloud, pz_vec2 from, float margin)
+{
+    if (!cloud || !cloud->config.enabled) {
+        return from;
+    }
+
+    // The safe zone center is where we want to go
+    pz_vec2 center = cloud->config.center;
+
+    float left = cloud->boundary_left + margin;
+    float right = cloud->boundary_right - margin;
+    float top = cloud->boundary_top + margin;
+    float bottom = cloud->boundary_bottom - margin;
+
+    // Clamp margins if zone is too small
+    if (left > right) {
+        left = right = (cloud->boundary_left + cloud->boundary_right) * 0.5f;
+    }
+    if (top > bottom) {
+        top = bottom = (cloud->boundary_top + cloud->boundary_bottom) * 0.5f;
+    }
+
+    // If already safely inside (with margin), stay put
+    if (from.x >= left && from.x <= right && from.y >= top
+        && from.y <= bottom) {
+        return from;
+    }
+
+    // ALWAYS move toward the center of the safe zone, not just the nearest
+    // edge! This ensures AI moves to a stable position that will remain safe.
+    pz_vec2 target = center;
+
+    // Clamp center to the safe area (in case center is outside current bounds)
+    target.x = pz_clampf(target.x, left, right);
+    target.y = pz_clampf(target.y, top, bottom);
+
+    return target;
+}
+
+bool
+pz_toxic_cloud_will_be_inside(
+    const pz_toxic_cloud *cloud, pz_vec2 pos, float future_progress)
+{
+    if (!cloud || !cloud->config.enabled) {
+        return false;
+    }
+
+    // Calculate what the boundary will be at future_progress
+    float half_w = cloud->map_width * 0.5f;
+    float half_h = cloud->map_height * 0.5f;
+    float map_left = cloud->map_center.x - half_w;
+    float map_right = cloud->map_center.x + half_w;
+    float map_top = cloud->map_center.y - half_h;
+    float map_bottom = cloud->map_center.y + half_h;
+
+    float safe_ratio = pz_clampf(cloud->config.safe_zone_ratio, 0.01f, 1.0f);
+    float safe_radius
+        = pz_minf(cloud->map_width, cloud->map_height) * safe_ratio * 0.5f;
+
+    pz_vec2 center = cloud->config.center;
+    float target_left = pz_clampf(center.x - safe_radius, map_left, map_right);
+    float target_right = pz_clampf(center.x + safe_radius, map_left, map_right);
+    float target_top = pz_clampf(center.y - safe_radius, map_top, map_bottom);
+    float target_bottom
+        = pz_clampf(center.y + safe_radius, map_top, map_bottom);
+
+    float progress = pz_clampf(future_progress, 0.0f, 1.0f);
+    float future_left = pz_lerpf(map_left, target_left, progress);
+    float future_right = pz_lerpf(map_right, target_right, progress);
+    float future_top = pz_lerpf(map_top, target_top, progress);
+    float future_bottom = pz_lerpf(map_bottom, target_bottom, progress);
+
+    // Simple rect check (ignoring corner radius for prediction)
+    return pos.x < future_left || pos.x > future_right || pos.y < future_top
+        || pos.y > future_bottom;
+}
