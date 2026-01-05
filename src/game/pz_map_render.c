@@ -1714,6 +1714,10 @@ pz_map_renderer_draw_walls(pz_map_renderer *mr, const pz_mat4 *view_projection,
             mr->renderer, mr->wall_shader, "u_has_sun", 0);
     }
 
+    // Tint (walls use no tint = white)
+    pz_renderer_set_uniform_vec4(mr->renderer, mr->wall_shader, "u_tint",
+        (pz_vec4) { 1.0f, 1.0f, 1.0f, 1.0f });
+
     pz_renderer_set_uniform_int(
         mr->renderer, mr->wall_shader, "u_texture_top", 0);
     pz_renderer_set_uniform_int(

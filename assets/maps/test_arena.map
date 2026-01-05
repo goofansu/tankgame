@@ -1,30 +1,28 @@
-# Tank Game Map
 name Test Arena
 tile_size 2.0
 music march
 
-# Tile definitions
 tile . wood_oak_brown
 tile # wood_rustic_dark
 tile : mud_wet
 tile * carpet_gray
 
-# Object tags
 tag P1 spawn angle=0.785 team=0
 tag P2 spawn angle=2.356 team=0
 tag P3 spawn angle=-0.785 team=0
 tag P4 spawn angle=-2.356 team=0
 tag E1 enemy angle=3.14 type=sentry
 tag B barrier tile=cobble health=20
-
+tag BP barrier tile=cobble health=15
+tag PB powerup type=barrier_placer barrier=BP barrier_count=5 respawn=30
 
 <grid>
 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2#
-2# 0.|P1 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.|P2 2#
+2# 0.|P1 0. 0.|PB 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.|P2 2#
 2# 0. 0. 2# 2# 0. 0. 0. 2# 2# 0. 0. 0. 0. 2# 2# 0. 0. 0. 0. 0. 0. 0. 2#
 2# 0. 0. 2# 2# 0. 0. 0. 2# 2# 0. 0. 0. 0. 2# 2# 0. 0. 0. 0* 0. 0. 0. 2#
 2# 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0* 0. 0. 0. 0. 0* 0* 0* 0. 0. 0. 2#
-2# 0. 0. 0. 0. 0: 0: 0. 0. 0. 0. 0. 0* 0. 0. 0. 0. 0* 0. 0. 0. 0. 0. 2#
+2# 0. 0.|PB 0. 0. 0: 0: 0. 0. 0. 0. 0. 0* 0. 0. 0. 0. 0* 0. 0. 0. 0. 0. 2#
 2# 0. 0. 0. 0. 0: 0: 0. 0.|B 0. 0. 0. 0. 0.|B 0. 0. 0. 0. 0. 0. 0. 0. 0. 2#
 2# 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 2#
 2# 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.|E1 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 2#
@@ -35,9 +33,6 @@ tag B barrier tile=cobble health=20
 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2#
 </grid>
 
-# Lighting - Night mode
 ambient_color 0.12 0.12 0.15
 ambient_darkness 0.85
-
-# Background - Night sky gradient
 background_gradient vertical 0.02 0.03 0.08 0.12 0.08 0.15

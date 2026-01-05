@@ -313,6 +313,15 @@ int
 pz_barrier_add(
     pz_barrier_manager *mgr, pz_vec2 pos, const char *tile_name, float health)
 {
+    // Map-placed barriers have no owner and no tint
+    return pz_barrier_add_owned(
+        mgr, pos, tile_name, health, -1, (pz_vec4) { 1.0f, 1.0f, 1.0f, 1.0f });
+}
+
+int
+pz_barrier_add_owned(pz_barrier_manager *mgr, pz_vec2 pos,
+    const char *tile_name, float health, int owner_tank_id, pz_vec4 tint_color)
+{
     if (!mgr || !tile_name)
         return -1;
 
@@ -338,14 +347,24 @@ pz_barrier_add(
     barrier->health = health;
     barrier->max_health = health;
     barrier->destroy_timer = 0.0f;
+    barrier->owner_tank_id = owner_tank_id;
+    barrier->tint_color = tint_color;
     strncpy(barrier->tile_name, tile_name, sizeof(barrier->tile_name) - 1);
     barrier->tile_name[sizeof(barrier->tile_name) - 1] = '\0';
 
     mgr->active_count++;
 
-    pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
-        "Barrier added at (%.1f, %.1f), tile=%s, health=%.0f", pos.x, pos.y,
-        tile_name, health);
+    if (owner_tank_id >= 0) {
+        pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
+            "Player barrier added at (%.1f, %.1f), tile=%s, health=%.0f, "
+            "owner=%d, tint=(%.2f, %.2f, %.2f)",
+            pos.x, pos.y, tile_name, health, owner_tank_id, tint_color.x,
+            tint_color.y, tint_color.z);
+    } else {
+        pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
+            "Barrier added at (%.1f, %.1f), tile=%s, health=%.0f", pos.x, pos.y,
+            tile_name, health);
+    }
 
     return slot;
 }
@@ -612,45 +631,7 @@ pz_barrier_render(pz_barrier_manager *mgr, pz_renderer *renderer,
     if (visible_count == 0)
         return;
 
-    // Rebuild mesh if needed
-    // For now, always rebuild (could optimize with dirty flag)
-    rebuild_mesh(mgr, renderer);
-
-    if (mgr->mesh_vertex_count == 0)
-        return;
-
-    // Get texture from tile registry
-    pz_texture_handle texture = PZ_INVALID_HANDLE;
-    pz_texture_handle side_texture = PZ_INVALID_HANDLE;
-
-    // Use first active barrier's tile for texture lookup
-    // (All barriers currently use same tile anyway)
-    for (int i = 0; i < PZ_MAX_BARRIERS; i++) {
-        pz_barrier *barrier = &mgr->barriers[i];
-        if (barrier->active && !barrier->destroyed) {
-            const pz_tile_config *tile
-                = pz_tile_registry_get(mgr->tile_registry, barrier->tile_name);
-            if (tile) {
-                texture = tile->wall_texture;
-                side_texture = tile->wall_side_texture;
-                if (side_texture == PZ_INVALID_HANDLE) {
-                    side_texture = texture;
-                }
-            }
-            break;
-        }
-    }
-
-    if (texture == PZ_INVALID_HANDLE) {
-        const pz_tile_config *fallback
-            = pz_tile_registry_get_fallback(mgr->tile_registry);
-        if (fallback) {
-            texture = fallback->ground_texture;
-            side_texture = texture;
-        }
-    }
-
-    // Model matrix is identity
+    // Model matrix is identity (positions are baked into mesh)
     pz_mat4 model = pz_mat4_identity();
 
     pz_renderer_set_uniform_mat4(
@@ -665,6 +646,17 @@ pz_barrier_render(pz_barrier_manager *mgr, pz_renderer *renderer,
             renderer, mgr->shader, "u_light_color", params->sun_color);
         pz_renderer_set_uniform_vec3(
             renderer, mgr->shader, "u_ambient", params->ambient);
+
+        // Sun lighting
+        if (params->has_sun) {
+            pz_renderer_set_uniform_int(renderer, mgr->shader, "u_has_sun", 1);
+            pz_renderer_set_uniform_vec3(renderer, mgr->shader,
+                "u_sun_direction", params->sun_direction);
+            pz_renderer_set_uniform_vec3(
+                renderer, mgr->shader, "u_sun_color", params->sun_color);
+        } else {
+            pz_renderer_set_uniform_int(renderer, mgr->shader, "u_has_sun", 0);
+        }
 
         // Dynamic lighting
         if (params->light_texture != PZ_INVALID_HANDLE) {
@@ -686,31 +678,97 @@ pz_barrier_render(pz_barrier_manager *mgr, pz_renderer *renderer,
             pz_renderer_set_uniform_int(
                 renderer, mgr->shader, "u_use_lighting", 0);
         }
+    } else {
+        // No params - set defaults
+        pz_renderer_set_uniform_int(renderer, mgr->shader, "u_use_lighting", 0);
+        pz_renderer_set_uniform_int(renderer, mgr->shader, "u_has_sun", 0);
     }
 
-    // Bind textures and draw
-    // Note: Wall shader uses slot 0 for top texture, slot 1 for side texture
-    // For simplicity, we use the same texture for both
-    if (texture != PZ_INVALID_HANDLE) {
-        pz_renderer_bind_texture(renderer, 0, texture);
-        pz_renderer_set_uniform_int(renderer, mgr->shader, "u_texture_top", 0);
-    }
-    if (side_texture != PZ_INVALID_HANDLE) {
-        pz_renderer_bind_texture(renderer, 1, side_texture);
-        pz_renderer_set_uniform_int(renderer, mgr->shader, "u_texture_side", 1);
+    pz_renderer_set_uniform_int(renderer, mgr->shader, "u_texture_top", 0);
+    pz_renderer_set_uniform_int(renderer, mgr->shader, "u_texture_side", 1);
+
+    // Render each barrier individually with its own tint color
+    int floats_per_barrier = BARRIER_VERTS_PER_UNIT * BARRIER_VERTEX_SIZE;
+    float *verts = pz_calloc(floats_per_barrier, sizeof(float));
+
+    for (int i = 0; i < PZ_MAX_BARRIERS; i++) {
+        pz_barrier *barrier = &mgr->barriers[i];
+        if (!barrier->active || barrier->destroyed)
+            continue;
+
+        // Get texture from tile registry for this barrier
+        pz_texture_handle texture = PZ_INVALID_HANDLE;
+        pz_texture_handle side_texture = PZ_INVALID_HANDLE;
+
+        const pz_tile_config *tile
+            = pz_tile_registry_get(mgr->tile_registry, barrier->tile_name);
+        if (tile) {
+            texture = tile->wall_texture;
+            side_texture = tile->wall_side_texture;
+            if (side_texture == PZ_INVALID_HANDLE) {
+                side_texture = texture;
+            }
+        }
+
+        if (texture == PZ_INVALID_HANDLE) {
+            const pz_tile_config *fallback
+                = pz_tile_registry_get_fallback(mgr->tile_registry);
+            if (fallback) {
+                texture = fallback->ground_texture;
+                side_texture = texture;
+            }
+        }
+
+        // Generate mesh for this barrier
+        int texture_scale = 4;
+        if (tile) {
+            texture_scale = tile->wall_texture_scale;
+            if (texture_scale < 1)
+                texture_scale = 1;
+        }
+
+        int floats_written = generate_barrier_mesh(verts, barrier->pos.x,
+            barrier->pos.y, mgr->tile_size, texture_scale);
+        int vertex_count = floats_written / BARRIER_VERTEX_SIZE;
+
+        // Create temporary buffer
+        pz_buffer_desc buf_desc = {
+            .type = PZ_BUFFER_VERTEX,
+            .data = verts,
+            .size = floats_written * sizeof(float),
+        };
+        pz_buffer_handle temp_buffer
+            = pz_renderer_create_buffer(renderer, &buf_desc);
+
+        // Bind textures
+        if (texture != PZ_INVALID_HANDLE) {
+            pz_renderer_bind_texture(renderer, 0, texture);
+        }
+        if (side_texture != PZ_INVALID_HANDLE) {
+            pz_renderer_bind_texture(renderer, 1, side_texture);
+        }
+
+        // Set tint color for this barrier
+        pz_renderer_set_uniform_vec4(
+            renderer, mgr->shader, "u_tint", barrier->tint_color);
+
+        // Draw
+        pz_draw_cmd cmd = {
+            .pipeline = mgr->pipeline,
+            .vertex_buffer = temp_buffer,
+            .index_buffer = PZ_INVALID_HANDLE,
+            .vertex_count = vertex_count,
+            .index_count = 0,
+            .vertex_offset = 0,
+            .index_offset = 0,
+        };
+        pz_renderer_draw(renderer, &cmd);
+
+        // Destroy temporary buffer
+        pz_renderer_destroy_buffer(renderer, temp_buffer);
     }
 
-    // Draw using pz_draw_cmd
-    pz_draw_cmd cmd = {
-        .pipeline = mgr->pipeline,
-        .vertex_buffer = mgr->mesh_buffer,
-        .index_buffer = PZ_INVALID_HANDLE,
-        .vertex_count = mgr->mesh_vertex_count,
-        .index_count = 0,
-        .vertex_offset = 0,
-        .index_offset = 0,
-    };
-    pz_renderer_draw(renderer, &cmd);
+    pz_free(verts);
 }
 
 int
@@ -736,4 +794,52 @@ pz_barrier_clear(pz_barrier_manager *mgr)
 
     memset(mgr->barriers, 0, sizeof(mgr->barriers));
     mgr->active_count = 0;
+}
+
+pz_barrier *
+pz_barrier_get(pz_barrier_manager *mgr, int index)
+{
+    if (!mgr || index < 0 || index >= PZ_MAX_BARRIERS)
+        return NULL;
+    return &mgr->barriers[index];
+}
+
+bool
+pz_barrier_is_valid_placement(const pz_barrier_manager *mgr, const pz_map *map,
+    pz_vec2 pos, float tank_radius, pz_vec2 tank_pos)
+{
+    if (!mgr || !map)
+        return false;
+
+    float half = mgr->tile_size / 2.0f;
+
+    // Check map bounds
+    if (!pz_map_in_bounds_world(map, pos))
+        return false;
+
+    // Check for wall at position
+    if (pz_map_is_solid(map, pos))
+        return false;
+
+    // Check for existing barrier
+    for (int i = 0; i < PZ_MAX_BARRIERS; i++) {
+        const pz_barrier *barrier = &mgr->barriers[i];
+        if (!barrier->active || barrier->destroyed)
+            continue;
+
+        float dx = fabsf(pos.x - barrier->pos.x);
+        float dz = fabsf(pos.y - barrier->pos.y);
+        if (dx < mgr->tile_size * 0.9f && dz < mgr->tile_size * 0.9f) {
+            return false; // Overlaps existing barrier
+        }
+    }
+
+    // Check if tank would overlap the barrier
+    pz_circle tank_circle = pz_circle_new(tank_pos, tank_radius);
+    pz_aabb barrier_box = pz_aabb_from_center(pos, (pz_vec2) { half, half });
+    if (pz_collision_circle_aabb(tank_circle, barrier_box, NULL)) {
+        return false; // Would overlap tank
+    }
+
+    return true;
 }

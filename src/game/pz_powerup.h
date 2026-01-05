@@ -26,8 +26,16 @@ typedef enum pz_powerup_type {
     PZ_POWERUP_NONE = 0,
     PZ_POWERUP_MACHINE_GUN, // Faster firing, less damage, smaller bullets
     PZ_POWERUP_RICOCHET, // Bullets bounce twice, green, slightly faster
+    PZ_POWERUP_BARRIER_PLACER, // Place destructible barriers
     PZ_POWERUP_COUNT
 } pz_powerup_type;
+
+// Barrier placer data (for barrier_placer powerups)
+typedef struct pz_barrier_placer_data {
+    char barrier_tile[32]; // Tile name for barriers
+    float barrier_health; // Health for placed barriers
+    int barrier_count; // Max barriers that can be placed at once
+} pz_barrier_placer_data;
 
 // Powerup structure
 typedef struct pz_powerup {
@@ -41,6 +49,9 @@ typedef struct pz_powerup {
 
     float respawn_timer; // Time until respawn (when collected)
     float respawn_time; // How long until respawn
+
+    // For barrier_placer type only
+    pz_barrier_placer_data barrier_data;
 } pz_powerup;
 
 // Powerup manager
@@ -96,6 +107,11 @@ void pz_powerup_manager_destroy(pz_powerup_manager *mgr, pz_renderer *renderer);
 int pz_powerup_add(pz_powerup_manager *mgr, pz_vec2 pos, pz_powerup_type type,
     float respawn_time);
 
+// Add a barrier placer powerup with barrier configuration
+int pz_powerup_add_barrier_placer(pz_powerup_manager *mgr, pz_vec2 pos,
+    float respawn_time, const char *barrier_tile, float barrier_health,
+    int barrier_count);
+
 // Update all powerups (animation, respawn timers)
 void pz_powerup_update(pz_powerup_manager *mgr, float dt);
 
@@ -103,6 +119,12 @@ void pz_powerup_update(pz_powerup_manager *mgr, float dt);
 // Returns the type of powerup collected (or PZ_POWERUP_NONE)
 pz_powerup_type pz_powerup_check_collection(
     pz_powerup_manager *mgr, pz_vec2 tank_pos, float tank_radius);
+
+// Extended collection check that also returns barrier placer data
+// barrier_data_out is only filled if the collected powerup is a barrier_placer
+pz_powerup_type pz_powerup_check_collection_ex(pz_powerup_manager *mgr,
+    pz_vec2 tank_pos, float tank_radius,
+    pz_barrier_placer_data *barrier_data_out);
 
 // Render all active powerups
 void pz_powerup_render(pz_powerup_manager *mgr, pz_renderer *renderer,

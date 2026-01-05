@@ -74,6 +74,20 @@ static const pz_weapon_stats WEAPON_RICOCHET = {
     .recoil_strength = 1.2f, // Moderate recoil
 };
 
+// Barrier placer - places barriers instead of shooting
+// Uses purple color for the powerup and turret
+static const pz_weapon_stats WEAPON_BARRIER_PLACER = {
+    .fire_cooldown = 0.5f, // Placement cooldown
+    .projectile_speed = 0.0f, // Doesn't fire projectiles
+    .damage = 0,
+    .max_bounces = 0,
+    .projectile_scale = 1.0f,
+    .projectile_color = { 0.7f, 0.3f, 0.9f, 1.0f }, // Purple
+    .auto_fire = false,
+    .max_active_projectiles = 0, // Doesn't use projectiles
+    .recoil_strength = 0.0f, // No recoil
+};
+
 const pz_weapon_stats *
 pz_weapon_get_stats(pz_powerup_type weapon)
 {
@@ -82,6 +96,8 @@ pz_weapon_get_stats(pz_powerup_type weapon)
         return &WEAPON_MACHINE_GUN;
     case PZ_POWERUP_RICOCHET:
         return &WEAPON_RICOCHET;
+    case PZ_POWERUP_BARRIER_PLACER:
+        return &WEAPON_BARRIER_PLACER;
     case PZ_POWERUP_NONE:
     default:
         return &WEAPON_DEFAULT;
@@ -203,6 +219,30 @@ pz_powerup_add(pz_powerup_manager *mgr, pz_vec2 pos, pz_powerup_type type,
     return slot;
 }
 
+int
+pz_powerup_add_barrier_placer(pz_powerup_manager *mgr, pz_vec2 pos,
+    float respawn_time, const char *barrier_tile, float barrier_health,
+    int barrier_count)
+{
+    int slot
+        = pz_powerup_add(mgr, pos, PZ_POWERUP_BARRIER_PLACER, respawn_time);
+    if (slot >= 0 && barrier_tile) {
+        pz_powerup *powerup = &mgr->powerups[slot];
+        strncpy(powerup->barrier_data.barrier_tile, barrier_tile,
+            sizeof(powerup->barrier_data.barrier_tile) - 1);
+        powerup->barrier_data
+            .barrier_tile[sizeof(powerup->barrier_data.barrier_tile) - 1]
+            = '\0';
+        powerup->barrier_data.barrier_health = barrier_health;
+        powerup->barrier_data.barrier_count = barrier_count;
+
+        pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
+            "Barrier placer configured: tile=%s, health=%.0f, count=%d",
+            barrier_tile, barrier_health, barrier_count);
+    }
+    return slot;
+}
+
 /* ============================================================================
  * Powerup Update
  * ============================================================================
@@ -249,6 +289,13 @@ pz_powerup_type
 pz_powerup_check_collection(
     pz_powerup_manager *mgr, pz_vec2 tank_pos, float tank_radius)
 {
+    return pz_powerup_check_collection_ex(mgr, tank_pos, tank_radius, NULL);
+}
+
+pz_powerup_type
+pz_powerup_check_collection_ex(pz_powerup_manager *mgr, pz_vec2 tank_pos,
+    float tank_radius, pz_barrier_placer_data *barrier_data_out)
+{
     if (!mgr)
         return PZ_POWERUP_NONE;
 
@@ -271,6 +318,12 @@ pz_powerup_check_collection(
 
             pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME, "Powerup collected: %s",
                 pz_powerup_type_name(powerup->type));
+
+            // Copy barrier data if this is a barrier placer
+            if (barrier_data_out
+                && powerup->type == PZ_POWERUP_BARRIER_PLACER) {
+                *barrier_data_out = powerup->barrier_data;
+            }
 
             return powerup->type;
         }
@@ -393,6 +446,8 @@ pz_powerup_type_name(pz_powerup_type type)
         return "Machine Gun";
     case PZ_POWERUP_RICOCHET:
         return "Ricochet";
+    case PZ_POWERUP_BARRIER_PLACER:
+        return "Barrier Placer";
     case PZ_POWERUP_NONE:
     default:
         return "None";
@@ -410,6 +465,9 @@ pz_powerup_type_from_name(const char *name)
     }
     if (strcmp(name, "ricochet") == 0) {
         return PZ_POWERUP_RICOCHET;
+    }
+    if (strcmp(name, "barrier_placer") == 0) {
+        return PZ_POWERUP_BARRIER_PLACER;
     }
     return PZ_POWERUP_NONE;
 }

@@ -55,11 +55,17 @@ typedef struct pz_enemy_spawn {
 } pz_enemy_spawn;
 
 // Powerup spawn data
-// Type names: "machine_gun", "ricochet"
+// Type names: "machine_gun", "ricochet", "barrier_placer"
 typedef struct pz_powerup_spawn {
     pz_vec2 pos;
     char type_name[32]; // Powerup type name (resolved at runtime)
     float respawn_time; // Time to respawn after collection (default: 15)
+
+    // For barrier_placer type only:
+    char barrier_tile[32]; // Tile name for barriers (from referenced barrier
+                           // tag)
+    float barrier_health; // Health for placed barriers
+    int barrier_count; // Max barriers that can be placed at once (default: 2)
 } pz_powerup_spawn;
 
 // Barrier spawn data (destructible obstacles)

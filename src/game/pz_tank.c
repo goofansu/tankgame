@@ -958,6 +958,107 @@ pz_tank_reset_loadout(pz_tank *tank)
 }
 
 /* ============================================================================
+ * Barrier Placer
+ * ============================================================================
+ */
+
+void
+pz_tank_set_barrier_placer(
+    pz_tank *tank, const char *tile, float health, int max_count)
+{
+    if (!tank || !tile)
+        return;
+
+    strncpy(tank->barrier_placer.barrier_tile, tile,
+        sizeof(tank->barrier_placer.barrier_tile) - 1);
+    tank->barrier_placer
+        .barrier_tile[sizeof(tank->barrier_placer.barrier_tile) - 1]
+        = '\0';
+    tank->barrier_placer.barrier_health = health;
+    tank->barrier_placer.max_barriers = max_count;
+    // Don't reset placed_count or placed_barrier_ids - barriers persist
+
+    pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
+        "Tank %d barrier placer set: tile=%s, health=%.0f, max=%d", tank->id,
+        tile, health, max_count);
+}
+
+bool
+pz_tank_add_placed_barrier(pz_tank *tank, int barrier_id)
+{
+    if (!tank)
+        return false;
+
+    if (tank->barrier_placer.placed_count >= PZ_MAX_PLACED_BARRIERS) {
+        pz_log(PZ_LOG_WARN, PZ_LOG_CAT_GAME,
+            "Tank %d cannot track more placed barriers (max=%d)", tank->id,
+            PZ_MAX_PLACED_BARRIERS);
+        return false;
+    }
+
+    tank->barrier_placer.placed_barrier_ids[tank->barrier_placer.placed_count++]
+        = barrier_id;
+    pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME, "Tank %d placed barrier %d (%d/%d)",
+        tank->id, barrier_id, tank->barrier_placer.placed_count,
+        tank->barrier_placer.max_barriers);
+    return true;
+}
+
+void
+pz_tank_on_barrier_destroyed(pz_tank *tank, int barrier_id)
+{
+    if (!tank)
+        return;
+
+    // Find and remove the barrier ID from tracking
+    for (int i = 0; i < tank->barrier_placer.placed_count; i++) {
+        if (tank->barrier_placer.placed_barrier_ids[i] == barrier_id) {
+            // Shift remaining IDs down
+            for (int j = i; j < tank->barrier_placer.placed_count - 1; j++) {
+                tank->barrier_placer.placed_barrier_ids[j]
+                    = tank->barrier_placer.placed_barrier_ids[j + 1];
+            }
+            tank->barrier_placer.placed_count--;
+            pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
+                "Tank %d barrier %d destroyed (%d/%d remaining)", tank->id,
+                barrier_id, tank->barrier_placer.placed_count,
+                tank->barrier_placer.max_barriers);
+            return;
+        }
+    }
+}
+
+bool
+pz_tank_can_place_barrier(const pz_tank *tank)
+{
+    if (!tank)
+        return false;
+
+    // Check if holding barrier_placer
+    int current_weapon = pz_tank_get_current_weapon(tank);
+    if (current_weapon != PZ_POWERUP_BARRIER_PLACER)
+        return false;
+
+    // Check if under the limit
+    return tank->barrier_placer.placed_count
+        < tank->barrier_placer.max_barriers;
+}
+
+const pz_tank_barrier_placer *
+pz_tank_get_barrier_placer(const pz_tank *tank)
+{
+    if (!tank)
+        return NULL;
+
+    // Only return if holding barrier_placer
+    int current_weapon = pz_tank_get_current_weapon(tank);
+    if (current_weapon != PZ_POWERUP_BARRIER_PLACER)
+        return NULL;
+
+    return &tank->barrier_placer;
+}
+
+/* ============================================================================
  * Rendering
  * ============================================================================
  */

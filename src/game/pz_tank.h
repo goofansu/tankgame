@@ -44,6 +44,18 @@ typedef enum pz_powerup_type pz_powerup_type;
 // Maximum weapons in loadout
 #define PZ_MAX_LOADOUT_WEAPONS 8
 
+// Maximum barriers a tank can place at once
+#define PZ_MAX_PLACED_BARRIERS 8
+
+// Barrier placer state (when holding barrier_placer weapon)
+typedef struct pz_tank_barrier_placer {
+    char barrier_tile[32]; // Tile name for barriers
+    float barrier_health; // Health for placed barriers
+    int max_barriers; // Max barriers allowed at once
+    int placed_barrier_ids[PZ_MAX_PLACED_BARRIERS]; // IDs of placed barriers
+    int placed_count; // How many barriers currently placed
+} pz_tank_barrier_placer;
+
 // Tank structure
 typedef struct pz_tank {
     uint32_t flags;
@@ -85,6 +97,9 @@ typedef struct pz_tank {
     pz_vec4 turret_color; // Updated based on selected weapon
     float fog_timer; // Spawn timer for fog trail
     float idle_time; // How long the tank has been idle
+
+    // Barrier placer state (when holding barrier_placer weapon)
+    pz_tank_barrier_placer barrier_placer;
 } pz_tank;
 
 // Input for a tank (per-tick input state)
@@ -211,6 +226,23 @@ int pz_tank_get_current_weapon(const pz_tank *tank);
 
 // Reset loadout to default weapon only
 void pz_tank_reset_loadout(pz_tank *tank);
+
+// Set barrier placer data when collecting a barrier_placer powerup
+void pz_tank_set_barrier_placer(
+    pz_tank *tank, const char *tile, float health, int max_count);
+
+// Add a placed barrier to the tank's tracking
+// Returns true if added successfully
+bool pz_tank_add_placed_barrier(pz_tank *tank, int barrier_id);
+
+// Notify tank that one of its barriers was destroyed
+void pz_tank_on_barrier_destroyed(pz_tank *tank, int barrier_id);
+
+// Check if tank can place another barrier
+bool pz_tank_can_place_barrier(const pz_tank *tank);
+
+// Get barrier placer state (NULL if not holding barrier_placer)
+const pz_tank_barrier_placer *pz_tank_get_barrier_placer(const pz_tank *tank);
 
 /* ============================================================================
  * Rendering

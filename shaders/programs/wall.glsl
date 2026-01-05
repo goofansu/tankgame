@@ -41,6 +41,7 @@ layout(std140, binding=1) uniform wall_fs_params {
     int u_has_sun;
     vec3 u_sun_direction;
     vec3 u_sun_color;
+    vec4 u_tint;
 };
 
 layout(location=0) in vec3 v_normal;
@@ -105,7 +106,8 @@ void main() {
 
     float ao = pow(clamp(v_ao, 0.0, 1.0), 1.2);
     ao = mix(1.0, ao, 0.5);
-    frag_color = vec4(tex_color.rgb * (lighting * ao), tex_color.a);
+    vec3 final_color = tex_color.rgb * (lighting * ao) * u_tint.rgb;
+    frag_color = vec4(final_color, tex_color.a * u_tint.a);
 }
 @end
 

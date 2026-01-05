@@ -33,6 +33,7 @@ typedef enum {
     CMD_DUMP,
     CMD_QUIT,
     CMD_GOD,
+    CMD_WEAPON,
 } script_cmd_type;
 
 // Parsed command
@@ -182,6 +183,10 @@ parse_command(const char *line, script_cmd *cmd)
     } else if (strcmp(keyword, "god") == 0) {
         cmd->type = CMD_GOD;
         cmd->bool_val = (strcmp(arg1, "on") == 0 || strcmp(arg1, "1") == 0);
+    } else if (strcmp(keyword, "weapon") == 0) {
+        cmd->type = CMD_WEAPON;
+        // weapon next (default) or weapon prev
+        cmd->int_val = (strcmp(arg1, "prev") == 0) ? -1 : 1;
     } else {
         pz_log(PZ_LOG_WARN, PZ_LOG_CAT_CORE,
             "Debug script: unknown command '%s'", keyword);
@@ -391,8 +396,9 @@ pz_debug_script_update(pz_debug_script *script)
         return PZ_DEBUG_SCRIPT_CONTINUE;
     }
 
-    // Clear single-frame fire
+    // Clear single-frame inputs
     script->input.fire = false;
+    script->input.weapon_cycle = 0;
 
     // If we're counting down frames, just continue
     if (script->frames_remaining > 0) {
@@ -514,6 +520,12 @@ pz_debug_script_update(pz_debug_script *script)
             pz_log(PZ_LOG_INFO, PZ_LOG_CAT_CORE, "Debug script: god mode %s",
                 cmd->bool_val ? "on" : "off");
             return PZ_DEBUG_SCRIPT_GOD_MODE;
+
+        case CMD_WEAPON:
+            script->input.weapon_cycle = cmd->int_val;
+            pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_CORE, "Debug script: weapon %s",
+                cmd->int_val > 0 ? "next" : "prev");
+            break;
         }
     }
 

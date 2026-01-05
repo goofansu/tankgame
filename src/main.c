@@ -30,6 +30,7 @@
 #include "game/pz_ai.h"
 #include "game/pz_background.h"
 #include "game/pz_barrier.h"
+#include "game/pz_barrier_placer.h"
 #include "game/pz_campaign.h"
 #include "game/pz_game_music.h"
 #include "game/pz_game_sfx.h"
@@ -214,6 +215,8 @@ typedef struct map_session {
     pz_particle_manager *particle_mgr;
     pz_powerup_manager *powerup_mgr;
     pz_barrier_manager *barrier_mgr;
+    pz_barrier_placer_renderer *barrier_placer_renderer;
+    pz_barrier_ghost barrier_ghost; // Ghost preview for barrier placement
     pz_mine_manager *mine_mgr;
 
     // Map gameplay state
@@ -330,6 +333,10 @@ map_session_unload(map_session *session)
 
     pz_barrier_manager_destroy(session->barrier_mgr, g_app.renderer);
     session->barrier_mgr = NULL;
+
+    pz_barrier_placer_renderer_destroy(
+        session->barrier_placer_renderer, g_app.renderer);
+    session->barrier_placer_renderer = NULL;
 
     pz_mine_manager_destroy(session->mine_mgr, g_app.renderer);
     session->mine_mgr = NULL;
@@ -465,6 +472,9 @@ map_session_load(map_session *session, const char *map_path)
     session->powerup_mgr = pz_powerup_manager_create(g_app.renderer);
     session->barrier_mgr = pz_barrier_manager_create(
         g_app.renderer, g_app.tile_registry, session->map->tile_size);
+    session->barrier_placer_renderer = pz_barrier_placer_renderer_create(
+        g_app.renderer, session->map->tile_size);
+    memset(&session->barrier_ghost, 0, sizeof(session->barrier_ghost));
     session->mine_mgr = pz_mine_manager_create(g_app.renderer);
 
     // Spawn player at first spawn point
@@ -496,7 +506,12 @@ map_session_load(map_session *session, const char *map_path)
         const pz_powerup_spawn *ps = pz_map_get_powerup(session->map, i);
         if (ps) {
             pz_powerup_type type = pz_powerup_type_from_name(ps->type_name);
-            if (type != PZ_POWERUP_NONE) {
+            if (type == PZ_POWERUP_BARRIER_PLACER) {
+                // Barrier placer needs extra config
+                pz_powerup_add_barrier_placer(session->powerup_mgr, ps->pos,
+                    ps->respawn_time, ps->barrier_tile, ps->barrier_health,
+                    ps->barrier_count);
+            } else if (type != PZ_POWERUP_NONE) {
                 pz_powerup_add(
                     session->powerup_mgr, ps->pos, type, ps->respawn_time);
             } else {
@@ -1486,6 +1501,11 @@ done_script_commands:
         if (g_app.key_f_just_pressed) {
             pz_tank_cycle_weapon(g_app.session.player_tank, 1);
         }
+        // Debug script weapon cycling
+        if (script_input && script_input->weapon_cycle != 0) {
+            pz_tank_cycle_weapon(
+                g_app.session.player_tank, script_input->weapon_cycle);
+        }
     }
 
     uint64_t sim_start_us = pz_time_now_us();
@@ -1520,16 +1540,33 @@ done_script_commands:
             }
 
             // Powerup collection
+            pz_barrier_placer_data barrier_data = { 0 };
             pz_powerup_type collected
-                = pz_powerup_check_collection(g_app.session.powerup_mgr,
-                    g_app.session.player_tank->pos, 0.7f);
+                = pz_powerup_check_collection_ex(g_app.session.powerup_mgr,
+                    g_app.session.player_tank->pos, 0.7f, &barrier_data);
             if (collected != PZ_POWERUP_NONE) {
                 pz_tank_add_weapon(g_app.session.player_tank, (int)collected);
                 pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME, "Player collected: %s",
                     pz_powerup_type_name(collected));
+
+                // If barrier placer, set the barrier data on the tank
+                if (collected == PZ_POWERUP_BARRIER_PLACER) {
+                    pz_tank_set_barrier_placer(g_app.session.player_tank,
+                        barrier_data.barrier_tile, barrier_data.barrier_health,
+                        barrier_data.barrier_count);
+                }
             }
 
-            // Player firing
+            // Update barrier placement ghost (uses mouse world position)
+            pz_vec3 ghost_cursor_world = pz_camera_screen_to_world(
+                &g_app.camera, (int)g_app.mouse_x, (int)g_app.mouse_y);
+            pz_vec2 cursor_2d = { ghost_cursor_world.x, ghost_cursor_world.z };
+            pz_barrier_placer_update_ghost(&g_app.session.barrier_ghost,
+                g_app.session.player_tank, g_app.session.map,
+                g_app.session.barrier_mgr, g_app.session.map->tile_size,
+                cursor_2d);
+
+            // Player firing / barrier placement
             int current_weapon
                 = pz_tank_get_current_weapon(g_app.session.player_tank);
             const pz_weapon_stats *weapon
@@ -1538,48 +1575,76 @@ done_script_commands:
             bool fire_held = g_app.mouse_left_down || g_app.space_down;
             bool fire_pressed
                 = g_app.mouse_left_just_pressed || g_app.space_just_pressed;
+            // Debug script fire input (script->fire is single-press)
+            if (use_script_input && script_input->fire) {
+                fire_pressed = true;
+            }
+            if (use_script_input && script_input->hold_fire) {
+                fire_held = true;
+            }
             bool should_fire = weapon->auto_fire ? fire_held : fire_pressed;
 
-            int active_projectiles = pz_projectile_count_by_owner(
-                g_app.session.projectile_mgr, g_app.session.player_tank->id);
-            bool can_fire = active_projectiles < weapon->max_active_projectiles;
-
-            if (should_fire && can_fire
-                && g_app.session.player_tank->fire_cooldown <= 0.0f) {
-                pz_vec2 spawn_pos = { 0 };
-                pz_vec2 fire_dir = { 0 };
-                int bounce_cost = 0;
-                pz_tank_get_fire_solution(g_app.session.player_tank,
-                    g_app.session.map, &spawn_pos, &fire_dir, &bounce_cost);
-
-                pz_projectile_config proj_config = {
-                    .speed = weapon->projectile_speed,
-                    .max_bounces = weapon->max_bounces,
-                    .lifetime = -1.0f,
-                    .damage = weapon->damage,
-                    .scale = weapon->projectile_scale,
-                    .color = weapon->projectile_color,
-                };
-
-                int proj_slot = pz_projectile_spawn(
-                    g_app.session.projectile_mgr, spawn_pos, fire_dir,
-                    &proj_config, g_app.session.player_tank->id);
-                if (proj_slot >= 0 && bounce_cost > 0) {
-                    pz_projectile *proj
-                        = &g_app.session.projectile_mgr->projectiles[proj_slot];
-                    if (proj->bounces_remaining > 0) {
-                        proj->bounces_remaining -= 1;
+            // Check if this is a barrier placer weapon
+            if (current_weapon == PZ_POWERUP_BARRIER_PLACER) {
+                // Barrier placement instead of firing
+                if (fire_pressed
+                    && g_app.session.player_tank->fire_cooldown <= 0.0f) {
+                    int placed = pz_barrier_placer_place(
+                        g_app.session.player_tank, g_app.session.barrier_mgr,
+                        g_app.session.map, &g_app.session.barrier_ghost,
+                        g_app.session.map->tile_size);
+                    if (placed >= 0) {
+                        g_app.session.player_tank->fire_cooldown
+                            = weapon->fire_cooldown;
+                        // Play placement sound
+                        pz_game_sfx_play_plop(g_app.game_sfx);
                     }
                 }
+            } else {
+                // Normal weapon firing
+                int active_projectiles
+                    = pz_projectile_count_by_owner(g_app.session.projectile_mgr,
+                        g_app.session.player_tank->id);
+                bool can_fire
+                    = active_projectiles < weapon->max_active_projectiles;
 
-                g_app.session.player_tank->fire_cooldown
-                    = weapon->fire_cooldown;
+                if (should_fire && can_fire
+                    && g_app.session.player_tank->fire_cooldown <= 0.0f) {
+                    pz_vec2 spawn_pos = { 0 };
+                    pz_vec2 fire_dir = { 0 };
+                    int bounce_cost = 0;
+                    pz_tank_get_fire_solution(g_app.session.player_tank,
+                        g_app.session.map, &spawn_pos, &fire_dir, &bounce_cost);
 
-                // Trigger visual recoil
-                g_app.session.player_tank->recoil = weapon->recoil_strength;
+                    pz_projectile_config proj_config = {
+                        .speed = weapon->projectile_speed,
+                        .max_bounces = weapon->max_bounces,
+                        .lifetime = -1.0f,
+                        .damage = weapon->damage,
+                        .scale = weapon->projectile_scale,
+                        .color = weapon->projectile_color,
+                    };
 
-                // Play gunfire sound
-                pz_game_sfx_play_gunfire(g_app.game_sfx);
+                    int proj_slot = pz_projectile_spawn(
+                        g_app.session.projectile_mgr, spawn_pos, fire_dir,
+                        &proj_config, g_app.session.player_tank->id);
+                    if (proj_slot >= 0 && bounce_cost > 0) {
+                        pz_projectile *proj = &g_app.session.projectile_mgr
+                                                   ->projectiles[proj_slot];
+                        if (proj->bounces_remaining > 0) {
+                            proj->bounces_remaining -= 1;
+                        }
+                    }
+
+                    g_app.session.player_tank->fire_cooldown
+                        = weapon->fire_cooldown;
+
+                    // Trigger visual recoil
+                    g_app.session.player_tank->recoil = weapon->recoil_strength;
+
+                    // Play gunfire sound
+                    pz_game_sfx_play_gunfire(g_app.game_sfx);
+                }
             }
 
             // Mine placement (right-click or G key)
@@ -1706,6 +1771,23 @@ done_script_commands:
 
                     // If barrier was destroyed, spawn larger explosion
                     if (destroyed) {
+                        // Notify owner tank if this was a player-placed barrier
+                        if (barrier->owner_tank_id >= 0) {
+                            pz_tank *owner = pz_tank_get_by_id(
+                                g_app.session.tank_mgr, barrier->owner_tank_id);
+                            if (owner) {
+                                // Find barrier index to pass to callback
+                                for (int b = 0; b < PZ_MAX_BARRIERS; b++) {
+                                    pz_barrier *check = pz_barrier_get(
+                                        g_app.session.barrier_mgr, b);
+                                    if (check == barrier) {
+                                        pz_tank_on_barrier_destroyed(owner, b);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+
                         pz_vec3 exp_pos
                             = { barrier->pos.x, 0.75f, barrier->pos.y };
                         pz_smoke_config explosion = PZ_SMOKE_TANK_HIT;
@@ -2290,6 +2372,20 @@ done_script_commands:
         }
         pz_barrier_render(
             g_app.session.barrier_mgr, g_app.renderer, vp, &barrier_params);
+    }
+
+    // Render barrier placement ghost (before tanks, semi-transparent)
+    if (g_app.session.barrier_placer_renderer && g_app.session.player_tank
+        && g_app.session.barrier_ghost.visible) {
+        const pz_tank_barrier_placer *placer
+            = pz_tank_get_barrier_placer(g_app.session.player_tank);
+        if (placer) {
+            pz_barrier_placer_render_ghost(
+                g_app.session.barrier_placer_renderer, g_app.renderer, vp,
+                &g_app.session.barrier_ghost,
+                g_app.session.player_tank->body_color, g_app.tile_registry,
+                placer->barrier_tile);
+        }
     }
 
     pz_tank_render_params tank_params = { 0 };

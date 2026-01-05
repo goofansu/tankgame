@@ -21,6 +21,7 @@ typedef enum {
     PZ_SFX_EXPLOSION_TANK, // explosion2.wav - tank explodes
     PZ_SFX_EXPLOSION_FINAL, // explosion1.wav - last enemy explodes
     PZ_SFX_TANK_HIT, // hit1.wav - tank hit but not destroyed
+    PZ_SFX_PLOP, // plop.wav - barrier placement
     PZ_SFX_COUNT
 } pz_sfx_id;
 

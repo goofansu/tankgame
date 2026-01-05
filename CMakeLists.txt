@@ -82,6 +82,7 @@ set(GAME_SOURCES
     src/game/pz_particle.c
     src/game/pz_background.c
     src/game/pz_barrier.c
+    src/game/pz_barrier_placer.c
     src/game/pz_game_music.c
     src/game/pz_game_sfx.c
     src/game/pz_powerup.c
@@ -134,6 +135,7 @@ target_include_directories(tankgame PRIVATE
 # Shader compilation with sokol-shdc
 set(SHADER_INPUT ${CMAKE_SOURCE_DIR}/shaders/tankgame.glsl)
 set(SHADER_OUTPUT ${CMAKE_SOURCE_DIR}/src/engine/render/pz_sokol_shaders.h)
+file(GLOB SHADER_PROGRAMS ${CMAKE_SOURCE_DIR}/shaders/programs/*.glsl)
 
 # Find sokol-shdc binary based on platform
 if(APPLE)
@@ -156,7 +158,7 @@ if(EXISTS ${SOKOL_SHDC_BIN})
             --output ${SHADER_OUTPUT}
             --slang glsl410:metal_macos
             --reflection
-        DEPENDS ${SHADER_INPUT}
+        DEPENDS ${SHADER_INPUT} ${SHADER_PROGRAMS}
         COMMENT "Compiling shaders with sokol-shdc"
         VERBATIM
     )

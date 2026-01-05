@@ -38,6 +38,10 @@ typedef struct pz_barrier {
 
     char tile_name[32]; // Tile name for texture lookup
 
+    // Ownership (for player-placed barriers)
+    int owner_tank_id; // -1 if map-placed, tank ID if player-placed
+    pz_vec4 tint_color; // Color tint from owner's tank (1,1,1,1 = no tint)
+
     // Destruction animation state
     float destroy_timer; // Counts down during destruction effect
 } pz_barrier;
@@ -75,6 +79,12 @@ void pz_barrier_manager_destroy(pz_barrier_manager *mgr, pz_renderer *renderer);
 // Returns barrier index, or -1 if full
 int pz_barrier_add(
     pz_barrier_manager *mgr, pz_vec2 pos, const char *tile_name, float health);
+
+// Add a barrier with owner (for player-placed barriers)
+// owner_tank_id: -1 for map-placed, tank ID for player-placed
+// tint_color: color overlay (1,1,1,1 = no tint)
+int pz_barrier_add_owned(pz_barrier_manager *mgr, pz_vec2 pos,
+    const char *tile_name, float health, int owner_tank_id, pz_vec4 tint_color);
 
 // Update all barriers (destruction timers, etc.)
 void pz_barrier_update(pz_barrier_manager *mgr, float dt);
@@ -124,5 +134,13 @@ int pz_barrier_count(const pz_barrier_manager *mgr);
 
 // Clear all barriers (for map reload)
 void pz_barrier_clear(pz_barrier_manager *mgr);
+
+// Get barrier by index (for iteration)
+pz_barrier *pz_barrier_get(pz_barrier_manager *mgr, int index);
+
+// Check if a position is valid for barrier placement
+// Returns true if no wall, no existing barrier, no tank at position
+bool pz_barrier_is_valid_placement(const pz_barrier_manager *mgr,
+    const struct pz_map *map, pz_vec2 pos, float tank_radius, pz_vec2 tank_pos);
 
 #endif // PZ_BARRIER_H

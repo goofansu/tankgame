@@ -41,6 +41,9 @@ void pz_game_sfx_play_tank_hit(pz_game_sfx *gsfx);
 // Play ricochet sound (bullet bounces off wall)
 void pz_game_sfx_play_ricochet(pz_game_sfx *gsfx);
 
+// Play plop sound (barrier placement)
+void pz_game_sfx_play_plop(pz_game_sfx *gsfx);
+
 // Set master volume for all SFX (0.0 - 1.0)
 void pz_game_sfx_set_volume(pz_game_sfx *gsfx, float volume);
 

@@ -1118,12 +1118,22 @@ parse_enemy_tag(const char *params, pz_enemy_spawn *enemy)
     return true;
 }
 
-// Parse powerup tag: "powerup type=<name> respawn=<f>"
+// Parse powerup tag: "powerup type=<name> respawn=<f> barrier=<tag>
+// barrier_count=<n>" For barrier_placer type, barrier and barrier_count specify
+// the barrier template
 static bool
-parse_powerup_tag(const char *params, pz_powerup_spawn *powerup)
+parse_powerup_tag(const char *params, pz_powerup_spawn *powerup,
+    char *barrier_tag_out, size_t barrier_tag_size)
 {
     powerup->type_name[0] = '\0';
     powerup->respawn_time = 15.0f; // Default respawn time
+    powerup->barrier_tile[0] = '\0';
+    powerup->barrier_health = 20.0f;
+    powerup->barrier_count = 2; // Default barrier count
+
+    if (barrier_tag_out && barrier_tag_size > 0) {
+        barrier_tag_out[0] = '\0';
+    }
 
     const char *p = params;
     while (*p) {
@@ -1150,6 +1160,29 @@ parse_powerup_tag(const char *params, pz_powerup_spawn *powerup)
             continue;
         } else if (strncmp(p, "respawn=", 8) == 0) {
             powerup->respawn_time = (float)atof(p + 8);
+        } else if (strncmp(p, "barrier=", 8) == 0) {
+            // Extract barrier tag name (to be resolved later)
+            const char *start = p + 8;
+            const char *end = start;
+            while (*end && !isspace((unsigned char)*end) && *end != ',') {
+                end++;
+            }
+            if (barrier_tag_out && barrier_tag_size > 0) {
+                size_t len = end - start;
+                if (len >= barrier_tag_size) {
+                    len = barrier_tag_size - 1;
+                }
+                strncpy(barrier_tag_out, start, len);
+                barrier_tag_out[len] = '\0';
+            }
+            p = end;
+            continue;
+        } else if (strncmp(p, "barrier_count=", 14) == 0) {
+            powerup->barrier_count = atoi(p + 14);
+            if (powerup->barrier_count < 1)
+                powerup->barrier_count = 1;
+            if (powerup->barrier_count > 8)
+                powerup->barrier_count = 8;
         }
 
         while (*p && !isspace((unsigned char)*p) && *p != ',') {
@@ -1203,8 +1236,10 @@ parse_barrier_tag(const char *params, pz_barrier_spawn *barrier)
 // Tag storage for v2 format
 typedef struct tag_def {
     char name[32];
-    char type[16]; // "spawn", "enemy", or "powerup"
+    char type[16]; // "spawn", "enemy", "powerup", or "barrier"
     char params[128];
+    char barrier_tag[32]; // For powerup type=barrier_placer: referenced barrier
+                          // tag
 } tag_def;
 
 #define MAX_TAGS 64
@@ -1537,7 +1572,38 @@ pz_map_load(const char *path)
             if (map->powerup_count < PZ_MAP_MAX_POWERUPS) {
                 pz_powerup_spawn *ps = &map->powerups[map->powerup_count++];
                 ps->pos = pos;
-                parse_powerup_tag(tag->params, ps);
+                char barrier_tag_name[32] = { 0 };
+                parse_powerup_tag(tag->params, ps, barrier_tag_name,
+                    sizeof(barrier_tag_name));
+
+                // If this is a barrier_placer, resolve the barrier tag
+                // reference
+                if (barrier_tag_name[0] != '\0') {
+                    // Find the barrier tag definition
+                    for (int k = 0; k < tag_count; k++) {
+                        if (strcmp(tags[k].name, barrier_tag_name) == 0
+                            && strcmp(tags[k].type, "barrier") == 0) {
+                            // Parse barrier params into a temp struct
+                            pz_barrier_spawn temp_barrier = { 0 };
+                            parse_barrier_tag(tags[k].params, &temp_barrier);
+                            // Copy barrier properties to powerup spawn
+                            strncpy(ps->barrier_tile, temp_barrier.tile_name,
+                                sizeof(ps->barrier_tile) - 1);
+                            ps->barrier_health = temp_barrier.health;
+                            pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
+                                "Barrier placer: tile=%s, health=%.0f, "
+                                "count=%d",
+                                ps->barrier_tile, ps->barrier_health,
+                                ps->barrier_count);
+                            break;
+                        }
+                    }
+                    if (ps->barrier_tile[0] == '\0') {
+                        pz_log(PZ_LOG_WARN, PZ_LOG_CAT_GAME,
+                            "Barrier placer references unknown barrier tag: %s",
+                            barrier_tag_name);
+                    }
+                }
             }
         } else if (strcmp(tag->type, "barrier") == 0) {
             if (map->barrier_count < PZ_MAP_MAX_BARRIERS) {

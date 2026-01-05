@@ -35,6 +35,7 @@ typedef struct pz_debug_script_input {
     bool has_aim; // Whether aim coordinates are set
     bool fire; // Fire this frame (single press, auto-clears)
     bool hold_fire; // Hold fire continuously
+    int weapon_cycle; // +1 for next, -1 for prev, 0 for none (auto-clears)
 } pz_debug_script_input;
 
 // Script execution context
