@@ -173,6 +173,8 @@ typedef struct pz_ai_controller {
     pz_vec2 detour_target; // Temporary target to make space
     float detour_timer; // Time remaining for detour attempt
     float detour_blocked_timer; // Time spent blocked by another tank
+    pz_vec2 detour_last_pos; // Last position used for stall detection
+    bool detour_has_last_pos; // Whether detour_last_pos is initialized
 } pz_ai_controller;
 
 /* ============================================================================

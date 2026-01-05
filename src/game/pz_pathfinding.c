@@ -191,6 +191,76 @@ grid_index(const pz_astar_grid *grid, int x, int y)
     return y * grid->width + x;
 }
 
+static bool
+is_position_clear(const pz_map *map, pz_vec2 pos, float radius)
+{
+    if (!map) {
+        return true;
+    }
+
+    if (pz_map_is_solid(map, pos)) {
+        return false;
+    }
+
+    if (radius <= 0.0f) {
+        return true;
+    }
+
+    if (pz_map_is_solid(map, (pz_vec2) { pos.x + radius, pos.y })) {
+        return false;
+    }
+    if (pz_map_is_solid(map, (pz_vec2) { pos.x - radius, pos.y })) {
+        return false;
+    }
+    if (pz_map_is_solid(map, (pz_vec2) { pos.x, pos.y + radius })) {
+        return false;
+    }
+    if (pz_map_is_solid(map, (pz_vec2) { pos.x, pos.y - radius })) {
+        return false;
+    }
+
+    float diag = radius * 0.707f;
+    if (pz_map_is_solid(map, (pz_vec2) { pos.x + diag, pos.y + diag })) {
+        return false;
+    }
+    if (pz_map_is_solid(map, (pz_vec2) { pos.x + diag, pos.y - diag })) {
+        return false;
+    }
+    if (pz_map_is_solid(map, (pz_vec2) { pos.x - diag, pos.y + diag })) {
+        return false;
+    }
+    if (pz_map_is_solid(map, (pz_vec2) { pos.x - diag, pos.y - diag })) {
+        return false;
+    }
+
+    return true;
+}
+
+static bool
+segment_has_clearance(
+    const pz_map *map, pz_vec2 start, pz_vec2 end, float radius)
+{
+    pz_vec2 delta = pz_vec2_sub(end, start);
+    float dist = pz_vec2_len(delta);
+    if (dist <= 0.001f) {
+        return is_position_clear(map, start, radius);
+    }
+
+    float step = pz_maxf(radius * 0.5f, 0.2f);
+    int steps = (int)ceilf(dist / step);
+    pz_vec2 increment = pz_vec2_scale(delta, 1.0f / (float)steps);
+    pz_vec2 pos = start;
+
+    for (int i = 0; i <= steps; i++) {
+        if (!is_position_clear(map, pos, radius)) {
+            return false;
+        }
+        pos = pz_vec2_add(pos, increment);
+    }
+
+    return true;
+}
+
 // ============================================================================
 // Walkability Check
 // ============================================================================
@@ -618,22 +688,10 @@ pz_path_smooth(pz_path *path, const pz_map *map, float entity_radius)
         int furthest = current + 1;
 
         for (int i = path->count - 1; i > current + 1; i--) {
-            // Check line of sight from current to i
-            pz_raycast_result ray = pz_map_raycast_ex(
-                map, path->points[current], path->points[i]);
-
-            if (!ray.hit) {
-                // Additional check: verify the path is wide enough for entity
-                // This is a simplified check - we verify midpoint is walkable
-                pz_vec2 mid = pz_vec2_lerp(
-                    path->points[current], path->points[i], 0.5f);
-                int mid_tx, mid_ty;
-                pz_map_world_to_tile(map, mid, &mid_tx, &mid_ty);
-
-                if (is_tile_walkable(map, mid_tx, mid_ty, entity_radius)) {
-                    furthest = i;
-                    break;
-                }
+            if (segment_has_clearance(map, path->points[current],
+                    path->points[i], entity_radius)) {
+                furthest = i;
+                break;
             }
         }
 

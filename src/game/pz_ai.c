@@ -240,6 +240,8 @@ pz_ai_spawn_enemy(
     ctrl->detour_target = pos;
     ctrl->detour_timer = 0.0f;
     ctrl->detour_blocked_timer = 0.0f;
+    ctrl->detour_last_pos = pos;
+    ctrl->detour_has_last_pos = true;
 
     pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
         "Spawned %s enemy at (%.1f, %.1f), tank_id=%d%s",
@@ -492,6 +494,38 @@ ai_is_tank_blocking(pz_tank_manager *mgr, pz_vec2 pos, pz_vec2 move_dir,
 }
 
 static bool
+ai_has_nearby_tank(pz_tank_manager *mgr, pz_vec2 pos, float radius,
+    int exclude_id, float extra_margin)
+{
+    if (!mgr) {
+        return false;
+    }
+
+    float radius_sum = radius + mgr->collision_radius + extra_margin;
+    float radius_sq = radius_sum * radius_sum;
+
+    for (int i = 0; i < PZ_MAX_TANKS; i++) {
+        pz_tank *tank = &mgr->tanks[i];
+        if (!(tank->flags & PZ_TANK_FLAG_ACTIVE)) {
+            continue;
+        }
+        if (tank->flags & PZ_TANK_FLAG_DEAD) {
+            continue;
+        }
+        if (tank->id == exclude_id) {
+            continue;
+        }
+
+        pz_vec2 delta = pz_vec2_sub(pos, tank->pos);
+        if (pz_vec2_len_sq(delta) < radius_sq) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static bool
 ai_pick_detour_target(pz_ai_controller *ctrl, const pz_tank *tank,
     const pz_map *map, pz_tank_manager *tank_mgr, pz_vec2 move_dir, pz_rng *rng)
 {
@@ -546,9 +580,14 @@ ai_apply_detour(pz_ai_controller *ctrl, const pz_tank *tank, const pz_map *map,
 
     const float min_input = 0.25f;
     const float arrive_threshold = 0.4f;
-    const float blocked_speed_sq = 0.02f * 0.02f;
     const float blocked_time = 0.25f;
     const float step = AI_TANK_RADIUS * 1.1f;
+    const float stall_dist = 0.02f;
+
+    if (!ctrl->detour_has_last_pos) {
+        ctrl->detour_last_pos = tank->pos;
+        ctrl->detour_has_last_pos = true;
+    }
 
     if (ctrl->detour_active) {
         ctrl->detour_timer -= dt;
@@ -560,11 +599,13 @@ ai_apply_detour(pz_ai_controller *ctrl, const pz_tank *tank, const pz_map *map,
         } else if (dist > 0.01f) {
             *move_dir = pz_vec2_scale(to_target, 1.0f / dist);
         }
+        ctrl->detour_last_pos = tank->pos;
         return;
     }
 
     if (pz_vec2_len(*move_dir) < min_input) {
         ctrl->detour_blocked_timer = 0.0f;
+        ctrl->detour_last_pos = tank->pos;
         return;
     }
 
@@ -574,17 +615,31 @@ ai_apply_detour(pz_ai_controller *ctrl, const pz_tank *tank, const pz_map *map,
         return;
     }
 
-    if (!ai_is_tank_blocking(
-            tank_mgr, tank->pos, *move_dir, AI_TANK_RADIUS, tank->id)) {
+    bool blocked_by_tank = ai_is_tank_blocking(
+        tank_mgr, tank->pos, *move_dir, AI_TANK_RADIUS, tank->id);
+    if (!blocked_by_tank
+        && ai_hits_tank(tank_mgr, test, AI_TANK_RADIUS, tank->id)) {
+        blocked_by_tank = true;
+    }
+    if (!blocked_by_tank
+        && ai_has_nearby_tank(
+            tank_mgr, tank->pos, AI_TANK_RADIUS, tank->id, 0.6f)) {
+        blocked_by_tank = true;
+    }
+
+    if (!blocked_by_tank) {
         ctrl->detour_blocked_timer = 0.0f;
+        ctrl->detour_last_pos = tank->pos;
         return;
     }
 
-    if (pz_vec2_len_sq(tank->vel) < blocked_speed_sq) {
+    pz_vec2 moved = pz_vec2_sub(tank->pos, ctrl->detour_last_pos);
+    if (pz_vec2_len(moved) < stall_dist) {
         ctrl->detour_blocked_timer += dt;
     } else {
         ctrl->detour_blocked_timer = 0.0f;
     }
+    ctrl->detour_last_pos = tank->pos;
 
     if (ctrl->detour_blocked_timer < blocked_time) {
         return;
@@ -2525,6 +2580,56 @@ pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
  * ============================================================================
  */
 
+// Check if firing would hit another enemy tank (friendly fire check).
+// Returns true if the shot is blocked by an ally.
+static bool
+would_hit_friendly(const pz_ai_manager *ai_mgr, const pz_tank *shooter,
+    pz_vec2 fire_dir, float max_range)
+{
+    if (!ai_mgr || !ai_mgr->tank_mgr || !shooter) {
+        return false;
+    }
+
+    // Normalize direction
+    float dir_len = pz_vec2_len(fire_dir);
+    if (dir_len < 0.0001f) {
+        return false;
+    }
+    pz_vec2 dir = pz_vec2_scale(fire_dir, 1.0f / dir_len);
+
+    // Tank collision radius for hit detection
+    const float tank_hit_radius = 0.85f;
+
+    // Check against all other enemy tanks
+    for (int i = 0; i < ai_mgr->controller_count; i++) {
+        const pz_ai_controller *ctrl = &ai_mgr->controllers[i];
+
+        // Skip self
+        if (ctrl->tank_id == shooter->id) {
+            continue;
+        }
+
+        // Get the other tank
+        pz_tank *other = pz_tank_get_by_id(ai_mgr->tank_mgr, ctrl->tank_id);
+        if (!other || (other->flags & PZ_TANK_FLAG_DEAD)) {
+            continue;
+        }
+
+        // Check ray-circle intersection
+        float hit_dist = 0.0f;
+        if (ray_segment_hits_circle(shooter->pos, dir, max_range, other->pos,
+                tank_hit_radius, &hit_dist)) {
+            // Would hit a friendly - skip firing
+            pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
+                "AI %d skipping shot - would hit friendly tank %d at dist %.1f",
+                shooter->id, other->id, hit_dist);
+            return true;
+        }
+    }
+
+    return false;
+}
+
 int
 pz_ai_fire(pz_ai_manager *ai_mgr, pz_projectile_manager *proj_mgr)
 {
@@ -2629,12 +2734,25 @@ pz_ai_fire(pz_ai_manager *ai_mgr, pz_projectile_manager *proj_mgr)
             continue;
         }
 
-        // Fire!
+        // Calculate fire direction first to check for friendly fire
         pz_vec2 spawn_pos = { 0 };
         pz_vec2 fire_dir = { 0 };
         int bounce_cost = 0;
         pz_tank_get_fire_solution(
             tank, ai_mgr->map, &spawn_pos, &fire_dir, &bounce_cost);
+
+        // Friendly fire check - don't shoot if we'd hit another enemy tank
+        // Use a reasonable range for the check (longer for ricochet weapons)
+        float ff_check_range = 15.0f;
+        const pz_enemy_stats *stats_ff = pz_enemy_get_stats(ctrl->level);
+        if (stats_ff->max_bounces > 0) {
+            ff_check_range = 25.0f; // Longer range for ricochet weapons
+        }
+        if (would_hit_friendly(ai_mgr, tank, fire_dir, ff_check_range)) {
+            continue; // Skip this shot - would hit ally
+        }
+
+        // Fire!
 
         float projectile_speed
             = weapon->projectile_speed * stats->projectile_speed_scale;
