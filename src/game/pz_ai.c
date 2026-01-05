@@ -852,25 +852,6 @@ ai_update_toxic_escape(pz_ai_controller *ctrl, const pz_map *map,
     float prev_urgency = ctrl->toxic_urgency;
     ctrl->toxic_urgency = urgency;
 
-    // If safe (low urgency), stop escaping
-    if (urgency < 0.1f) {
-        if (ctrl->toxic_escaping) {
-            pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
-                "AI reached safety, stopping toxic escape");
-            ctrl->toxic_escaping = false;
-            pz_path_clear(&ctrl->toxic_escape_path);
-        }
-        return false;
-    }
-
-    // Log when AI first detects it needs to escape
-    if (prev_urgency < 0.1f && urgency >= 0.1f) {
-        pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
-            "AI at (%.1f, %.1f) detects toxic threat, urgency=%.2f, "
-            "starting evacuation!",
-            current_pos.x, current_pos.y, urgency);
-    }
-
     // Already escaping with valid path? Keep following it!
     if (ctrl->toxic_escaping && ctrl->toxic_escape_path.valid
         && !pz_path_is_complete(&ctrl->toxic_escape_path)) {
@@ -893,6 +874,25 @@ ai_update_toxic_escape(pz_ai_controller *ctrl, const pz_map *map,
             // Still en route - keep following current path, don't recalculate!
             return true;
         }
+    }
+
+    // If safe (low urgency), stop escaping
+    if (urgency < 0.1f) {
+        if (ctrl->toxic_escaping) {
+            pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
+                "AI reached safety, stopping toxic escape");
+            ctrl->toxic_escaping = false;
+            pz_path_clear(&ctrl->toxic_escape_path);
+        }
+        return false;
+    }
+
+    // Log when AI first detects it needs to escape
+    if (prev_urgency < 0.1f && urgency >= 0.1f && !ctrl->toxic_escaping) {
+        pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
+            "AI at (%.1f, %.1f) detects toxic threat, urgency=%.2f, "
+            "starting evacuation!",
+            current_pos.x, current_pos.y, urgency);
     }
 
     // Update check timer - only recalculate periodically
@@ -2103,6 +2103,8 @@ ai_update_behavior(pz_ai_controller *ctrl, pz_tank *tank,
         ctrl->wants_to_fire = true;
     }
 
+    float suppress_threshold = can_strafe ? 1.2f : 1.0f;
+
     // d) Check evasive moves if necessary (toxic escape overrides)
     if (can_escape_toxic
         && ai_update_toxic_escape(
@@ -2111,10 +2113,23 @@ ai_update_behavior(pz_ai_controller *ctrl, pz_tank *tank,
             = ai_get_toxic_escape_move(ctrl, toxic_cloud, tank->pos);
         if (pz_vec2_len_sq(escape_dir) > 0.001f) {
             move_dir = escape_dir;
-            float suppress_threshold = can_strafe ? 1.2f : 1.0f;
             if (ctrl->toxic_urgency > suppress_threshold) {
                 ctrl->wants_to_fire = false;
             }
+        }
+    }
+
+    if (ctrl->toxic_escaping && ctrl->toxic_urgency <= suppress_threshold) {
+        bool escape_fire = ctrl->can_see_player;
+        if (!escape_fire
+            && ai_has_behavior(ctrl, PZ_AI_BEHAVIOR_BOUNCE_SHOTS)) {
+            escape_fire = ctrl->has_bounce_shot;
+        }
+        if (ctrl->defending_projectile || ctrl->targeting_mine) {
+            escape_fire = true;
+        }
+        if (escape_fire) {
+            ctrl->wants_to_fire = true;
         }
     }
 
