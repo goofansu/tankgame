@@ -298,12 +298,8 @@ ai_in_toxic_cloud(const pz_toxic_cloud *toxic_cloud, pz_vec2 pos)
 // How close to waypoint before advancing
 #define AI_PATH_ARRIVE_THRESHOLD 0.8f
 
-// How far ahead (in progress units) to look for toxic threat
-#define AI_TOXIC_LOOKAHEAD_PROGRESS 0.15f
 // Distance margin from boundary to consider "safe enough"
 #define AI_TOXIC_SAFE_MARGIN 2.5f
-// How close to boundary before we start worrying (in world units)
-#define AI_TOXIC_DANGER_DISTANCE 4.0f
 // Time between toxic escape recalculations
 #define AI_TOXIC_CHECK_INTERVAL 0.5f
 
@@ -316,36 +312,44 @@ ai_calc_toxic_urgency(const pz_toxic_cloud *toxic_cloud, pz_vec2 pos)
         return 0.0f;
     }
 
-    // Already in toxic = maximum urgency
+    // Already in toxic = maximum urgency - RUN!
     if (pz_toxic_cloud_is_inside(toxic_cloud, pos)) {
         return 1.5f;
     }
 
-    // Check if cloud will reach us soon
-    float current_progress = pz_toxic_cloud_get_progress(toxic_cloud);
-    float future_progress = current_progress + AI_TOXIC_LOOKAHEAD_PROGRESS;
+    // Check if we'll be outside the FINAL safe zone when cloud fully closes
+    // This is the key check - start moving early!
+    bool will_be_toxic_at_end
+        = pz_toxic_cloud_will_be_inside(toxic_cloud, pos, 1.0f);
 
-    if (pz_toxic_cloud_will_be_inside(toxic_cloud, pos, future_progress)) {
-        // Cloud is approaching - calculate urgency based on how close
-        float dist = pz_toxic_cloud_distance_to_boundary(toxic_cloud, pos);
-        // dist is negative when inside safe zone (distance from edge)
-        float urgency = 1.0f - ((-dist) / AI_TOXIC_DANGER_DISTANCE);
-        return pz_clampf(urgency, 0.3f, 1.0f);
+    if (!will_be_toxic_at_end) {
+        // We're in the final safe zone - no need to move
+        return 0.0f;
     }
 
-    // Check distance to boundary for early warning
+    // We WILL be in the toxic zone when it fully closes - need to escape!
+    // Calculate urgency based on current cloud progress
+    float progress = pz_toxic_cloud_get_progress(toxic_cloud);
+
+    // Even at 0% progress, if we'll be outside the final zone, start moving
+    // with moderate urgency (0.3). As progress increases, urgency increases.
+    // At 50% progress -> urgency 0.6
+    // At 80% progress -> urgency 0.9
+    // At 100% or inside toxic -> urgency 1.5
+    float urgency = 0.3f + progress * 0.7f;
+
+    // Boost urgency if cloud is getting very close to our position
     float dist = pz_toxic_cloud_distance_to_boundary(toxic_cloud, pos);
-    if (dist > -AI_TOXIC_DANGER_DISTANCE) {
-        // Getting close to boundary
-        float urgency = 0.5f * (1.0f - ((-dist) / AI_TOXIC_DANGER_DISTANCE));
-        return pz_clampf(urgency, 0.0f, 0.5f);
+    if (dist > -3.0f) {
+        // Very close to current boundary - boost urgency
+        urgency = pz_maxf(urgency, 0.8f);
     }
 
-    return 0.0f;
+    return pz_clampf(urgency, 0.3f, 1.0f);
 }
 
 // Find a safe escape target and update the escape path.
-// Returns true if escape is needed and path was found.
+// Returns true if escape is needed.
 static bool
 ai_update_toxic_escape(pz_ai_controller *ctrl, const pz_map *map,
     const pz_toxic_cloud *toxic_cloud, pz_vec2 current_pos, float dt)
@@ -356,70 +360,87 @@ ai_update_toxic_escape(pz_ai_controller *ctrl, const pz_map *map,
         return false;
     }
 
-    // Update check timer
-    ctrl->toxic_check_timer -= dt;
-
     // Calculate current urgency
     float urgency = ai_calc_toxic_urgency(toxic_cloud, current_pos);
+    float prev_urgency = ctrl->toxic_urgency;
     ctrl->toxic_urgency = urgency;
 
-    // If not urgent, stop escaping
+    // If safe (low urgency), stop escaping
     if (urgency < 0.1f) {
         if (ctrl->toxic_escaping) {
             pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
                 "AI reached safety, stopping toxic escape");
+            ctrl->toxic_escaping = false;
+            pz_path_clear(&ctrl->toxic_escape_path);
         }
-        ctrl->toxic_escaping = false;
-        pz_path_clear(&ctrl->toxic_escape_path);
         return false;
     }
 
-    // Already escaping with valid path?
-    if (ctrl->toxic_escaping && ctrl->toxic_escape_path.valid) {
+    // Log when AI first detects it needs to escape
+    if (prev_urgency < 0.1f && urgency >= 0.1f) {
+        pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
+            "AI at (%.1f, %.1f) detects toxic threat, urgency=%.2f, "
+            "starting evacuation!",
+            current_pos.x, current_pos.y, urgency);
+    }
+
+    // Already escaping with valid path? Keep following it!
+    if (ctrl->toxic_escaping && ctrl->toxic_escape_path.valid
+        && !pz_path_is_complete(&ctrl->toxic_escape_path)) {
         // Check if we've arrived at escape target
         float dist_to_target
             = pz_vec2_dist(current_pos, ctrl->toxic_escape_target);
         if (dist_to_target < 1.5f) {
-            // Check if target is still safe
+            // Arrived - check if target is still safe
             if (!pz_toxic_cloud_is_inside(
-                    toxic_cloud, ctrl->toxic_escape_target)
-                && !pz_toxic_cloud_will_be_inside(toxic_cloud,
-                    ctrl->toxic_escape_target,
-                    pz_toxic_cloud_get_progress(toxic_cloud)
-                        + AI_TOXIC_LOOKAHEAD_PROGRESS * 2.0f)) {
-                // Arrived at safe spot
+                    toxic_cloud, ctrl->toxic_escape_target)) {
+                // Made it to safety!
                 ctrl->toxic_escaping = false;
                 pz_path_clear(&ctrl->toxic_escape_path);
                 return false;
             }
-        }
-
-        // Only recalculate path periodically unless urgent
-        if (ctrl->toxic_check_timer > 0.0f && urgency < 1.0f) {
-            return true; // Keep following current path
+            // Target is no longer safe, need new path (fall through)
+        } else {
+            // Still en route - keep following current path, don't recalculate!
+            return true;
         }
     }
 
-    // Need to find/update escape path
-    ctrl->toxic_check_timer = AI_TOXIC_CHECK_INTERVAL;
+    // Update check timer - only recalculate periodically
+    ctrl->toxic_check_timer -= dt;
+    if (ctrl->toxic_escaping && ctrl->toxic_check_timer > 0.0f) {
+        // Not time to recalculate yet, keep current escape state
+        return ctrl->toxic_escaping;
+    }
 
-    // Get a safe target position
+    // Time to find/update escape path
+    ctrl->toxic_check_timer = AI_TOXIC_CHECK_INTERVAL * 2.0f; // Less frequent
+
+    // Get a safe target position - always aim for the CENTER of the safe zone
     pz_vec2 safe_target = pz_toxic_cloud_get_safe_position(
         toxic_cloud, current_pos, AI_TOXIC_SAFE_MARGIN);
+
+    // Log what we're targeting
+    pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
+        "AI at (%.1f, %.1f) seeking safe position (%.1f, %.1f)", current_pos.x,
+        current_pos.y, safe_target.x, safe_target.y);
 
     // Verify target is actually safe
     if (pz_toxic_cloud_is_inside(toxic_cloud, safe_target)) {
         // Fallback: move toward center
         safe_target = toxic_cloud->config.center;
+        pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
+            "Safe position was toxic, using center (%.1f, %.1f)", safe_target.x,
+            safe_target.y);
     }
 
     // Check if target is reachable (not inside a wall)
     if (map && pz_map_is_solid(map, safe_target)) {
         // Try to find a nearby valid position
-        const float offsets[] = { 0.0f, 1.0f, -1.0f, 2.0f, -2.0f };
+        const float offsets[] = { 0.0f, 1.0f, -1.0f, 2.0f, -2.0f, 3.0f, -3.0f };
         bool found_valid = false;
-        for (int i = 0; i < 5 && !found_valid; i++) {
-            for (int j = 0; j < 5 && !found_valid; j++) {
+        for (int i = 0; i < 7 && !found_valid; i++) {
+            for (int j = 0; j < 7 && !found_valid; j++) {
                 pz_vec2 test = {
                     safe_target.x + offsets[i],
                     safe_target.y + offsets[j],
@@ -431,6 +452,11 @@ ai_update_toxic_escape(pz_ai_controller *ctrl, const pz_map *map,
                 }
             }
         }
+        if (found_valid) {
+            pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
+                "Adjusted safe target to (%.1f, %.1f) (was in wall)",
+                safe_target.x, safe_target.y);
+        }
     }
 
     // Use A* to find path to safe target
@@ -441,16 +467,19 @@ ai_update_toxic_escape(pz_ai_controller *ctrl, const pz_map *map,
     if (ctrl->toxic_escape_path.valid) {
         pz_path_smooth(&ctrl->toxic_escape_path, map, AI_TANK_RADIUS);
         ctrl->toxic_escaping = true;
-        pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
-            "AI found toxic escape path to (%.1f, %.1f), urgency=%.2f",
-            safe_target.x, safe_target.y, urgency);
+        pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
+            "AI escaping toxic: path to (%.1f, %.1f), %d waypoints, "
+            "urgency=%.2f",
+            safe_target.x, safe_target.y, ctrl->toxic_escape_path.count,
+            urgency);
         return true;
     }
 
     // Pathfinding failed - use direct escape as fallback
     ctrl->toxic_escaping = true;
-    pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
-        "AI toxic escape pathfinding failed, using direct escape");
+    pz_log(PZ_LOG_WARN, PZ_LOG_CAT_GAME,
+        "AI toxic escape pathfinding failed to (%.1f, %.1f), using direct",
+        safe_target.x, safe_target.y);
     return true;
 }
 
