@@ -148,8 +148,6 @@ pz_game_sfx_update_engines(pz_game_sfx *gsfx, pz_tank_manager *tanks)
         // Determine which sound to play
         pz_sfx_id wanted_sound
             = is_moving ? PZ_SFX_ENGINE_MOVING : PZ_SFX_ENGINE_IDLE;
-        pz_sfx_id current_sound
-            = state->was_moving ? PZ_SFX_ENGINE_MOVING : PZ_SFX_ENGINE_IDLE;
 
         // Switch sound if state changed, or start sound if none playing
         bool need_new_sound = false;

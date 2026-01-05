@@ -192,6 +192,8 @@ int
 pz_mine_update(pz_mine_manager *mgr, pz_tank_manager *tank_mgr,
     pz_projectile_manager *projectile_mgr, float dt)
 {
+    (void)projectile_mgr; // Reserved for future projectile-mine interactions
+
     if (!mgr)
         return 0;
 

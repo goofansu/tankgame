@@ -229,8 +229,8 @@ pz_mesh_create_box(float width, float height, float depth)
         0, 0, 1, 1, 0);
 
     // Bottom face (-Y)
-    v = emit_quad(v, -hw, -hh, -hd, -hw, -hh, hd, hw, -hh, hd, hw, -hh, -hd, 0,
-        -1, 0, 0, 1, 1, 0);
+    (void)emit_quad(v, -hw, -hh, -hd, -hw, -hh, hd, hw, -hh, hd, hw, -hh, -hd,
+        0, -1, 0, 0, 1, 1, 0);
 
     return mesh;
 }
@@ -269,7 +269,6 @@ pz_mesh_create_tank_body(void)
     // Half dimensions for centered positioning
     float hl = body_length * 0.5f; // Half length
     float hw = body_width * 0.5f; // Half width (full body)
-    float hh = body_height * 0.5f; // Half height
 
     // Inner body (between tracks)
     float inner_hw = hw - track_width;
@@ -431,7 +430,6 @@ pz_mesh_create_tank_turret(void)
     // Half dimensions
     float hw = base_width * 0.5f;
     float hd = base_depth * 0.5f;
-    float hh = base_height * 0.5f;
 
     pz_mesh_vertex *v = mesh->vertices;
 

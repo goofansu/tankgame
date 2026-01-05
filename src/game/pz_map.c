@@ -2041,7 +2041,6 @@ pz_map_save(const pz_map *map, const char *path)
     written = snprintf(p, remaining, "ambient_darkness %.2f\n",
         map->lighting.ambient_darkness);
     p += written;
-    remaining -= written;
 
     *p = '\0';
 

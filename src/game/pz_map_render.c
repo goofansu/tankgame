@@ -222,7 +222,7 @@ emit_ground_quad_at_height(float *v, float x0, float z0, float x1, float z1,
 }
 
 // Create vertices for a single tile quad on ground plane (default height)
-static float *
+__attribute__((unused)) static float *
 emit_ground_quad(float *v, float x0, float z0, float x1, float z1, int tile_x,
     int tile_y, int map_height, int scale)
 {
@@ -485,7 +485,7 @@ emit_wall_sides(float *v, float x0, float z0, float x1, float z1,
 
 // Wrapper for raised walls (h > 0) - emits walls from y=0 to y=height with top
 // face
-static float *
+__attribute__((unused)) static float *
 emit_wall_box(float *v, float x0, float z0, float x1, float z1, float height,
     int tile_x, int tile_y, const pz_map *map, int scale)
 {
@@ -519,7 +519,7 @@ count_wall_faces_for_tile(int tile_x, int tile_y, int8_t h, const pz_map *map)
 }
 
 // Legacy wrapper
-static int
+__attribute__((unused)) static int
 count_wall_faces(int tile_x, int tile_y, float height, const pz_map *map)
 {
     int8_t h = (int8_t)(height / WALL_HEIGHT_UNIT);

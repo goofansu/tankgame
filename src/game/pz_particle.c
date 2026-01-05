@@ -59,7 +59,7 @@ const pz_smoke_config PZ_SMOKE_TANK_EXPLOSION = {
  */
 
 // Check if a point is inside a circle
-static bool
+__attribute__((unused)) static bool
 point_in_circle(float px, float py, float cx, float cy, float r)
 {
     float dx = px - cx;
@@ -77,8 +77,10 @@ distance_to_spiral(float px, float py, float cx, float cy, float a, float b,
     // We sample the spiral and find minimum distance
     float min_dist = 1e10f;
     float end_angle = start_angle + turns * 2.0f * PZ_PI;
+    int num_steps = (int)((end_angle - start_angle) / 0.1f);
 
-    for (float theta = start_angle; theta < end_angle; theta += 0.1f) {
+    for (int i = 0; i < num_steps; i++) {
+        float theta = start_angle + i * 0.1f;
         float r = a + b * (theta - start_angle);
         float sx = cx + r * cosf(theta);
         float sy = cy + r * sinf(theta);

@@ -212,7 +212,7 @@ compare_floats(const void *a, const void *b)
 }
 
 // Calculate spotlight intensity at a given angle
-static float
+__attribute__((unused)) static float
 spotlight_intensity(float angle_to_point, float light_dir, float cone_angle,
     float cone_softness)
 {
@@ -243,7 +243,7 @@ spotlight_intensity(float angle_to_point, float light_dir, float cone_angle,
     return 0.0f;
 }
 
-static float
+__attribute__((unused)) static float
 normalize_angle_near(float angle, float center)
 {
     float diff = angle - center;

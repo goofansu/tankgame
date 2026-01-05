@@ -101,6 +101,8 @@ static void
 pz_music_seek_layer_to_time(
     pz_music *music, pz_music_layer *layer, double time_ms)
 {
+    (void)music; // Reserved for future use
+
     if (!layer->midi) {
         return;
     }

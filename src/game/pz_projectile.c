@@ -20,8 +20,8 @@ static const float PROJECTILE_VS_PROJECTILE_RADIUS = 0.18f;
 
 // Grace period before projectile can hit its owner (seconds)
 static const float SELF_DAMAGE_GRACE_PERIOD = 0.5f;
-// Grace period to prevent same-owner projectiles colliding immediately
-static const float SELF_PROJECTILE_GRACE_PERIOD = 0.05f;
+// Grace period to prevent same-owner projectiles colliding immediately (unused)
+// static const float SELF_PROJECTILE_GRACE_PERIOD = 0.05f;
 
 /* ============================================================================
  * Default Configuration

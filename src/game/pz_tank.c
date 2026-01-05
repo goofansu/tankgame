@@ -692,6 +692,8 @@ void
 pz_tank_update_all(pz_tank_manager *mgr, const pz_map *map,
     const pz_toxic_cloud *toxic_cloud, float dt)
 {
+    (void)map; // Reserved for future map-based tank updates
+
     if (!mgr)
         return;
 

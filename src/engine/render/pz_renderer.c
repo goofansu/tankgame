@@ -450,7 +450,7 @@ bool
 pz_renderer_save_render_target(
     pz_renderer *r, pz_render_target_handle handle, const char *path)
 {
-    int width, height;
+    int width = 0, height = 0;
     uint8_t *pixels = NULL;
 
 #ifdef PZ_ENABLE_SOKOL

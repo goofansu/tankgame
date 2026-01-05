@@ -341,7 +341,7 @@ check_line_of_sight(const pz_map *map, pz_vec2 from, pz_vec2 to)
     return !hit_wall;
 }
 
-static bool
+__attribute__((unused)) static bool
 ai_in_toxic_cloud(const pz_toxic_cloud *toxic_cloud, pz_vec2 pos)
 {
     return toxic_cloud && pz_toxic_cloud_is_inside(toxic_cloud, pos);
@@ -1419,7 +1419,6 @@ find_cover_position(const pz_map *map, pz_vec2 ai_pos, pz_vec2 player_pos,
     }
 
     const float tank_radius = 0.9f;
-    const float standoff = 1.2f; // Distance from wall
 
     // Direction to player
     pz_vec2 to_player = pz_vec2_sub(player_pos, ai_pos);
@@ -1436,9 +1435,12 @@ find_cover_position(const pz_map *map, pz_vec2 ai_pos, pz_vec2 player_pos,
     // Sample positions in a grid around the AI to find good cover spots
     const float search_range = 10.0f;
     const float step = 1.0f;
+    int grid_steps = (int)(search_range * 2.0f / step) + 1;
 
-    for (float dx = -search_range; dx <= search_range; dx += step) {
-        for (float dy = -search_range; dy <= search_range; dy += step) {
+    for (int ix = 0; ix < grid_steps; ix++) {
+        float dx = -search_range + ix * step;
+        for (int iy = 0; iy < grid_steps; iy++) {
+            float dy = -search_range + iy * step;
             pz_vec2 test_cover = { ai_pos.x + dx, ai_pos.y + dy };
 
             // Skip if position is in a wall
@@ -1454,10 +1456,11 @@ find_cover_position(const pz_map *map, pz_vec2 ai_pos, pz_vec2 player_pos,
             // This is a potential cover position - now find a peek position
             // The peek position should be closer to player and have LOS
 
-            // Try stepping toward the player from cover
-            for (float peek_step = 1.0f; peek_step <= 4.0f; peek_step += 0.5f) {
+            // Try stepping toward the player from cover (7 steps: 1.0 to 4.0)
+            for (int peek_i = 0; peek_i < 7; peek_i++) {
+                float peek_dist = 1.0f + peek_i * 0.5f;
                 pz_vec2 test_peek = pz_vec2_add(
-                    test_cover, pz_vec2_scale(dir_to_player, peek_step));
+                    test_cover, pz_vec2_scale(dir_to_player, peek_dist));
 
                 // Peek position must be valid
                 if (!is_position_safe(map, mine_mgr, test_peek, tank_radius)) {
@@ -1477,7 +1480,7 @@ find_cover_position(const pz_map *map, pz_vec2 ai_pos, pz_vec2 player_pos,
                 score -= cover_dist * 0.3f;
 
                 // Prefer shorter peek distance (less time exposed)
-                score -= peek_step * 0.5f;
+                score -= peek_dist * 0.5f;
 
                 // Prefer cover that's somewhat toward the player
                 float toward
@@ -1617,12 +1620,13 @@ static bool
 check_incoming_projectiles(pz_ai_controller *ctrl, pz_tank *tank,
     pz_projectile_manager *proj_mgr, pz_vec2 *evade_dir)
 {
+    (void)ctrl; // Reserved for future state-dependent evasion
+
     if (!proj_mgr) {
         return false;
     }
 
     const float threat_radius = 3.0f; // How close before we evade
-    const float threat_time = 0.5f; // How many seconds ahead to predict
 
     bool threat_found = false;
     pz_vec2 best_evade = { 0.0f, 0.0f };
@@ -1639,10 +1643,6 @@ check_incoming_projectiles(pz_ai_controller *ctrl, pz_tank *tank,
         if (proj->owner_id == tank->id) {
             continue;
         }
-
-        // Predict where projectile will be
-        pz_vec2 proj_future = pz_vec2_add(
-            proj->pos, pz_vec2_scale(proj->velocity, threat_time));
 
         // Check distance to predicted position
         pz_vec2 to_proj = pz_vec2_sub(proj->pos, tank->pos);
@@ -2223,7 +2223,7 @@ find_mine_target(const pz_mine_manager *mine_mgr, const pz_map *map,
     return true;
 }
 
-static void
+__attribute__((unused)) static void
 update_level3_ai(pz_ai_controller *ctrl, pz_tank *tank,
     pz_tank_manager *tank_mgr, const pz_map *map, pz_vec2 player_pos,
     pz_projectile_manager *proj_mgr, const pz_mine_manager *mine_mgr,

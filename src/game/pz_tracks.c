@@ -283,6 +283,8 @@ void
 pz_tracks_add_mark(pz_tracks *tracks, int entity_id, float pos_x, float pos_z,
     float angle, float tread_offset, float strength)
 {
+    (void)angle; // Currently unused, reserved for future track rotation
+
     if (!tracks)
         return;
 

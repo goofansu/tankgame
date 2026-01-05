@@ -242,7 +242,7 @@ pz_barrier_manager_destroy(pz_barrier_manager *mgr, pz_renderer *renderer)
  * ============================================================================
  */
 
-static void
+__attribute__((unused)) static void
 rebuild_mesh(pz_barrier_manager *mgr, pz_renderer *renderer)
 {
     // Count active barriers
@@ -531,9 +531,8 @@ pz_barrier_raycast(pz_barrier_manager *mgr, pz_vec2 start, pz_vec2 end,
                 float tmp = t1;
                 t1 = t2;
                 t2 = tmp;
-                pz_vec2 ntmp = n1;
+                // Swap normals (we only need n1 after this)
                 n1 = n2;
-                n2 = ntmp;
             }
 
             if (t1 > t_min) {
@@ -557,9 +556,8 @@ pz_barrier_raycast(pz_barrier_manager *mgr, pz_vec2 start, pz_vec2 end,
                 float tmp = t1;
                 t1 = t2;
                 t2 = tmp;
-                pz_vec2 ntmp = n1;
+                // Swap normals (we only need n1 after this)
                 n1 = n2;
-                n2 = ntmp;
             }
 
             if (t1 > t_min) {

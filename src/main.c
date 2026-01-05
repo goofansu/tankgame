@@ -2277,10 +2277,13 @@ done_script_commands:
             float half_w = cloud->map_width * 0.5f;
             float half_h = cloud->map_height * 0.5f;
             float spacing = 4.0f; // Grid spacing
+            int steps_x = (int)((half_w * 2.0f) / spacing);
+            int steps_y = (int)((half_h * 2.0f) / spacing);
 
-            for (float x = -half_w + spacing * 0.5f; x < half_w; x += spacing) {
-                for (float y = -half_h + spacing * 0.5f; y < half_h;
-                     y += spacing) {
+            for (int ix = 0; ix < steps_x; ix++) {
+                float x = -half_w + spacing * 0.5f + ix * spacing;
+                for (int iy = 0; iy < steps_y; iy++) {
+                    float y = -half_h + spacing * 0.5f + iy * spacing;
                     pz_vec2 pos = { x, y };
 
                     // Only add light if position is in the toxic zone
