@@ -229,9 +229,99 @@ ambient_color 0.12 0.12 0.15
 ambient_darkness 0.85
 ```
 
+## Map Tool
+
+Use `tools/map_tool.py` for programmatic map creation and editing. This is preferred over manual text editing.
+
+### Commands
+
+```bash
+./tools/map_tool.py info <map_file>      # Show map info
+./tools/map_tool.py validate <map_file>  # Validate and re-serialize
+./tools/map_tool.py --help               # Full API documentation
+```
+
+### Python API
+
+```python
+from tools.map_tool import (
+    load_map, save_map, Map, Cell, TagDef, TileDef,
+    BackgroundGradient, InlineSpawn, InlineEnemy
+)
+
+# Load and modify existing map
+m = load_map("assets/maps/arena.map")
+m.fill_rect(2, 2, 5, 5, 0, ".")      # Clear area to ground
+m.place_tag(3, 3, "P1")              # Add spawn tag at position
+save_map(m, "assets/maps/arena.map")
+
+# Create new map from scratch
+m = Map()
+m.name = "My Arena"
+m.tile_size = 2.0
+m.width = 10
+m.height = 10
+m.cells = [[Cell(0, ".") for _ in range(10)] for _ in range(10)]
+
+# Add walls
+for x in range(10):
+    m.set_cell(x, 0, Cell(2, "#"))
+    m.set_cell(x, 9, Cell(2, "#"))
+
+# Define tiles and tags
+m.tile_defs = [TileDef(".", "ground"), TileDef("#", "wall")]
+m.tag_defs = [TagDef("P1", "spawn", {"angle": "0", "team": "0"})]
+m.place_tag(5, 5, "P1")
+
+# Set lighting
+m.sun_direction = (-0.5, -1.0, -0.3)
+m.sun_color = (1.0, 0.95, 0.8)
+m.ambient_color = (0.3, 0.35, 0.4)
+
+# Set background gradient
+m.background_gradient = BackgroundGradient("vertical", (0.5, 0.6, 0.8), (0.8, 0.7, 0.5))
+
+# Set water with wind
+m.water_level = -1
+m.water_color = (0.2, 0.4, 0.6)
+m.wind_direction = 2.36
+m.wind_strength = 3.0
+
+# Or use inline spawns (alternative to tags)
+m.inline_spawns.append(InlineSpawn(5, 5, 0.0, team=0))
+m.inline_enemies.append(InlineEnemy(8, 8, 3.14, "hunter"))
+
+save_map(m, "assets/maps/my_arena.map")
+```
+
+### Classes
+
+| Class | Description |
+|-------|-------------|
+| `Cell(height, tile, tags=[])` | Single map cell |
+| `TileDef(symbol, name)` | Tile symbol mapping |
+| `TagDef(name, type, params={})` | Tag definition (spawn/enemy/powerup/barrier) |
+| `BackgroundGradient(direction, top_color, bottom_color)` | Sky gradient |
+| `InlineSpawn(x, y, angle, team=0, team_spawn=0)` | Inline spawn point |
+| `InlineEnemy(x, y, angle, enemy_type)` | Inline enemy |
+
+### Map Methods
+
+| Method | Description |
+|--------|-------------|
+| `get_cell(x, y)` | Get cell at position |
+| `set_cell(x, y, cell)` | Set cell at position |
+| `fill(height, tile)` | Fill entire map |
+| `fill_rect(x1, y1, x2, y2, h, t)` | Fill rectangle |
+| `place_tag(x, y, tag_name)` | Add tag to cell |
+| `resize(w, h, fill_h, tile)` | Resize map |
+| `pad(l, t, r, b, h, tile)` | Add padding |
+| `set_toxic_cloud(...)` | Configure toxic cloud |
+
 ## Implementation
 
 - Parser: `src/game/pz_map.c`
 - Header: `src/game/pz_map.h`
 - Renderer: `src/game/pz_map_render.c`
+- Tool: `tools/map_tool.py`
 - Maps: `assets/maps/*.map`
