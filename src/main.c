@@ -2621,10 +2621,7 @@ app_event(const sapp_event *event)
                 && (event->modifiers
                     & (SAPP_MODIFIER_SUPER | SAPP_MODIFIER_ALT))) {
                 // Cmd+Enter or Alt+Enter toggles fullscreen
-                // Lock mouse when entering fullscreen, unlock when leaving
-                bool entering_fullscreen = !sapp_is_fullscreen();
                 sapp_toggle_fullscreen();
-                sapp_lock_mouse(entering_fullscreen);
             } else if (event->key_code == SAPP_KEYCODE_F3) {
                 // Toggle texture scale debug visualization
                 if (g_app.session.renderer) {
