@@ -21,6 +21,11 @@ if(PZ_WEB_BUILD AND NOT EMSCRIPTEN)
     message(FATAL_ERROR "PZ_WEB_BUILD requires the Emscripten toolchain.")
 endif()
 
+# Web assets directory (can be overridden for stripped assets)
+if(NOT DEFINED PZ_WEB_ASSETS_DIR)
+    set(PZ_WEB_ASSETS_DIR "${CMAKE_SOURCE_DIR}/assets")
+endif()
+
 # Compiler flags per build type
 set(CMAKE_C_FLAGS_DEBUG "-g -O0 -DDEBUG -DPZ_DEBUG")
 set(CMAKE_C_FLAGS_DEV "-g -O2 -DNDEBUG -DPZ_DEV")
@@ -198,7 +203,7 @@ if(EMSCRIPTEN)
         "SHELL:-s ALLOW_MEMORY_GROWTH=1"
         "SHELL:-s INITIAL_MEMORY=64MB"
         "SHELL:-s STACK_SIZE=1MB"
-        "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/assets@/assets"
+        "SHELL:--preload-file ${PZ_WEB_ASSETS_DIR}@/assets"
         "SHELL:--shell-file ${CMAKE_SOURCE_DIR}/web/shell.html"
     )
 else()

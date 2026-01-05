@@ -49,3 +49,5 @@ third_party/fips-build/
 
 # Screenshots (debug output)
 screenshots/
+build-web-assets/
+assets/sounds/soundfont-stripped.sf2
