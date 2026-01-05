@@ -1,0 +1,48 @@
+name Toxic Dawn
+tile_size 2.0
+music march
+
+tile . wood_pine_light
+tile # wood_walnut
+tile * carpet_gray
+tile : mud_wet
+
+tag P1 spawn angle=0.0 team=0
+tag P2 spawn angle=-1.57 team=0
+tag E1 enemy angle=3.14 type=skirmisher
+tag E2 enemy angle=-1.57 type=skirmisher
+tag E3 enemy angle=1.57 type=sniper
+tag W1 powerup type=ricochet respawn=20
+
+<grid>
+2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2#
+2# 0.|P1 0. 0. 0. 0. -1: -1: -1: 0. 0. 0. 0. 0. -1: -1: -1: 0. 0. 0. 0. 0. 0. 2#
+2# 0. 0. 0. 0. 0. -2: -2: -1: 0. 0. 2# 2# 0. -1: -2: -2: 0. 0. 0. 0. 0. 0. 2#
+2# 0. 0. 2# 2# 0. -2: -2: -1: 0. 0. 2# 2# 0. -1: -2: -2: 0. 2# 2# 0. 0. 0. 2#
+2# 0. 0. 2# 2# 0. -1: -1: -1: 0. 0. 0. 0. 0. -1: -1: -1: 0. 2# 2# 0. 0.|E1 0. 2#
+2# 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.|W1 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 2#
+2# 0. 0. 0. 0. 0. 0. 2# 2# 0. 0.|E2 0. 0. 2# 2# 0. 0. 0. 0. 0. 0. 0. 0. 2#
+2# 0. 0. 0. 0. 0. 0. 2# 2# 0. 0. 0. 0. 0. 2# 2# 0. 0. 0.|E3 0. 0. 0. 0. 2#
+2# 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 2#
+2# 0. 0. 2# 2# 0. -1: -1: -1: 0. 0. 0. 0. 0. -1: -1: -1: 0. 2# 2# 0. 0. 0. 2#
+2# 0. 0. 2# 2# 0. -2: -2: -1: 0. 0. 2# 2# 0. -1: -2: -2: 0. 2# 2# 0. 0. 0. 2#
+2# 0. 0. 0. 0. 0. -2: -2: -1: 0. 0. 2# 2# 0. -1: -2: -2: 0. 0. 0. 0. 0. 0. 2#
+2# 0. 0. 0. 0. 0. -1: -1: -1: 0. 0. 0. 0. 0. -1: -1: -1: 0. 0. 0. 0. 0.|P2 0. 2#
+2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2#
+</grid>
+
+sun_direction 0.6 -0.6 0.4
+sun_color 0.9 0.8 0.75
+ambient_color 0.4 0.38 0.45
+ambient_darkness 0.2
+background_gradient vertical 0.6 0.7 0.85 0.9 0.7 0.75
+water_level -1
+water_color 0.2 0.5 0.5
+toxic_cloud enabled
+toxic_delay 10.0
+toxic_duration 90.0
+toxic_safe_zone 0.2
+toxic_damage 1
+toxic_interval 5.0
+toxic_slowdown 0.7
+toxic_color 0.2 0.8 0.3

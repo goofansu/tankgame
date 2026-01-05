@@ -23,6 +23,7 @@ typedef enum pz_particle_type {
     PZ_PARTICLE_SMOKE, // Blue-gray smoke puff
     PZ_PARTICLE_FOG, // Lingering gray fog trail
     PZ_PARTICLE_IMPACT, // Quick flash on bullet impact
+    PZ_PARTICLE_TOXIC, // Toxic cloud fog
     PZ_PARTICLE_COUNT
 } pz_particle_type;
 
@@ -110,6 +111,10 @@ void pz_particle_spawn_fog(
 
 // Spawn a smaller, longer-lived fog particle (used for bullet trails)
 void pz_particle_spawn_bullet_fog(pz_particle_manager *mgr, pz_vec3 position);
+
+// Spawn a single toxic cloud particle (used for toxic zone fog)
+void pz_particle_spawn_toxic(pz_particle_manager *mgr, pz_vec3 position,
+    pz_vec3 base_color, float edge_fade);
 
 // Spawn a single particle (for custom effects)
 void pz_particle_spawn(pz_particle_manager *mgr, const pz_particle *template);

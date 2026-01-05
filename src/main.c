@@ -1939,6 +1939,10 @@ done_script_commands:
         g_app.session.particle_mgr, g_app.session.tank_mgr, frame_dt);
     spawn_projectile_fog(
         g_app.session.particle_mgr, g_app.session.projectile_mgr, frame_dt);
+    if (g_app.session.toxic_cloud && g_app.session.particle_mgr) {
+        pz_toxic_cloud_spawn_particles(
+            g_app.session.toxic_cloud, g_app.session.particle_mgr, frame_dt);
+    }
 
     pz_particle_update(g_app.session.particle_mgr, frame_dt);
 
@@ -2242,6 +2246,11 @@ done_script_commands:
         pz_lighting_get_uv_transform(g_app.session.lighting,
             &tank_params.light_scale_x, &tank_params.light_scale_z,
             &tank_params.light_offset_x, &tank_params.light_offset_z);
+    }
+    if (g_app.session.toxic_cloud
+        && g_app.session.toxic_cloud->config.enabled) {
+        tank_params.has_toxic = true;
+        tank_params.toxic_color = g_app.session.toxic_cloud->config.color;
     }
     pz_tank_render(g_app.session.tank_mgr, g_app.renderer, vp, &tank_params);
 

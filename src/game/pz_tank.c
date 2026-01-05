@@ -992,6 +992,21 @@ pz_tank_render(pz_tank_manager *mgr, pz_renderer *renderer,
             turret_color.z = pz_lerpf(turret_color.z, 1.0f, flash_t);
         }
 
+        if (tank->in_toxic_cloud && params && params->has_toxic) {
+            float tint = 0.35f;
+            body_color.x = pz_lerpf(body_color.x, params->toxic_color.x, tint);
+            body_color.y = pz_lerpf(body_color.y, params->toxic_color.y, tint);
+            body_color.z = pz_lerpf(body_color.z, params->toxic_color.z, tint);
+            turret_color.x
+                = pz_lerpf(turret_color.x, params->toxic_color.x, tint);
+            turret_color.y
+                = pz_lerpf(turret_color.y, params->toxic_color.y, tint);
+            turret_color.z
+                = pz_lerpf(turret_color.z, params->toxic_color.z, tint);
+            body_color.w *= 0.6f;
+            turret_color.w *= 0.6f;
+        }
+
         if (mgr->shadow_pipeline != PZ_INVALID_HANDLE && mgr->shadow_mesh
             && mgr->shadow_mesh->uploaded) {
             pz_renderer_set_uniform_vec2(renderer, mgr->shader,

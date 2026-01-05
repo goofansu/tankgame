@@ -88,6 +88,7 @@ set(GAME_SOURCES
     src/game/pz_projectile.c
     src/game/pz_tank.c
     src/game/pz_toxic_cloud.c
+    src/game/pz_toxic_cloud_render.c
     src/game/pz_ai.c
     src/game/pz_pathfinding.c
     src/game/pz_campaign.c

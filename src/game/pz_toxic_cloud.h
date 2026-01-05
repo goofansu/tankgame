@@ -40,6 +40,7 @@ typedef struct pz_toxic_cloud {
     float elapsed; // Total time since map start
     float closing_progress; // 0.0 = full map safe, 1.0 = at safe zone
     bool closing_started; // True after delay has passed
+    float spawn_timer; // Particle spawn accumulator
 
     // Cached boundary (updated each frame)
     float boundary_left;
@@ -78,5 +79,10 @@ void pz_toxic_cloud_get_boundary(const pz_toxic_cloud *cloud, float *left,
 // Direction to nearest safe zone (for AI escape)
 pz_vec2 pz_toxic_cloud_escape_direction(
     const pz_toxic_cloud *cloud, pz_vec2 pos);
+
+// Particle rendering helper
+typedef struct pz_particle_manager pz_particle_manager;
+void pz_toxic_cloud_spawn_particles(
+    pz_toxic_cloud *cloud, pz_particle_manager *particles, float dt);
 
 #endif // PZ_TOXIC_CLOUD_H

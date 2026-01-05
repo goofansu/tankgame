@@ -4,6 +4,7 @@
 
 #include "pz_toxic_cloud.h"
 
+#include <math.h>
 #include <string.h>
 
 #include "../core/pz_mem.h"
@@ -127,6 +128,7 @@ pz_toxic_cloud_create(
     cloud->elapsed = 0.0f;
     cloud->closing_progress = 0.0f;
     cloud->closing_started = false;
+    cloud->spawn_timer = 0.0f;
     pz_toxic_cloud_update_boundary(cloud);
     return cloud;
 }
@@ -156,6 +158,7 @@ pz_toxic_cloud_update(pz_toxic_cloud *cloud, float dt)
     if (!cloud->config.enabled) {
         cloud->closing_started = false;
         cloud->closing_progress = 0.0f;
+        cloud->spawn_timer = 0.0f;
         pz_toxic_cloud_update_boundary(cloud);
         return;
     }

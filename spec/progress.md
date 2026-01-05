@@ -159,3 +159,6 @@
 - [x] P1: core system and boundary tests
 - [x] P2: map integration, map tool, docs, tests
 - [x] P3: tank damage, slowdown, and session wiring
+- [x] P4: AI toxic escape behavior
+- [x] P5: toxic cloud rendering and tank tint
+- [x] P6: toxic_dawn map and polish

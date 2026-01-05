@@ -14,6 +14,7 @@
 #include "pz_mine.h"
 #include "pz_powerup.h"
 #include "pz_projectile.h"
+#include "pz_toxic_cloud.h"
 
 /* ============================================================================
  * Enemy Stats
@@ -228,6 +229,8 @@ pz_ai_spawn_enemy(
     ctrl->path_update_timer = 0.0f;
     ctrl->use_pathfinding
         = (level == PZ_ENEMY_LEVEL_2 || level == PZ_ENEMY_LEVEL_3);
+    ctrl->has_relocated_for_toxic = false;
+    ctrl->was_in_toxic_cloud = false;
 
     pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
         "Spawned %s enemy at (%.1f, %.1f), tank_id=%d%s",
@@ -277,6 +280,23 @@ check_line_of_sight(const pz_map *map, pz_vec2 from, pz_vec2 to)
 
     // If we hit a wall before reaching player distance, no LOS
     return !hit_wall;
+}
+
+static bool
+ai_in_toxic_cloud(const pz_toxic_cloud *toxic_cloud, pz_vec2 pos)
+{
+    return toxic_cloud && pz_toxic_cloud_is_inside(toxic_cloud, pos);
+}
+
+static pz_vec2
+ai_toxic_escape_dir(const pz_toxic_cloud *toxic_cloud, pz_vec2 pos)
+{
+    pz_vec2 dir = pz_toxic_cloud_escape_direction(toxic_cloud, pos);
+    if (pz_vec2_len_sq(dir) < 0.0001f) {
+        pz_vec2 to_center = pz_vec2_sub(toxic_cloud->config.center, pos);
+        dir = pz_vec2_normalize(to_center);
+    }
+    return dir;
 }
 
 // Look for an incoming projectile to shoot down.
@@ -1045,6 +1065,11 @@ update_level2_ai(pz_ai_controller *ctrl, pz_tank *tank,
         break;
     }
 
+    if (ai_in_toxic_cloud(toxic_cloud, tank->pos)) {
+        move_dir = ai_toxic_escape_dir(toxic_cloud, tank->pos);
+        ctrl->wants_to_fire = false;
+    }
+
     move_dir = steer_away_from_mines(mine_mgr, tank->pos, move_dir,
         AI_MINE_AVOID_RADIUS, AI_MINE_PANIC_RADIUS);
 
@@ -1628,6 +1653,10 @@ update_level3_ai(pz_ai_controller *ctrl, pz_tank *tank,
         ctrl->wants_to_fire = true;
     }
 
+    if (ai_in_toxic_cloud(toxic_cloud, tank->pos)) {
+        move_dir = ai_toxic_escape_dir(toxic_cloud, tank->pos);
+    }
+
     move_dir = steer_away_from_mines(mine_mgr, tank->pos, move_dir,
         AI_MINE_AVOID_RADIUS, AI_MINE_PANIC_RADIUS);
 
@@ -1667,6 +1696,11 @@ pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
         // Skip dead tanks
         if (tank->flags & PZ_TANK_FLAG_DEAD) {
             continue;
+        }
+
+        bool in_toxic_cloud = ai_in_toxic_cloud(toxic_cloud, tank->pos);
+        if (in_toxic_cloud) {
+            ctrl->was_in_toxic_cloud = true;
         }
 
         // Get enemy stats for behavior parameters
@@ -1828,6 +1862,15 @@ pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
                     (pz_vec2) { 0.0f, 0.0f }, AI_MINE_AVOID_RADIUS,
                     AI_MINE_PANIC_RADIUS);
                 input.move_dir = pz_vec2_scale(away, 3.0f);
+            }
+            if (ai_in_toxic_cloud(toxic_cloud, tank->pos)
+                && !ctrl->has_relocated_for_toxic) {
+                pz_vec2 escape_dir
+                    = ai_toxic_escape_dir(toxic_cloud, tank->pos);
+                input.move_dir = pz_vec2_scale(escape_dir, 3.0f);
+            } else if (!in_toxic_cloud && ctrl->was_in_toxic_cloud
+                && !ctrl->has_relocated_for_toxic && toxic_cloud) {
+                ctrl->has_relocated_for_toxic = true;
             }
             pz_tank_update(
                 ai_mgr->tank_mgr, tank, &input, ai_mgr->map, toxic_cloud, dt);

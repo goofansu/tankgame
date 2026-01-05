@@ -221,6 +221,8 @@ typedef struct pz_tank_render_params {
     pz_texture_handle light_texture;
     float light_scale_x, light_scale_z;
     float light_offset_x, light_offset_z;
+    bool has_toxic;
+    pz_vec3 toxic_color;
 } pz_tank_render_params;
 
 // Render all active tanks

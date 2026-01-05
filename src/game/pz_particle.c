@@ -566,6 +566,58 @@ pz_particle_spawn_bullet_fog(pz_particle_manager *mgr, pz_vec3 position)
     pz_particle_spawn(mgr, &p);
 }
 
+void
+pz_particle_spawn_toxic(pz_particle_manager *mgr, pz_vec3 position,
+    pz_vec3 base_color, float edge_fade)
+{
+    if (!mgr) {
+        return;
+    }
+
+    pz_vec3 palette[] = {
+        { 0.15f, 0.70f, 0.25f },
+        { 0.20f, 0.80f, 0.30f },
+        { 0.25f, 0.85f, 0.35f },
+        { 0.18f, 0.75f, 0.28f },
+    };
+
+    pz_particle p = { 0 };
+    p.type = PZ_PARTICLE_TOXIC;
+
+    p.pos.x = position.x + pz_rng_range(&mgr->rng, -0.5f, 0.5f);
+    p.pos.y = position.y + pz_rng_range(&mgr->rng, 0.5f, 2.0f);
+    p.pos.z = position.z + pz_rng_range(&mgr->rng, -0.5f, 0.5f);
+
+    p.velocity.x = pz_rng_range(&mgr->rng, -0.12f, 0.12f);
+    p.velocity.y = pz_rng_range(&mgr->rng, 0.04f, 0.12f);
+    p.velocity.z = pz_rng_range(&mgr->rng, -0.12f, 0.12f);
+
+    p.rotation = pz_rng_angle(&mgr->rng);
+    p.rotation_speed = pz_rng_range(&mgr->rng, -0.3f, 0.3f);
+
+    float base_scale = pz_rng_range(&mgr->rng, 1.5f, 2.5f);
+    p.scale_start = base_scale * 0.6f;
+    p.scale_end = pz_rng_range(&mgr->rng, 2.5f, 4.0f);
+    p.scale = p.scale_start;
+
+    edge_fade = pz_clampf(edge_fade, 0.3f, 1.0f);
+    p.alpha_start = pz_rng_range(&mgr->rng, 0.25f, 0.45f) * edge_fade;
+    p.alpha_end = 0.0f;
+    p.alpha = p.alpha_start;
+
+    pz_vec3 palette_color = palette[pz_rng_int(&mgr->rng, 0, 3)];
+    p.color = pz_vec3_new(pz_lerpf(palette_color.x, base_color.x, 0.45f),
+        pz_lerpf(palette_color.y, base_color.y, 0.45f),
+        pz_lerpf(palette_color.z, base_color.z, 0.45f));
+
+    p.lifetime = pz_rng_range(&mgr->rng, 2.5f, 4.0f);
+    p.age = 0.0f;
+
+    p.variant = pz_rng_int(&mgr->rng, 0, 3);
+
+    pz_particle_spawn(mgr, &p);
+}
+
 /* ============================================================================
  * Update
  * ============================================================================

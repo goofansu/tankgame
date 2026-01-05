@@ -23,6 +23,7 @@ typedef struct pz_rng pz_rng;
 typedef struct pz_tank_manager pz_tank_manager;
 typedef struct pz_projectile_manager pz_projectile_manager;
 typedef struct pz_mine_manager pz_mine_manager;
+typedef struct pz_toxic_cloud pz_toxic_cloud;
 
 /* ============================================================================
  * Enemy Types
@@ -159,6 +160,10 @@ typedef struct pz_ai_controller {
     pz_vec2 path_goal; // Goal position for current path
     float path_update_timer; // Time until next repath
     bool use_pathfinding; // Whether this AI uses pathfinding
+
+    // Toxic cloud behavior
+    bool has_relocated_for_toxic;
+    bool was_in_toxic_cloud;
 } pz_ai_controller;
 
 /* ============================================================================
