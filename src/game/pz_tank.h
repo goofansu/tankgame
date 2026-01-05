@@ -69,6 +69,11 @@ typedef struct pz_tank {
     float invuln_timer; // Invulnerability time remaining
     pz_vec2 spawn_pos; // Where to respawn
 
+    // Toxic cloud
+    float toxic_damage_timer; // Time until next damage tick
+    float toxic_grace_timer; // Invulnerability after respawn
+    bool in_toxic_cloud; // Cached for rendering/UI
+
     // Mines
     int mine_count; // Number of mines the tank is carrying
 
@@ -160,10 +165,12 @@ void pz_tank_foreach(pz_tank_manager *mgr, pz_tank_iter_fn fn, void *user_data);
 
 // Update a single tank with input
 void pz_tank_update(pz_tank_manager *mgr, pz_tank *tank,
-    const pz_tank_input *input, const pz_map *map, float dt);
+    const pz_tank_input *input, const pz_map *map,
+    const pz_toxic_cloud *toxic_cloud, float dt);
 
 // Update all tanks (for AI/respawn)
-void pz_tank_update_all(pz_tank_manager *mgr, const pz_map *map, float dt);
+void pz_tank_update_all(pz_tank_manager *mgr, const pz_map *map,
+    const pz_toxic_cloud *toxic_cloud, float dt);
 
 /* ============================================================================
  * Combat

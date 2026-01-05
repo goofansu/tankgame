@@ -68,6 +68,17 @@ class Map:
     # Fog
     fog_level: Optional[int] = None
     fog_color: Optional[tuple[float, float, float]] = None
+
+    # Toxic cloud
+    toxic_enabled: Optional[bool] = None
+    toxic_delay: Optional[float] = None
+    toxic_duration: Optional[float] = None
+    toxic_safe_zone: Optional[float] = None
+    toxic_damage: Optional[int] = None
+    toxic_interval: Optional[float] = None
+    toxic_slowdown: Optional[float] = None
+    toxic_color: Optional[tuple[float, float, float]] = None
+    toxic_center: Optional[tuple[float, float]] = None
     
     def get_cell(self, x: int, y: int) -> Optional[Cell]:
         if 0 <= y < self.height and 0 <= x < self.width:
@@ -144,6 +155,35 @@ class Map:
             if td.symbol == symbol:
                 return td.name
         return None
+
+    def set_toxic_cloud(self, enabled: bool = True, delay: float = 10.0,
+                        duration: float = 90.0, safe_zone: float = 0.20,
+                        damage: int = 1, interval: float = 5.0,
+                        slowdown: float = 0.70,
+                        color: tuple[float, float, float] = (0.2, 0.8, 0.3),
+                        center: Optional[tuple[float, float]] = None):
+        self.toxic_enabled = enabled
+        self.toxic_delay = delay
+        self.toxic_duration = duration
+        self.toxic_safe_zone = safe_zone
+        self.toxic_damage = damage
+        self.toxic_interval = interval
+        self.toxic_slowdown = slowdown
+        self.toxic_color = color
+        self.toxic_center = center
+
+    def get_toxic_cloud(self):
+        return {
+            "enabled": self.toxic_enabled,
+            "delay": self.toxic_delay,
+            "duration": self.toxic_duration,
+            "safe_zone": self.toxic_safe_zone,
+            "damage": self.toxic_damage,
+            "interval": self.toxic_interval,
+            "slowdown": self.toxic_slowdown,
+            "color": self.toxic_color,
+            "center": self.toxic_center,
+        }
 
 
 def parse_cell(text: str) -> Cell:
@@ -251,6 +291,31 @@ def parse_map(content: str) -> Map:
             vals = [float(x) for x in rest.split()]
             if len(vals) == 3:
                 m.fog_color = tuple(vals)
+        elif cmd == 'toxic_cloud':
+            if rest == 'enabled':
+                m.toxic_enabled = True
+            elif rest == 'disabled':
+                m.toxic_enabled = False
+        elif cmd == 'toxic_delay':
+            m.toxic_delay = float(rest)
+        elif cmd == 'toxic_duration':
+            m.toxic_duration = float(rest)
+        elif cmd == 'toxic_safe_zone':
+            m.toxic_safe_zone = float(rest)
+        elif cmd == 'toxic_damage':
+            m.toxic_damage = int(rest)
+        elif cmd == 'toxic_interval':
+            m.toxic_interval = float(rest)
+        elif cmd == 'toxic_slowdown':
+            m.toxic_slowdown = float(rest)
+        elif cmd == 'toxic_color':
+            vals = [float(x) for x in rest.split()]
+            if len(vals) == 3:
+                m.toxic_color = tuple(vals)
+        elif cmd == 'toxic_center':
+            vals = [float(x) for x in rest.split()]
+            if len(vals) == 2:
+                m.toxic_center = (vals[0], vals[1])
     
     # Parse grid
     if grid_lines:
@@ -321,6 +386,27 @@ def serialize_map(m: Map) -> str:
         lines.append(f"fog_level {m.fog_level}")
     if m.fog_color:
         lines.append(f"fog_color {m.fog_color[0]} {m.fog_color[1]} {m.fog_color[2]}")
+
+    # Toxic cloud
+    if m.toxic_enabled is not None:
+        state = "enabled" if m.toxic_enabled else "disabled"
+        lines.append(f"toxic_cloud {state}")
+    if m.toxic_delay is not None:
+        lines.append(f"toxic_delay {m.toxic_delay}")
+    if m.toxic_duration is not None:
+        lines.append(f"toxic_duration {m.toxic_duration}")
+    if m.toxic_safe_zone is not None:
+        lines.append(f"toxic_safe_zone {m.toxic_safe_zone}")
+    if m.toxic_damage is not None:
+        lines.append(f"toxic_damage {m.toxic_damage}")
+    if m.toxic_interval is not None:
+        lines.append(f"toxic_interval {m.toxic_interval}")
+    if m.toxic_slowdown is not None:
+        lines.append(f"toxic_slowdown {m.toxic_slowdown}")
+    if m.toxic_color:
+        lines.append(f"toxic_color {m.toxic_color[0]} {m.toxic_color[1]} {m.toxic_color[2]}")
+    if m.toxic_center:
+        lines.append(f"toxic_center {m.toxic_center[0]} {m.toxic_center[1]}")
     
     return "\n".join(lines) + "\n"
 
@@ -348,6 +434,9 @@ def print_map_info(m: Map):
     print(f"Tag defs: {len(m.tag_defs)}")
     if m.water_level is not None:
         print(f"Water level: {m.water_level}")
+    if m.toxic_enabled is not None:
+        state = "enabled" if m.toxic_enabled else "disabled"
+        print(f"Toxic cloud: {state}")
     
     # Count spawns and enemies
     spawns = []
@@ -393,6 +482,7 @@ CLASSES:
         Properties: name, tile_size, width, height, cells, tile_defs, tag_defs
         Lighting: sun_direction, sun_color, ambient_color, ambient_darkness
         Effects: water_level, water_color, wave_strength, fog_level, fog_color, background_gradient
+        Toxic: toxic_enabled, toxic_delay, toxic_duration, toxic_safe_zone, toxic_damage, toxic_interval, toxic_slowdown, toxic_color, toxic_center
 
 MAP METHODS:
     get_cell(x, y) -> Cell           Get cell at position (or None)
@@ -404,6 +494,8 @@ MAP METHODS:
     pad(l, t, r, b, height, tile)    Add padding around map
     get_tag_def(name) -> TagDef      Get tag definition by name
     get_tile_for_symbol(sym) -> str  Get tile name for symbol
+    set_toxic_cloud(...)             Configure toxic cloud settings
+    get_toxic_cloud() -> dict        Get toxic cloud settings
 
 FUNCTIONS:
     load_map(path) -> Map            Load a map from file

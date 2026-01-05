@@ -62,6 +62,7 @@ add_test(NAME renderer COMMAND test_renderer)
 # Map system tests (includes tile registry and texture system)
 add_executable(test_map test_map.c
     ../src/game/pz_map.c
+    ../src/game/pz_toxic_cloud.c
     ../src/game/pz_tile_registry.c
     ../src/engine/render/pz_texture.c
     ../src/engine/render/pz_renderer.c
@@ -94,3 +95,15 @@ target_include_directories(test_sim PRIVATE
 )
 target_compile_definitions(test_sim PRIVATE PZ_DEBUG)
 add_test(NAME sim COMMAND test_sim)
+
+# Toxic cloud tests
+add_executable(test_toxic_cloud test_toxic_cloud.c
+    ../src/game/pz_toxic_cloud.c
+    ../src/core/pz_mem.c
+)
+target_include_directories(test_toxic_cloud PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/src
+)
+target_compile_definitions(test_toxic_cloud PRIVATE PZ_DEBUG)
+add_test(NAME toxic_cloud COMMAND test_toxic_cloud)

@@ -197,7 +197,7 @@ pz_tank *pz_ai_spawn_enemy(
 // rng is used for AI decision-making randomness (deterministic)
 void pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
     pz_projectile_manager *proj_mgr, pz_mine_manager *mine_mgr, pz_rng *rng,
-    float dt);
+    const pz_toxic_cloud *toxic_cloud, float dt);
 
 // Fire projectiles for AI tanks that want to fire
 // This should be called after pz_ai_update

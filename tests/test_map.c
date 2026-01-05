@@ -2,6 +2,7 @@
  * Map system tests
  */
 
+#include "../src/core/pz_platform.h"
 #include "../src/game/pz_map.h"
 #include "test_framework.h"
 
@@ -285,6 +286,48 @@ TEST(map_v2_format)
     ASSERT(map->enemy_count > 0);
 
     pz_map_destroy(map);
+}
+
+TEST(map_toxic_config)
+{
+    const char *path = "/tmp/tankgame_toxic_test.map";
+    const char *content = "name Toxic Test\n"
+                          "tile_size 2.0\n"
+                          "\n"
+                          "<grid>\n"
+                          "0.\n"
+                          "</grid>\n"
+                          "\n"
+                          "toxic_cloud enabled\n"
+                          "toxic_delay 12.0\n"
+                          "toxic_duration 80.0\n"
+                          "toxic_safe_zone 0.25\n"
+                          "toxic_damage 2\n"
+                          "toxic_interval 3.5\n"
+                          "toxic_slowdown 0.65\n"
+                          "toxic_color 0.1 0.2 0.3\n"
+                          "toxic_center 0 0\n";
+
+    ASSERT(pz_file_write_text(path, content));
+
+    pz_map *map = pz_map_load(path);
+    ASSERT_NOT_NULL(map);
+    ASSERT(map->has_toxic_cloud);
+    ASSERT(map->toxic_config.enabled);
+    ASSERT_NEAR(12.0f, map->toxic_config.delay, 0.001f);
+    ASSERT_NEAR(80.0f, map->toxic_config.duration, 0.001f);
+    ASSERT_NEAR(0.25f, map->toxic_config.safe_zone_ratio, 0.001f);
+    ASSERT_EQ(2, map->toxic_config.damage);
+    ASSERT_NEAR(3.5f, map->toxic_config.damage_interval, 0.001f);
+    ASSERT_NEAR(0.65f, map->toxic_config.slowdown, 0.001f);
+    ASSERT_NEAR(0.1f, map->toxic_config.color.x, 0.001f);
+    ASSERT_NEAR(0.2f, map->toxic_config.color.y, 0.001f);
+    ASSERT_NEAR(0.3f, map->toxic_config.color.z, 0.001f);
+    ASSERT_NEAR(0.0f, map->toxic_config.center.x, 0.001f);
+    ASSERT_NEAR(0.0f, map->toxic_config.center.y, 0.001f);
+
+    pz_map_destroy(map);
+    pz_file_delete(path);
 }
 
 TEST_MAIN()

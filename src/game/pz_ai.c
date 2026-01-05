@@ -874,7 +874,8 @@ ai_should_repath(pz_ai_controller *ctrl, pz_vec2 new_goal, float dt)
 static void
 update_level2_ai(pz_ai_controller *ctrl, pz_tank *tank,
     pz_tank_manager *tank_mgr, const pz_map *map, pz_vec2 player_pos,
-    const pz_mine_manager *mine_mgr, pz_rng *rng, float dt)
+    const pz_mine_manager *mine_mgr, pz_rng *rng,
+    const pz_toxic_cloud *toxic_cloud, float dt)
 {
     const float move_speed = 3.0f; // Movement speed for AI
     const float arrive_threshold = 0.5f; // How close to target to stop
@@ -1054,7 +1055,7 @@ update_level2_ai(pz_ai_controller *ctrl, pz_tank *tank,
         .fire = false,
     };
 
-    pz_tank_update(tank_mgr, tank, &input, map, dt);
+    pz_tank_update(tank_mgr, tank, &input, map, toxic_cloud, dt);
 }
 
 /* ============================================================================
@@ -1256,7 +1257,7 @@ static void
 update_level3_ai(pz_ai_controller *ctrl, pz_tank *tank,
     pz_tank_manager *tank_mgr, const pz_map *map, pz_vec2 player_pos,
     pz_projectile_manager *proj_mgr, const pz_mine_manager *mine_mgr,
-    pz_rng *rng, float dt)
+    pz_rng *rng, const pz_toxic_cloud *toxic_cloud, float dt)
 {
     const float move_speed = 6.0f; // Fast and aggressive
     const float arrive_threshold = 0.5f;
@@ -1637,7 +1638,7 @@ update_level3_ai(pz_ai_controller *ctrl, pz_tank *tank,
         .fire = false,
     };
 
-    pz_tank_update(tank_mgr, tank, &input, map, dt);
+    pz_tank_update(tank_mgr, tank, &input, map, toxic_cloud, dt);
 }
 
 /* ============================================================================
@@ -1648,7 +1649,7 @@ update_level3_ai(pz_ai_controller *ctrl, pz_tank *tank,
 void
 pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
     pz_projectile_manager *proj_mgr, pz_mine_manager *mine_mgr, pz_rng *rng,
-    float dt)
+    const pz_toxic_cloud *toxic_cloud, float dt)
 {
     if (!ai_mgr || !ai_mgr->tank_mgr) {
         return;
@@ -1810,11 +1811,11 @@ pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
         if (ctrl->level == PZ_ENEMY_LEVEL_3) {
             // Level 3: Aggressive hunter
             update_level3_ai(ctrl, tank, ai_mgr->tank_mgr, ai_mgr->map,
-                player_pos, proj_mgr, mine_mgr, rng, dt);
+                player_pos, proj_mgr, mine_mgr, rng, toxic_cloud, dt);
         } else if (ctrl->level == PZ_ENEMY_LEVEL_2) {
             // Level 2: Cover-based
             update_level2_ai(ctrl, tank, ai_mgr->tank_mgr, ai_mgr->map,
-                player_pos, mine_mgr, rng, dt);
+                player_pos, mine_mgr, rng, toxic_cloud, dt);
         } else {
             // Stationary turret only (sentry, sniper)
             pz_tank_input input = {
@@ -1828,7 +1829,8 @@ pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
                     AI_MINE_PANIC_RADIUS);
                 input.move_dir = pz_vec2_scale(away, 3.0f);
             }
-            pz_tank_update(ai_mgr->tank_mgr, tank, &input, ai_mgr->map, dt);
+            pz_tank_update(
+                ai_mgr->tank_mgr, tank, &input, ai_mgr->map, toxic_cloud, dt);
         }
 
         // Update fire timer

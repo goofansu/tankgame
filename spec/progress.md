@@ -154,3 +154,8 @@
 - Focus on single-player campaign (complete)
 - Enemies defined in map files (type, position)
 - 3 enemy types with different stats/behaviors
+
+## Toxic Cloud
+- [x] P1: core system and boundary tests
+- [x] P2: map integration, map tool, docs, tests
+- [x] P3: tank damage, slowdown, and session wiring

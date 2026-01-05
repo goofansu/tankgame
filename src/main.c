@@ -43,6 +43,7 @@
 #include "game/pz_projectile.h"
 #include "game/pz_tank.h"
 #include "game/pz_tile_registry.h"
+#include "game/pz_toxic_cloud.h"
 #include "game/pz_tracks.h"
 
 #define WINDOW_TITLE "Tank Game"
@@ -203,6 +204,7 @@ typedef struct map_session {
     // Map-specific rendering
     pz_tracks *tracks;
     pz_lighting *lighting;
+    pz_toxic_cloud *toxic_cloud;
 
     // Entities (all cleared on map change)
     pz_tank_manager *tank_mgr;
@@ -335,6 +337,9 @@ map_session_unload(map_session *session)
     pz_particle_manager_destroy(session->particle_mgr, g_app.renderer);
     session->particle_mgr = NULL;
 
+    pz_toxic_cloud_destroy(session->toxic_cloud);
+    session->toxic_cloud = NULL;
+
     pz_projectile_manager_destroy(session->projectile_mgr, g_app.renderer);
     session->projectile_mgr = NULL;
 
@@ -408,6 +413,12 @@ map_session_load(map_session *session, const char *map_path)
 
     // Set tile registry on map for property lookups
     pz_map_set_tile_registry(session->map, g_app.tile_registry);
+
+    if (session->map->has_toxic_cloud) {
+        session->toxic_cloud
+            = pz_toxic_cloud_create(&session->map->toxic_config,
+                session->map->world_width, session->map->world_height);
+    }
 
     // Create map renderer with tile registry
     session->renderer = pz_map_renderer_create(
@@ -541,6 +552,12 @@ map_session_reset(map_session *session)
         pz_tank_respawn(session->player_tank);
         pz_tank_reset_loadout(session->player_tank);
         session->player_tank->mine_count = PZ_MINE_MAX_PER_TANK;
+        if (session->toxic_cloud) {
+            session->player_tank->toxic_grace_timer
+                = session->toxic_cloud->config.grace_period;
+            session->player_tank->toxic_damage_timer
+                = session->toxic_cloud->config.damage_interval;
+        }
     }
 
     // Clear and respawn enemies
@@ -617,6 +634,16 @@ map_session_reset(map_session *session)
     // Clear tracks
     if (session->tracks) {
         pz_tracks_clear(session->tracks);
+    }
+
+    if (session->toxic_cloud) {
+        pz_toxic_cloud_destroy(session->toxic_cloud);
+        session->toxic_cloud = NULL;
+    }
+    if (session->map->has_toxic_cloud) {
+        session->toxic_cloud
+            = pz_toxic_cloud_create(&session->map->toxic_config,
+                session->map->world_width, session->map->world_height);
     }
 
     fog_marks_clear(session);
@@ -1456,11 +1483,16 @@ done_script_commands:
     for (int tick = 0; tick < sim_ticks; tick++) {
         pz_sim_begin_tick(g_app.sim);
 
+        if (g_app.session.toxic_cloud) {
+            pz_toxic_cloud_update(g_app.session.toxic_cloud, dt);
+        }
+
         // Player tank update
         if (g_app.session.player_tank
             && !(g_app.session.player_tank->flags & PZ_TANK_FLAG_DEAD)) {
             pz_tank_update(g_app.session.tank_mgr, g_app.session.player_tank,
-                &player_input, g_app.session.map, dt);
+                &player_input, g_app.session.map, g_app.session.toxic_cloud,
+                dt);
 
             // Track marks for player
             if (g_app.session.tracks
@@ -1561,7 +1593,8 @@ done_script_commands:
         }
 
         // Update all tanks (respawn timers, etc.)
-        pz_tank_update_all(g_app.session.tank_mgr, g_app.session.map, dt);
+        pz_tank_update_all(g_app.session.tank_mgr, g_app.session.map,
+            g_app.session.toxic_cloud, dt);
 
         // Resolve tank-barrier collisions for all tanks
         if (g_app.session.barrier_mgr) {
@@ -1580,7 +1613,7 @@ done_script_commands:
             && !(g_app.session.player_tank->flags & PZ_TANK_FLAG_DEAD)) {
             pz_ai_update(g_app.session.ai_mgr, g_app.session.player_tank->pos,
                 g_app.session.projectile_mgr, g_app.session.mine_mgr,
-                pz_sim_rng(g_app.sim), dt);
+                pz_sim_rng(g_app.sim), g_app.session.toxic_cloud, dt);
             int ai_shots = pz_ai_fire(
                 g_app.session.ai_mgr, g_app.session.projectile_mgr);
 
@@ -1935,6 +1968,16 @@ done_script_commands:
                     g_app.session.lighting, g_app.session.map);
                 pz_lighting_set_ambient(
                     g_app.session.lighting, map_light->ambient_color);
+            }
+            if (g_app.session.toxic_cloud) {
+                pz_toxic_cloud_destroy(g_app.session.toxic_cloud);
+                g_app.session.toxic_cloud = NULL;
+            }
+            if (g_app.session.map->has_toxic_cloud) {
+                g_app.session.toxic_cloud
+                    = pz_toxic_cloud_create(&g_app.session.map->toxic_config,
+                        g_app.session.map->world_width,
+                        g_app.session.map->world_height);
             }
         }
         g_app.last_hot_reload_check = now;

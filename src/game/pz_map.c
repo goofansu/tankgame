@@ -17,6 +17,30 @@
 #include "../core/pz_platform.h"
 #include "../core/pz_str.h"
 
+static pz_vec2
+pz_map_tile_to_world_float(const pz_map *map, float tile_x, float tile_y)
+{
+    float half_w = map->world_width / 2.0f;
+    float half_h = map->world_height / 2.0f;
+
+    return (pz_vec2) {
+        .x = tile_x * map->tile_size + map->tile_size / 2.0f - half_w,
+        .y = tile_y * map->tile_size + map->tile_size / 2.0f - half_h,
+    };
+}
+
+static pz_vec2
+pz_map_world_to_tile_float(const pz_map *map, pz_vec2 world_pos)
+{
+    float half_w = map->world_width / 2.0f;
+    float half_h = map->world_height / 2.0f;
+
+    return (pz_vec2) {
+        .x = (world_pos.x + half_w - map->tile_size / 2.0f) / map->tile_size,
+        .y = (world_pos.y + half_h - map->tile_size / 2.0f) / map->tile_size,
+    };
+}
+
 // Default tile definitions
 static void
 init_default_tile_defs(pz_map *map)
@@ -92,6 +116,8 @@ pz_map_create(int width, int height, float tile_size)
 
     map->has_music = false;
     map->music_name[0] = '\0';
+    map->has_toxic_cloud = false;
+    map->toxic_config = pz_toxic_cloud_config_default(pz_vec2_zero());
 
     pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME, "Created map %dx%d (%.1f unit tiles)",
         width, height, tile_size);
@@ -1605,6 +1631,46 @@ pz_map_load(const char *path)
                 map->fog_color = (pz_vec3) { r, g, b };
             }
         }
+        // Toxic cloud
+        else if (strncmp(p, "toxic_cloud ", 12) == 0) {
+            map->has_toxic_cloud = true;
+            if (strncmp(p + 12, "enabled", 7) == 0) {
+                map->toxic_config.enabled = true;
+            } else if (strncmp(p + 12, "disabled", 8) == 0) {
+                map->toxic_config.enabled = false;
+            }
+        } else if (strncmp(p, "toxic_delay ", 12) == 0) {
+            map->has_toxic_cloud = true;
+            map->toxic_config.delay = (float)atof(p + 12);
+        } else if (strncmp(p, "toxic_duration ", 15) == 0) {
+            map->has_toxic_cloud = true;
+            map->toxic_config.duration = (float)atof(p + 15);
+        } else if (strncmp(p, "toxic_safe_zone ", 16) == 0) {
+            map->has_toxic_cloud = true;
+            map->toxic_config.safe_zone_ratio = (float)atof(p + 16);
+        } else if (strncmp(p, "toxic_damage ", 13) == 0) {
+            map->has_toxic_cloud = true;
+            map->toxic_config.damage = atoi(p + 13);
+        } else if (strncmp(p, "toxic_interval ", 15) == 0) {
+            map->has_toxic_cloud = true;
+            map->toxic_config.damage_interval = (float)atof(p + 15);
+        } else if (strncmp(p, "toxic_slowdown ", 15) == 0) {
+            map->has_toxic_cloud = true;
+            map->toxic_config.slowdown = (float)atof(p + 15);
+        } else if (strncmp(p, "toxic_color ", 12) == 0) {
+            float r, g, b;
+            if (sscanf(p + 12, "%f %f %f", &r, &g, &b) == 3) {
+                map->has_toxic_cloud = true;
+                map->toxic_config.color = (pz_vec3) { r, g, b };
+            }
+        } else if (strncmp(p, "toxic_center ", 13) == 0) {
+            float x, y;
+            if (sscanf(p + 13, "%f %f", &x, &y) == 2) {
+                map->has_toxic_cloud = true;
+                map->toxic_config.center
+                    = pz_map_tile_to_world_float(map, x, y);
+            }
+        }
         // Background settings
         else if (strncmp(p, "background_color ", 17) == 0) {
             float r, g, b;
@@ -1749,6 +1815,57 @@ pz_map_save(const pz_map *map, const char *path)
 
         written = snprintf(p, remaining, "fog_color %.2f %.2f %.2f\n",
             map->fog_color.x, map->fog_color.y, map->fog_color.z);
+        p += written;
+        remaining -= written;
+    }
+
+    // Toxic cloud settings
+    if (map->has_toxic_cloud) {
+        const char *state = map->toxic_config.enabled ? "enabled" : "disabled";
+        written = snprintf(p, remaining, "\ntoxic_cloud %s\n", state);
+        p += written;
+        remaining -= written;
+
+        written = snprintf(
+            p, remaining, "toxic_delay %.1f\n", map->toxic_config.delay);
+        p += written;
+        remaining -= written;
+
+        written = snprintf(
+            p, remaining, "toxic_duration %.1f\n", map->toxic_config.duration);
+        p += written;
+        remaining -= written;
+
+        written = snprintf(p, remaining, "toxic_safe_zone %.2f\n",
+            map->toxic_config.safe_zone_ratio);
+        p += written;
+        remaining -= written;
+
+        written = snprintf(
+            p, remaining, "toxic_damage %d\n", map->toxic_config.damage);
+        p += written;
+        remaining -= written;
+
+        written = snprintf(p, remaining, "toxic_interval %.1f\n",
+            map->toxic_config.damage_interval);
+        p += written;
+        remaining -= written;
+
+        written = snprintf(
+            p, remaining, "toxic_slowdown %.2f\n", map->toxic_config.slowdown);
+        p += written;
+        remaining -= written;
+
+        written = snprintf(p, remaining, "toxic_color %.2f %.2f %.2f\n",
+            map->toxic_config.color.x, map->toxic_config.color.y,
+            map->toxic_config.color.z);
+        p += written;
+        remaining -= written;
+
+        pz_vec2 toxic_tile
+            = pz_map_world_to_tile_float(map, map->toxic_config.center);
+        written = snprintf(p, remaining, "toxic_center %.2f %.2f\n",
+            toxic_tile.x, toxic_tile.y);
         p += written;
         remaining -= written;
     }

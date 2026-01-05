@@ -18,6 +18,7 @@
 #include <stdint.h>
 
 #include "../core/pz_math.h"
+#include "pz_toxic_cloud.h"
 
 // Forward declaration
 typedef struct pz_tile_registry pz_tile_registry;
@@ -164,6 +165,10 @@ typedef struct pz_map {
     // Music settings
     char music_name[64];
     bool has_music;
+
+    // Toxic cloud settings
+    bool has_toxic_cloud;
+    pz_toxic_cloud_config toxic_config;
 
     // Bounds (in world units)
     float world_width;

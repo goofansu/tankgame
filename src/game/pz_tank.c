@@ -5,6 +5,7 @@
 #include "pz_tank.h"
 #include "pz_collision.h"
 #include "pz_powerup.h"
+#include "pz_toxic_cloud.h"
 
 #include <math.h>
 #include <string.h>
@@ -421,6 +422,9 @@ pz_tank_spawn(pz_tank_manager *mgr, pz_vec2 pos, pz_vec4 color, bool is_player)
     tank->health = DEFAULT_HEALTH;
     tank->max_health = DEFAULT_HEALTH;
     tank->fire_cooldown = 0.0f;
+    tank->toxic_damage_timer = 0.0f;
+    tank->toxic_grace_timer = 0.0f;
+    tank->in_toxic_cloud = false;
 
     // Initialize loadout with default weapon
     tank->loadout[0] = PZ_POWERUP_NONE; // Default cannon
@@ -506,7 +510,7 @@ normalize_angle(float angle)
 
 void
 pz_tank_update(pz_tank_manager *mgr, pz_tank *tank, const pz_tank_input *input,
-    const pz_map *map, float dt)
+    const pz_map *map, const pz_toxic_cloud *toxic_cloud, float dt)
 {
     if (!mgr || !tank || !input)
         return;
@@ -535,6 +539,46 @@ pz_tank_update(pz_tank_manager *mgr, pz_tank *tank, const pz_tank_input *input,
     if (map) {
         terrain_speed_mult = pz_map_get_speed_multiplier(map, tank->pos);
         terrain_friction = pz_map_get_friction(map, tank->pos);
+    }
+
+    // Toxic cloud effects
+    tank->in_toxic_cloud = false;
+    if (toxic_cloud && toxic_cloud->config.enabled) {
+        if (tank->toxic_grace_timer > 0.0f) {
+            tank->toxic_grace_timer -= dt;
+            if (tank->toxic_grace_timer < 0.0f) {
+                tank->toxic_grace_timer = 0.0f;
+            }
+        }
+
+        bool in_cloud = pz_toxic_cloud_is_inside(toxic_cloud, tank->pos);
+        tank->in_toxic_cloud = in_cloud;
+
+        float damage_interval = toxic_cloud->config.damage_interval;
+        if (tank->toxic_damage_timer <= 0.0f) {
+            tank->toxic_damage_timer
+                = damage_interval > 0.0f ? damage_interval : 0.0f;
+        }
+
+        if (in_cloud) {
+            terrain_speed_mult *= toxic_cloud->config.slowdown;
+
+            bool damaging = pz_toxic_cloud_is_damaging(toxic_cloud, tank->pos);
+            if (damaging && tank->toxic_grace_timer <= 0.0f) {
+                tank->toxic_damage_timer -= dt;
+                if (tank->toxic_damage_timer <= 0.0f) {
+                    pz_tank_apply_damage(mgr, tank, toxic_cloud->config.damage);
+                    tank->toxic_damage_timer
+                        = damage_interval > 0.0f ? damage_interval : 0.0f;
+                }
+            } else {
+                tank->toxic_damage_timer
+                    = damage_interval > 0.0f ? damage_interval : 0.0f;
+            }
+        } else {
+            tank->toxic_damage_timer
+                = damage_interval > 0.0f ? damage_interval : 0.0f;
+        }
     }
 
     // Apply acceleration in input direction
@@ -612,7 +656,8 @@ pz_tank_update(pz_tank_manager *mgr, pz_tank *tank, const pz_tank_input *input,
 }
 
 void
-pz_tank_update_all(pz_tank_manager *mgr, const pz_map *map, float dt)
+pz_tank_update_all(pz_tank_manager *mgr, const pz_map *map,
+    const pz_toxic_cloud *toxic_cloud, float dt)
 {
     if (!mgr)
         return;
@@ -629,6 +674,12 @@ pz_tank_update_all(pz_tank_manager *mgr, const pz_map *map, float dt)
                 tank->respawn_timer -= dt;
                 if (tank->respawn_timer <= 0.0f) {
                     pz_tank_respawn(tank);
+                    if (toxic_cloud) {
+                        tank->toxic_grace_timer
+                            = toxic_cloud->config.grace_period;
+                        tank->toxic_damage_timer
+                            = toxic_cloud->config.damage_interval;
+                    }
                 }
             }
             // Non-player tanks stay dead (but remain active for cleanup)
@@ -776,6 +827,9 @@ pz_tank_respawn(pz_tank *tank)
     tank->recoil = 0.0f;
     tank->fog_timer = 0.0f;
     tank->idle_time = 0.0f;
+    tank->toxic_grace_timer = 0.0f;
+    tank->toxic_damage_timer = 0.0f;
+    tank->in_toxic_cloud = false;
 
     pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME, "Tank %d respawned at (%.2f, %.2f)",
         tank->id, tank->spawn_pos.x, tank->spawn_pos.y);

@@ -21,6 +21,17 @@ water_level -1
 fog_level 0
 fog_color 0.25 0.3 0.4
 
+# Optional toxic cloud
+toxic_cloud enabled
+toxic_delay 10.0
+toxic_duration 90.0
+toxic_safe_zone 0.20
+toxic_damage 1
+toxic_interval 5.0
+toxic_slowdown 0.70
+toxic_color 0.2 0.8 0.3
+toxic_center 12 7
+
 <grid>
 ... cells ...
 </grid>
@@ -149,6 +160,33 @@ fog_color 0.15 0.15 0.25
 fog_level 0
 fog_color 0.35 0.3 0.25
 ```
+
+## Toxic Cloud
+
+```
+toxic_cloud enabled
+toxic_delay 10.0
+toxic_duration 90.0
+toxic_safe_zone 0.20
+toxic_damage 1
+toxic_interval 5.0
+toxic_slowdown 0.70
+toxic_color 0.2 0.8 0.3
+toxic_center 12 7
+```
+
+Toxic clouds shrink toward a rounded safe zone over time and apply damage/slowdown
+to tanks outside the safe area:
+
+- **toxic_cloud**: `enabled` or `disabled` (default: disabled)
+- **toxic_delay**: Seconds before closing starts (default 10)
+- **toxic_duration**: Seconds to reach final safe zone (default 90)
+- **toxic_safe_zone**: Final safe zone radius as a ratio of map size (default 0.20)
+- **toxic_damage**: Damage per tick (default 1)
+- **toxic_interval**: Seconds between damage ticks (default 5)
+- **toxic_slowdown**: Speed multiplier inside cloud (0.70 = 30% slower)
+- **toxic_color**: RGB color for rendering (0.0-1.0)
+- **toxic_center**: Center of safe zone in tile coordinates (defaults to map center)
 
 ## Lighting
 
