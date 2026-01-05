@@ -90,13 +90,13 @@ Run `./tools/map_tool.py --help` for full API documentation and examples.
 
 Place temporary debug artifacts in `debug-temp/` (gitignored).
 
-### Quick Screenshot
+### Quick Screenshot (Inline Script)
 
 ```bash
-./build/tankgame --screenshot debug-temp/test.png --screenshot-frames 3
+./build/tankgame --script "frames 3; screenshot debug-temp/test.png; quit"
 ```
 
-### Debug Scripts (Recommended)
+### Debug Script Files
 
 For testing movement, firing, and gameplay mechanics, use debug scripts.
 See `docs/debug-script.md` for full documentation.
@@ -105,32 +105,32 @@ See `docs/debug-script.md` for full documentation.
 ./build/tankgame --debug-script path/to/script.dbgscript
 ```
 
-Example:
+Example script:
 ```
 frames 5
 screenshot debug-temp/start.png
 
-input +down
-input +right
+input +down; input +right
 frames 60
 screenshot debug-temp/moved.png
 
 input stop
-aim 10.0 5.0
-fire
+aim 10.0 5.0; fire
 frames 30
 screenshot debug-temp/fired.png
 
 dump debug-temp/state.txt
-frames 1
 quit
 ```
 
 ### Live Debugging
 
-While game is running:
+While game is running, inject commands via the command pipe:
 ```bash
 echo "screenshot debug-temp/live.png" > /tmp/tankgame_cmd
+echo "aim 5.0 3.0; fire; frames 30; screenshot debug-temp/shot.png" > /tmp/tankgame_cmd
 ```
+
+Commands use the same syntax as debug scripts (semicolons or newlines as separators).
 
 View screenshots with the `read` tool - PNG files display as images.

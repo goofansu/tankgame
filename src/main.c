@@ -228,17 +228,16 @@ typedef struct map_session {
 
 typedef struct app_state {
     // Command line args
-    bool auto_screenshot;
-    const char *screenshot_path;
-    int screenshot_frames;
     const char *lightmap_debug_path;
     const char *map_path_arg;
     const char *campaign_path_arg;
     bool show_debug_overlay;
     bool show_debug_texture_scale;
-    const char *debug_script_path_arg;
+    const char *debug_script_path_arg; // --debug-script <file>
+    const char *inline_script_arg; // --script "commands"
 
     // Debug script execution (for automated testing, not gameplay scripting)
+    // Can be loaded from file, inline string, or injected via command pipe
     pz_debug_script *debug_script;
 
     // Core systems (persistent across maps)
@@ -773,22 +772,16 @@ fog_marks_emit(map_session *session)
 static void
 parse_args(int argc, char *argv[])
 {
-    g_app.auto_screenshot = false;
-    g_app.screenshot_path = NULL;
-    g_app.screenshot_frames = 1;
     g_app.lightmap_debug_path = NULL;
     g_app.map_path_arg = NULL;
     g_app.campaign_path_arg = NULL;
     g_app.show_debug_overlay = false;
+    g_app.show_debug_texture_scale = false;
+    g_app.debug_script_path_arg = NULL;
+    g_app.inline_script_arg = NULL;
 
     for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--screenshot") == 0 && i + 1 < argc) {
-            g_app.auto_screenshot = true;
-            g_app.screenshot_path = argv[++i];
-        } else if (strcmp(argv[i], "--screenshot-frames") == 0
-            && i + 1 < argc) {
-            g_app.screenshot_frames = atoi(argv[++i]);
-        } else if (strcmp(argv[i], "--lightmap-debug") == 0 && i + 1 < argc) {
+        if (strcmp(argv[i], "--lightmap-debug") == 0 && i + 1 < argc) {
             g_app.lightmap_debug_path = argv[++i];
         } else if (strcmp(argv[i], "--map") == 0 && i + 1 < argc) {
             g_app.map_path_arg = argv[++i];
@@ -800,6 +793,8 @@ parse_args(int argc, char *argv[])
             g_app.show_debug_texture_scale = true;
         } else if (strcmp(argv[i], "--debug-script") == 0 && i + 1 < argc) {
             g_app.debug_script_path_arg = argv[++i];
+        } else if (strcmp(argv[i], "--script") == 0 && i + 1 < argc) {
+            g_app.inline_script_arg = argv[++i];
         }
     }
 }
@@ -843,7 +838,7 @@ app_init(void)
     }
 
     // Debug scripts run silently
-    if (g_app.debug_script_path_arg) {
+    if (g_app.debug_script_path_arg || g_app.inline_script_arg) {
         enable_music = false;
         enable_sounds = false;
         pz_log(PZ_LOG_INFO, PZ_LOG_CAT_AUDIO,
@@ -1034,13 +1029,22 @@ app_init(void)
     g_app.key_f_just_pressed = false;
     g_app.key_g_just_pressed = false;
 
-    // Load debug script if specified
+    // Load debug script if specified (file or inline)
     g_app.debug_script = NULL;
     if (g_app.debug_script_path_arg) {
         g_app.debug_script = pz_debug_script_load(g_app.debug_script_path_arg);
         if (!g_app.debug_script) {
             pz_log(PZ_LOG_ERROR, PZ_LOG_CAT_CORE,
                 "Failed to load debug script, exiting");
+            sapp_quit();
+            return;
+        }
+    } else if (g_app.inline_script_arg) {
+        g_app.debug_script
+            = pz_debug_script_create_from_string(g_app.inline_script_arg);
+        if (!g_app.debug_script) {
+            pz_log(PZ_LOG_ERROR, PZ_LOG_CAT_CORE,
+                "Failed to parse inline script, exiting");
             sapp_quit();
             return;
         }
@@ -1173,9 +1177,13 @@ app_frame(void)
     if (!g_app.renderer)
         return;
 
-    if (!pz_debug_cmd_poll(g_app.renderer)) {
-        sapp_quit();
-        return;
+    // Poll for commands from the debug command pipe
+    // Commands are injected into (or create) the debug script
+    char *pipe_commands = pz_debug_cmd_poll_commands();
+    if (pipe_commands) {
+        g_app.debug_script
+            = pz_debug_script_inject(g_app.debug_script, pipe_commands);
+        pz_free(pipe_commands);
     }
 
     // Process debug script commands (may trigger actions like load map,
@@ -1211,7 +1219,8 @@ app_frame(void)
                     strncpy(script_screenshot_path, path,
                         sizeof(script_screenshot_path) - 1);
                 }
-                break;
+                // Stop processing commands - let the frame render first
+                goto done_script_commands;
             }
 
             case PZ_DEBUG_SCRIPT_DUMP: {
@@ -1222,7 +1231,8 @@ app_frame(void)
                     strncpy(
                         script_dump_path, path, sizeof(script_dump_path) - 1);
                 }
-                break;
+                // Stop processing commands - let the frame render first
+                goto done_script_commands;
             }
 
             case PZ_DEBUG_SCRIPT_SET_SEED:
@@ -1235,6 +1245,7 @@ app_frame(void)
             }
         }
     }
+done_script_commands:
 
     // Check debug script modes
     bool script_turbo
@@ -2445,13 +2456,8 @@ end_frame:;
             g_app.frame_count);
     }
 
-    if (g_app.auto_screenshot && g_app.frame_count >= g_app.screenshot_frames) {
-        pz_renderer_save_screenshot(g_app.renderer, g_app.screenshot_path);
-        should_quit = true;
-    }
-
-    if (g_app.lightmap_debug_path
-        && g_app.frame_count >= g_app.screenshot_frames) {
+    // Save lightmap debug image on first frame if requested
+    if (g_app.lightmap_debug_path && g_app.frame_count >= 1) {
         pz_lighting_save_debug(
             g_app.session.lighting, g_app.lightmap_debug_path);
         g_app.lightmap_debug_path = NULL;

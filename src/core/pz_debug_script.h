@@ -42,6 +42,17 @@ typedef struct pz_debug_script pz_debug_script;
 // Returns NULL if file doesn't exist or is invalid
 pz_debug_script *pz_debug_script_load(const char *path);
 
+// Create script context from inline string
+// Commands can be separated by newlines or semicolons
+// Returns NULL if string is empty or invalid
+pz_debug_script *pz_debug_script_create_from_string(const char *script_text);
+
+// Inject commands from string into existing script (replaces current state)
+// If script is NULL, returns a new script
+// Commands can be separated by newlines or semicolons
+pz_debug_script *pz_debug_script_inject(
+    pz_debug_script *script, const char *commands);
+
 // Destroy script context
 void pz_debug_script_destroy(pz_debug_script *script);
 

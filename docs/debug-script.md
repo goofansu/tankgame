@@ -10,11 +10,34 @@ For gameplay scripting (if added later), use a proper language like Lua.
 
 ## Usage
 
+There are three ways to run debug script commands:
+
+### 1. Script File
+
 ```bash
 ./build/tankgame --debug-script path/to/script.dbgscript
 ```
 
-**Note:** Audio is automatically disabled when running debug scripts.
+### 2. Inline Script
+
+Commands can be passed directly on the command line, separated by semicolons:
+
+```bash
+./build/tankgame --script "frames 3; screenshot debug-temp/test.png; quit"
+```
+
+### 3. Live Command Pipe
+
+While the game is running, commands can be injected via a named pipe:
+
+```bash
+echo "screenshot debug-temp/live.png" > /tmp/tankgame_cmd
+echo "aim 5.0 3.0; fire; frames 30; screenshot debug-temp/shot.png; quit" > /tmp/tankgame_cmd
+```
+
+Commands sent via the pipe replace any currently executing script.
+
+**Note:** Audio is automatically disabled when running debug scripts (via `--debug-script` or `--script`).
 
 ## Environment Variables
 
@@ -38,11 +61,14 @@ Place all temporary debug artifacts (screenshots, state dumps) in `debug-temp/` 
 
 ## Command Reference
 
-### Comments and Whitespace
+### Comments, Whitespace, and Separators
 
 ```
 # This is a comment
 # Empty lines are ignored
+
+# Commands can be separated by newlines OR semicolons
+frames 10; screenshot test.png; quit
 ```
 
 ### Execution Control

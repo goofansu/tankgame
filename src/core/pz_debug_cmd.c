@@ -1,9 +1,15 @@
 /*
  * Tank Game - Debug Command Interface Implementation
+ *
+ * This module handles the command pipe that allows external processes
+ * to send debug script commands to the running game.
+ *
+ * Commands written to the pipe are parsed as debug script commands
+ * and injected into the active script (or create a new script).
  */
 
 #include "pz_debug_cmd.h"
-#include "../engine/render/pz_renderer.h"
+#include "pz_debug_script.h"
 #include "pz_log.h"
 #include "pz_mem.h"
 #include "pz_platform.h"
@@ -53,60 +59,21 @@ pz_debug_cmd_shutdown(void)
     }
 }
 
-// Parse and execute a single command line
-// Returns false if the command is 'quit'
-static bool
-execute_command(const char *line, pz_renderer *renderer)
-{
-    // Skip empty lines and comments
-    while (*line == ' ' || *line == '\t')
-        line++;
-    if (*line == '\0' || *line == '#' || *line == '\n')
-        return true;
-
-    // Parse command
-    char cmd[64] = { 0 };
-    char arg[256] = { 0 };
-
-    // Simple parsing: command followed by optional argument
-    int n = sscanf(line, "%63s %255[^\n]", cmd, arg);
-    if (n < 1)
-        return true;
-
-    pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_CORE, "Debug command: %s %s", cmd, arg);
-
-    if (strcmp(cmd, "screenshot") == 0) {
-        if (arg[0] && renderer) {
-            pz_renderer_save_screenshot(renderer, arg);
-        } else {
-            pz_log(PZ_LOG_WARN, PZ_LOG_CAT_CORE,
-                "screenshot command requires a path argument");
-        }
-    } else if (strcmp(cmd, "quit") == 0 || strcmp(cmd, "exit") == 0) {
-        pz_log(PZ_LOG_INFO, PZ_LOG_CAT_CORE, "Quit command received");
-        return false;
-    } else {
-        pz_log(PZ_LOG_WARN, PZ_LOG_CAT_CORE, "Unknown debug command: %s", cmd);
-    }
-
-    return true;
-}
-
-bool
-pz_debug_cmd_poll(pz_renderer *renderer)
+char *
+pz_debug_cmd_poll_commands(void)
 {
     if (!s_cmd_file_path)
-        return true;
+        return NULL;
 
     // Check if file exists and has content
     int64_t size = pz_file_size(s_cmd_file_path);
     if (size <= 0)
-        return true;
+        return NULL;
 
     // Read the command file
     char *content = pz_file_read_text(s_cmd_file_path);
     if (!content)
-        return true;
+        return NULL;
 
     // Clear the file immediately (so commands aren't re-executed)
     FILE *f = fopen(s_cmd_file_path, "w");
@@ -114,27 +81,7 @@ pz_debug_cmd_poll(pz_renderer *renderer)
         fclose(f);
     }
 
-    // Execute each line as a command
-    bool should_continue = true;
-    char *line = content;
-    char *next;
+    pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_CORE, "Debug command: received from pipe");
 
-    while (line && *line) {
-        // Find end of line
-        next = strchr(line, '\n');
-        if (next) {
-            *next = '\0';
-            next++;
-        }
-
-        if (!execute_command(line, renderer)) {
-            should_continue = false;
-            break;
-        }
-
-        line = next;
-    }
-
-    pz_free(content);
-    return should_continue;
+    return content;
 }

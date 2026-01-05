@@ -184,6 +184,80 @@ parse_command(const char *line, script_cmd *cmd)
     return true;
 }
 
+// Internal: count commands in text (newlines and semicolons are separators)
+static int
+count_commands(const char *text)
+{
+    int count = 1;
+    for (const char *p = text; *p; p++) {
+        if (*p == '\n' || *p == ';')
+            count++;
+    }
+    return count;
+}
+
+// Internal: parse script text into commands array
+// Returns number of commands parsed
+static int
+parse_script_text(const char *text, script_cmd *commands, int max_commands)
+{
+    // Make a mutable copy
+    char *content = pz_str_dup(text);
+    if (!content)
+        return 0;
+
+    int command_count = 0;
+    char *pos = content;
+
+    while (pos && *pos && command_count < max_commands) {
+        // Find next separator (newline or semicolon)
+        char *next_newline = strchr(pos, '\n');
+        char *next_semi = strchr(pos, ';');
+        char *next = NULL;
+
+        if (next_newline && next_semi) {
+            next = (next_newline < next_semi) ? next_newline : next_semi;
+        } else {
+            next = next_newline ? next_newline : next_semi;
+        }
+
+        if (next) {
+            *next = '\0';
+            next++;
+        }
+
+        script_cmd cmd = { 0 };
+        if (parse_command(pos, &cmd) && cmd.type != CMD_NONE) {
+            commands[command_count++] = cmd;
+        }
+
+        pos = next;
+    }
+
+    pz_free(content);
+    return command_count;
+}
+
+// Internal: create a new script with allocated command array
+static pz_debug_script *
+create_script(int max_commands)
+{
+    pz_debug_script *script = pz_alloc(sizeof(pz_debug_script));
+    memset(script, 0, sizeof(*script));
+
+    script->commands = pz_alloc(sizeof(script_cmd) * max_commands);
+    script->command_count = 0;
+    script->current_cmd = 0;
+    script->frames_remaining = 0;
+    script->done = false;
+
+    // Default modes for script execution
+    script->turbo = true; // Fast by default
+    script->render = true; // Render by default
+
+    return script;
+}
+
 pz_debug_script *
 pz_debug_script_load(const char *path)
 {
@@ -194,47 +268,76 @@ pz_debug_script_load(const char *path)
         return NULL;
     }
 
-    // Count lines for allocation
-    int line_count = 1;
-    for (char *p = content; *p; p++) {
-        if (*p == '\n')
-            line_count++;
-    }
+    int max_commands = count_commands(content);
+    pz_debug_script *script = create_script(max_commands);
 
-    pz_debug_script *script = pz_alloc(sizeof(pz_debug_script));
-    memset(script, 0, sizeof(*script));
-
-    script->commands = pz_alloc(sizeof(script_cmd) * line_count);
-    script->command_count = 0;
-    script->current_cmd = 0;
-    script->frames_remaining = 0;
-    script->done = false;
-
-    // Default modes for script execution
-    script->turbo = true; // Fast by default
-    script->render = true; // Render by default
-
-    // Parse lines
-    char *line = content;
-    while (line && *line) {
-        char *next = strchr(line, '\n');
-        if (next) {
-            *next = '\0';
-            next++;
-        }
-
-        script_cmd cmd = { 0 };
-        if (parse_command(line, &cmd) && cmd.type != CMD_NONE) {
-            script->commands[script->command_count++] = cmd;
-        }
-
-        line = next;
-    }
+    script->command_count
+        = parse_script_text(content, script->commands, max_commands);
 
     pz_free(content);
 
     pz_log(PZ_LOG_INFO, PZ_LOG_CAT_CORE,
         "Debug script: loaded '%s' with %d commands", path,
+        script->command_count);
+
+    return script;
+}
+
+pz_debug_script *
+pz_debug_script_create_from_string(const char *script_text)
+{
+    if (!script_text || !*script_text) {
+        return NULL;
+    }
+
+    int max_commands = count_commands(script_text);
+    pz_debug_script *script = create_script(max_commands);
+
+    script->command_count
+        = parse_script_text(script_text, script->commands, max_commands);
+
+    pz_log(PZ_LOG_INFO, PZ_LOG_CAT_CORE,
+        "Debug script: created from string with %d commands",
+        script->command_count);
+
+    return script;
+}
+
+pz_debug_script *
+pz_debug_script_inject(pz_debug_script *script, const char *commands)
+{
+    if (!commands || !*commands) {
+        return script;
+    }
+
+    // If no existing script, create a new one
+    if (!script) {
+        return pz_debug_script_create_from_string(commands);
+    }
+
+    // Replace the script's commands
+    int max_commands = count_commands(commands);
+
+    // Reallocate command array if needed
+    pz_free(script->commands);
+    script->commands = pz_alloc(sizeof(script_cmd) * max_commands);
+
+    script->command_count
+        = parse_script_text(commands, script->commands, max_commands);
+    script->current_cmd = 0;
+    script->frames_remaining = 0;
+    script->done = false;
+
+    // Keep existing turbo/render settings, but reset input
+    script->input.move_x = 0.0f;
+    script->input.move_y = 0.0f;
+    script->input.aim_x = 0.0f;
+    script->input.aim_y = 0.0f;
+    script->input.has_aim = false;
+    script->input.fire = false;
+    script->input.hold_fire = false;
+
+    pz_log(PZ_LOG_INFO, PZ_LOG_CAT_CORE, "Debug script: injected %d commands",
         script->command_count);
 
     return script;

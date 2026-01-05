@@ -13,7 +13,7 @@ cmake-build-*/
 
 # Local stuff
 TODOS
-.debug-temp/
+debug-temp/
 
 # Python
 .venv/
