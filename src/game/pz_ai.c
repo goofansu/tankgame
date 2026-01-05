@@ -525,6 +525,70 @@ ai_has_nearby_tank(pz_tank_manager *mgr, pz_vec2 pos, float radius,
     return false;
 }
 
+// Check if there's another AI tank blocking us that we should yield to.
+// Returns the blocking tank's ID if we should yield, -1 otherwise.
+// The tank with the LOWER ID yields to let the higher ID pass first.
+static int
+ai_should_yield_to(pz_tank_manager *tank_mgr, const pz_tank *tank,
+    pz_vec2 move_dir, float check_radius)
+{
+    if (!tank_mgr || !tank) {
+        return -1;
+    }
+
+    float dir_len = pz_vec2_len(move_dir);
+    if (dir_len < 0.001f) {
+        return -1;
+    }
+
+    pz_vec2 dir = pz_vec2_scale(move_dir, 1.0f / dir_len);
+    float combined_radius = AI_TANK_RADIUS + tank_mgr->collision_radius;
+
+    for (int i = 0; i < PZ_MAX_TANKS; i++) {
+        pz_tank *other = &tank_mgr->tanks[i];
+        if (!(other->flags & PZ_TANK_FLAG_ACTIVE)) {
+            continue;
+        }
+        if (other->flags & PZ_TANK_FLAG_DEAD) {
+            continue;
+        }
+        if (other->id == tank->id) {
+            continue;
+        }
+        // Only yield to other AI tanks (skip player tanks)
+        if (other->flags & PZ_TANK_FLAG_PLAYER) {
+            continue;
+        }
+
+        pz_vec2 to_other = pz_vec2_sub(other->pos, tank->pos);
+        float dist = pz_vec2_len(to_other);
+
+        // Check if other tank is in our path
+        if (dist > check_radius || dist < 0.01f) {
+            continue;
+        }
+
+        // Check if they're roughly in front of us
+        float forward = pz_vec2_dot(to_other, dir);
+        if (forward < 0.0f) {
+            continue; // Behind us
+        }
+
+        // Check lateral distance
+        float lateral = sqrtf(dist * dist - forward * forward);
+        if (lateral > combined_radius * 1.2f) {
+            continue; // Not blocking our path
+        }
+
+        // We're blocking each other - lower ID yields
+        if (tank->id < other->id) {
+            return other->id;
+        }
+    }
+
+    return -1;
+}
+
 static bool
 ai_pick_detour_target(pz_ai_controller *ctrl, const pz_tank *tank,
     const pz_map *map, pz_tank_manager *tank_mgr, pz_vec2 move_dir, pz_rng *rng)
@@ -535,19 +599,31 @@ ai_pick_detour_target(pz_ai_controller *ctrl, const pz_tank *tank,
         return false;
     }
 
-    pz_vec2 candidates[3] = {
-        pz_vec2_rotate(base_dir, PZ_PI * 0.5f),
-        pz_vec2_rotate(base_dir, -PZ_PI * 0.5f),
-        pz_vec2_scale(base_dir, -1.0f),
-    };
+    // Check if we should yield to another tank
+    int yield_to
+        = ai_should_yield_to(tank_mgr, tank, move_dir, AI_TANK_RADIUS * 4.0f);
+
+    pz_vec2 candidates[3];
+    if (yield_to >= 0) {
+        // We should yield - prioritize backing up!
+        candidates[0] = pz_vec2_scale(base_dir, -1.0f); // Backward first
+        candidates[1] = pz_vec2_rotate(base_dir, PZ_PI * 0.5f);
+        candidates[2] = pz_vec2_rotate(base_dir, -PZ_PI * 0.5f);
+    } else {
+        // Normal detour - try sides first
+        candidates[0] = pz_vec2_rotate(base_dir, PZ_PI * 0.5f);
+        candidates[1] = pz_vec2_rotate(base_dir, -PZ_PI * 0.5f);
+        candidates[2] = pz_vec2_scale(base_dir, -1.0f);
+    }
 
     int start = 0;
-    if (rng) {
+    if (rng && yield_to < 0) {
+        // Only randomize if not yielding (yielding has fixed priority)
         start = pz_rng_int(rng, 0, 2);
     }
 
     for (int i = 0; i < 3; i++) {
-        int idx = (start + i) % 3;
+        int idx = (yield_to >= 0) ? i : ((start + i) % 3);
         pz_vec2 target = pz_vec2_add(
             tank->pos, pz_vec2_scale(candidates[idx], detour_dist));
 
@@ -560,9 +636,11 @@ ai_pick_detour_target(pz_ai_controller *ctrl, const pz_tank *tank,
 
         ctrl->detour_active = true;
         ctrl->detour_target = target;
-        ctrl->detour_timer = 1.0f;
+        // Shorter detour when yielding - just need to make space
+        ctrl->detour_timer = (yield_to >= 0) ? 0.5f : 1.0f;
         if (rng) {
-            ctrl->detour_timer = 1.0f + pz_rng_float(rng) * 2.0f;
+            ctrl->detour_timer
+                += pz_rng_float(rng) * (yield_to >= 0 ? 0.5f : 2.0f);
         }
         return true;
     }
@@ -580,7 +658,8 @@ ai_apply_detour(pz_ai_controller *ctrl, const pz_tank *tank, const pz_map *map,
 
     const float min_input = 0.25f;
     const float arrive_threshold = 0.4f;
-    const float blocked_time = 0.25f;
+    // Faster reaction when escaping toxic - can't afford to wait!
+    const float blocked_time = (ctrl->toxic_urgency > 0.5f) ? 0.08f : 0.25f;
     const float step = AI_TANK_RADIUS * 1.1f;
     const float stall_dist = 0.02f;
 
@@ -751,15 +830,17 @@ ai_update_toxic_escape(pz_ai_controller *ctrl, const pz_map *map,
         float dist_to_target
             = pz_vec2_dist(current_pos, ctrl->toxic_escape_target);
         if (dist_to_target < 1.5f) {
-            // Arrived - check if target is still safe
-            if (!pz_toxic_cloud_is_inside(
-                    toxic_cloud, ctrl->toxic_escape_target)) {
-                // Made it to safety!
+            // Arrived - check if target is still safe AT FINAL CLOSURE
+            // Use will_be_inside for consistency with urgency calculation!
+            if (!pz_toxic_cloud_will_be_inside(
+                    toxic_cloud, ctrl->toxic_escape_target, 1.0f)) {
+                // Made it to a position that's safe even at 100% closure!
                 ctrl->toxic_escaping = false;
                 pz_path_clear(&ctrl->toxic_escape_path);
                 return false;
             }
-            // Target is no longer safe, need new path (fall through)
+            // Target won't be safe at final closure, need new path (fall
+            // through)
         } else {
             // Still en route - keep following current path, don't recalculate!
             return true;
@@ -1674,10 +1755,13 @@ update_level2_ai(pz_ai_controller *ctrl, pz_tank *tank,
         AI_MINE_AVOID_RADIUS, AI_MINE_PANIC_RADIUS);
 
     // Apply separation steering to avoid crowding other tanks
+    // Use stronger separation when escaping toxic - can't afford to get stuck!
     float sep_urgency = 0.0f;
     pz_vec2 separation = ai_compute_separation(
         tank_mgr, tank->pos, tank->id, 3.0f, &sep_urgency);
-    move_dir = ai_apply_separation(move_dir, separation, sep_urgency, 0.8f);
+    float sep_blend = (ctrl->toxic_urgency > 0.5f) ? 1.5f : 0.8f;
+    move_dir
+        = ai_apply_separation(move_dir, separation, sep_urgency, sep_blend);
     ai_apply_detour(ctrl, tank, map, tank_mgr, &move_dir, rng, dt);
 
     // Apply movement - faster when escaping toxic
@@ -2284,10 +2368,13 @@ update_level3_ai(pz_ai_controller *ctrl, pz_tank *tank,
         AI_MINE_AVOID_RADIUS, AI_MINE_PANIC_RADIUS);
 
     // Apply separation steering to avoid crowding other tanks
+    // Use stronger separation when escaping toxic - can't afford to get stuck!
     float sep_urgency = 0.0f;
     pz_vec2 separation = ai_compute_separation(
         tank_mgr, tank->pos, tank->id, 3.0f, &sep_urgency);
-    move_dir = ai_apply_separation(move_dir, separation, sep_urgency, 0.8f);
+    float sep_blend = (ctrl->toxic_urgency > 0.5f) ? 1.5f : 0.8f;
+    move_dir
+        = ai_apply_separation(move_dir, separation, sep_urgency, sep_blend);
     ai_apply_detour(ctrl, tank, map, tank_mgr, &move_dir, rng, dt);
 
     // Apply movement - faster when escaping toxic
@@ -2515,11 +2602,19 @@ pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
                 AI_MINE_AVOID_RADIUS, AI_MINE_PANIC_RADIUS);
 
             // Apply separation steering to avoid crowding other tanks
+            // Use stronger separation when escaping toxic!
             float sep_urgency = 0.0f;
             pz_vec2 separation = ai_compute_separation(
                 ai_mgr->tank_mgr, tank->pos, tank->id, 3.0f, &sep_urgency);
-            move_dir
-                = ai_apply_separation(move_dir, separation, sep_urgency, 0.8f);
+            float sep_blend = (ctrl->toxic_urgency > 0.5f) ? 1.5f : 0.8f;
+            move_dir = ai_apply_separation(
+                move_dir, separation, sep_urgency, sep_blend);
+
+            // Apply detour logic when escaping toxic and blocked by other tanks
+            if (ctrl->toxic_escaping) {
+                ai_apply_detour(ctrl, tank, ai_mgr->map, ai_mgr->tank_mgr,
+                    &move_dir, rng, dt);
+            }
 
             pz_tank_input input = {
                 .move_dir = pz_vec2_scale(move_dir, move_speed),
