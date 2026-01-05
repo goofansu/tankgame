@@ -57,6 +57,7 @@ target_include_directories(test_renderer PRIVATE
     ${CMAKE_SOURCE_DIR}
 )
 target_compile_definitions(test_renderer PRIVATE PZ_DEBUG)
+target_link_libraries(test_renderer PRIVATE m)
 add_test(NAME renderer COMMAND test_renderer)
 
 # Map system tests (includes tile registry and texture system)
@@ -82,6 +83,7 @@ target_include_directories(test_map PRIVATE
     ${CMAKE_SOURCE_DIR}
 )
 target_compile_definitions(test_map PRIVATE PZ_DEBUG)
+target_link_libraries(test_map PRIVATE m)
 add_test(NAME map COMMAND test_map)
 
 # Simulation system tests
@@ -106,4 +108,5 @@ target_include_directories(test_toxic_cloud PRIVATE
     ${CMAKE_SOURCE_DIR}/src
 )
 target_compile_definitions(test_toxic_cloud PRIVATE PZ_DEBUG)
+target_link_libraries(test_toxic_cloud PRIVATE m)
 add_test(NAME toxic_cloud COMMAND test_toxic_cloud)
