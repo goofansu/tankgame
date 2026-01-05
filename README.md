@@ -28,31 +28,7 @@ make run      # Build and run
 make clean    # Clean build directory
 make debug    # Build with debug config
 make release  # Build with release config
-```
-
-### Shader generation
-Sokol shaders are defined in `shaders/sokol/` and compiled with sokol-shdc.
-```bash
-tools/build_sokol_shaders.sh
-```
-
-## Project Structure
-
-```
-tankgame/
-├── src/
-│   ├── main.c          # Entry point
-│   ├── core/           # Foundation utilities
-│   ├── engine/         # Core engine systems
-│   │   └── render/     # Renderer API + backends
-│   ├── game/           # Game-specific code
-│   │   └── modes/      # Game mode logic
-│   ├── editor/         # In-game editor
-│   └── net/            # Networking
-├── shaders/            # GLSL shaders (sokol-shdc inputs in shaders/sokol/)
-├── assets/             # Game assets
-├── tests/              # Test suite
-└── spec/               # Design documents
+make web      # Build WASM build with docker
 ```
 
 ## Tools
@@ -65,16 +41,9 @@ The `tools/map_tool.py` script provides CLI commands and a Python API for map ma
 ./tools/map_tool.py validate <map>   # Validate and re-serialize
 ```
 
-## Documentation
-
-See `spec/` for design documents:
-- `00-execution-plan.md` - Development milestones
-- `01-game-design.md` - Game mechanics
-- `02-engine-foundation.md` - Engine architecture
-- `03-gameplay-tech.md` - Gameplay systems
-- `04-network-protocol.md` - Networking
-- `05-tooling-and-debugging.md` - Dev tools
-
 ## License
 
-MIT
+- License: [Apache-2.0](https://github.com/mitsuhiko/tankgame/blob/main/LICENSE)
+
+This code is entirely LLM generated. It is unclear if LLM generated code
+can be copyrighted.
