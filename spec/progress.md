@@ -46,7 +46,6 @@
 
 ## Phase 5: Physics and Collision
 - [x] M5.1: collision shapes (circle, rect as reusable API)
-- [ ] M5.2: collision world (spatial queries)
 - [x] M5.3: raycast (DDA algorithm with normals, used for projectiles and AI LOS)
 - [x] M5.4: tank-tank collision (circle-circle with push-out resolution)
 
@@ -84,11 +83,11 @@
 - [x] M9.5: pickup collection (tank-powerup collision, effect applied)
 - [x] M9.6: weapon switching (machine gun, ricochet weapons with ammo)
 
-## Phase 10: Destructibles (partial)
+## Phase 10: Destructibles
 - [x] M10.1: destructible entity (pz_barrier system)
 - [x] M10.2: destructible collision (blocks movement and projectiles)
 - [x] M10.3: destroying destructibles (HP tracking, destruction)
-- [ ] M10.4: crate placing (pickup gives crate placer)
+- [x] M10.4: crate placing (pickup gives crate placer)
 
 ## Phase 11: Map Editor
 - [ ] M11.1: editor mode toggle (F1)
@@ -105,7 +104,6 @@
 - [ ] M12.4: domination mode
 
 ## Phase 16: Polish and Game Feel (partial)
-- [ ] M16.1: screen shake
 - [x] M16.2: particle system (smoke, fog, impact particles)
 - [x] M16.3: hit feedback (damage flash, sound)
 - [ ] M16.4: UI polish (main menu, etc.)
@@ -141,13 +139,11 @@
 - [x] M9.1-9.3: mines (player can drop mines with right-click/G, max 2)
 
 ### Medium Priority (content/polish)
-- [ ] M16.1: screen shake on explosions
 - [ ] M16.4: main menu, UI polish
 
 ### Lower Priority (extra features)
 - [ ] Phase 11: map editor (map_tool.py exists for CLI editing)
 - [ ] Phase 12: game modes (deathmatch, CTF, domination)
-- [ ] M5.1-5.2: formal collision API (current inline collision works)
 
 ## Plan Changes
 - Networking phases (13-15) deferred indefinitely

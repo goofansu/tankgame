@@ -277,13 +277,6 @@ This document breaks the project into small, verifiable milestones. Each milesto
 
 **Validation:** Unit tests for all collision pairs
 
-### M5.2: Collision World
-- [ ] `pz_collision_world` that knows about map + entities
-- [ ] Spatial query: what's at this point?
-- [ ] Sweep query: what would I hit moving from A to B?
-
-**Validation:** Debug draw collision shapes (F3)
-
 ### M5.3: Raycast
 - [ ] Ray vs AABB
 - [ ] Ray vs circle
@@ -625,10 +618,6 @@ Focus is on single-player campaign mode with enemy AI first.
 ## Phase 16: Polish and Game Feel
 *Make it feel good*
 
-### M16.1: Screen Shake
-- [ ] Camera shake on explosions
-- [ ] Configurable intensity/duration
-
 ### M16.2: Particle System
 - [ ] Simple particle emitter
 - [ ] Muzzle flash
@@ -661,7 +650,7 @@ M3.1 → M3.2 → M3.3 → M3.4 → M3.5
               ↓
 M4.1 → M4.2 → M4.3 → M4.4 → M4.5 → M4.6 → M4.7
               ↓
-M5.1 → M5.2 → M5.3 → M5.4
+M5.1 → M5.3 → M5.4
               ↓
 M6.1 → M6.2 → M6.3 → M6.4 → M6.5
               ↓
@@ -718,7 +707,7 @@ M6.1 → M6.2 → M6.3 → M6.4 → M6.5
 | 2 | 5 | 4-6 hours |
 | 3 | 5 | 4-6 hours |
 | 4 | 7 | 6-8 hours |
-| 5 | 4 | 3-4 hours |
+| 5 | 3 | 2-3 hours |
 | 6 | 5 | 4-6 hours |
 | 7 | 3 | 2-3 hours |
 | 7B | 5 | 4-6 hours |
@@ -727,9 +716,9 @@ M6.1 → M6.2 → M6.3 → M6.4 → M6.5
 | 10 | 4 | 3-4 hours |
 | 11 | 6 | 6-8 hours |
 | 12 | 4 | 4-6 hours |
-| 16 | 4 | 4-6 hours |
+| 16 | 3 | 3-4 hours |
 
-**Campaign Total: ~52-76 hours** of focused development
+**Campaign Total: ~50-73 hours** of focused development
 
 Networking phases (13-15) deferred, would add ~18-27 hours
 
