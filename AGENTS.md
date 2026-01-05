@@ -78,11 +78,11 @@ Example progress.md:
 
 ## Map Editing
 
-**Use the map tool** at `tools/map_tool.py` to manipulate map files programmatically.
+**Use the map tool** at `tools/map_tool.py` to create and manipulate map files programmatically.
 
 Run `./tools/map_tool.py --help` for full API documentation and examples.
 
-**Prefer using map_tool.py** over manual text editing - it handles serialization correctly and avoids formatting errors.
+**Always use map_tool.py** over manual text editing - it handles serialization correctly and avoids formatting errors.
 
 ## Visual Validation
 
@@ -93,7 +93,7 @@ Place temporary debug artifacts in `debug-temp/` (gitignored).
 ### Quick Screenshot (Inline Script)
 
 ```bash
-./build/tankgame --script "frames 3; screenshot debug-temp/test.png; quit"
+./build/tankgame --debug-script "frames 3; screenshot debug-temp/test.png; quit"
 ```
 
 ### Debug Script Files
@@ -102,7 +102,7 @@ For testing movement, firing, and gameplay mechanics, use debug scripts.
 See `docs/debug-script.md` for full documentation.
 
 ```bash
-./build/tankgame --debug-script path/to/script.dbgscript
+./build/tankgame --debug-script-file path/to/script.dbgscript
 ```
 
 Example script:

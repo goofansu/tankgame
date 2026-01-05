@@ -233,8 +233,8 @@ typedef struct app_state {
     const char *campaign_path_arg;
     bool show_debug_overlay;
     bool show_debug_texture_scale;
-    const char *debug_script_path_arg; // --debug-script <file>
-    const char *inline_script_arg; // --script "commands"
+    const char *debug_script_path_arg; // --debug-script-file <file>
+    const char *inline_script_arg; // --debug-script "commands"
 
     // Debug script execution (for automated testing, not gameplay scripting)
     // Can be loaded from file, inline string, or injected via command pipe
@@ -770,6 +770,27 @@ fog_marks_emit(map_session *session)
 // ============================================================================
 
 static void
+print_help(const char *program_name)
+{
+    printf("Tank Game\n\n");
+    printf("Usage: %s [options]\n\n", program_name);
+    printf("Options:\n");
+    printf("  --help                    Show this help message and exit\n");
+    printf("  --map <path>              Load a specific map file\n");
+    printf("  --campaign <path>         Load a specific campaign file\n");
+    printf("  --debug                   Enable debug overlay (F2 to toggle)\n");
+    printf("  --debug-script <commands> Run inline debug script commands\n");
+    printf("  --debug-script-file <path> Run debug script from file\n");
+    printf("  --debug-texture-scale     Enable texture scale debugging\n");
+    printf("  --lightmap-debug <path>   Export lightmap to file\n");
+    printf("\nDebug Script Examples:\n");
+    printf("  --debug-script \"frames 3; screenshot test.png; quit\"\n");
+    printf("  --debug-script \"input +up; frames 60; screenshot moved.png; "
+           "quit\"\n");
+    printf("\nSee docs/debug-script.md for full debug script documentation.\n");
+}
+
+static void
 parse_args(int argc, char *argv[])
 {
     g_app.lightmap_debug_path = NULL;
@@ -780,22 +801,104 @@ parse_args(int argc, char *argv[])
     g_app.debug_script_path_arg = NULL;
     g_app.inline_script_arg = NULL;
 
+    // Track deprecated screenshot flags for combined error message
+    const char *deprecated_screenshot_path = NULL;
+    const char *deprecated_screenshot_frames = NULL;
+    bool has_deprecated_script = false;
+
+    // First pass: check for --help
     for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--lightmap-debug") == 0 && i + 1 < argc) {
+        if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
+            print_help(argv[0]);
+            exit(0);
+        }
+    }
+
+    // Second pass: parse arguments
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--lightmap-debug") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "error: --lightmap-debug requires a path\n");
+                exit(1);
+            }
             g_app.lightmap_debug_path = argv[++i];
-        } else if (strcmp(argv[i], "--map") == 0 && i + 1 < argc) {
+        } else if (strcmp(argv[i], "--map") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "error: --map requires a path\n");
+                exit(1);
+            }
             g_app.map_path_arg = argv[++i];
-        } else if (strcmp(argv[i], "--campaign") == 0 && i + 1 < argc) {
+        } else if (strcmp(argv[i], "--campaign") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "error: --campaign requires a path\n");
+                exit(1);
+            }
             g_app.campaign_path_arg = argv[++i];
         } else if (strcmp(argv[i], "--debug") == 0) {
             g_app.show_debug_overlay = true;
         } else if (strcmp(argv[i], "--debug-texture-scale") == 0) {
             g_app.show_debug_texture_scale = true;
-        } else if (strcmp(argv[i], "--debug-script") == 0 && i + 1 < argc) {
+        } else if (strcmp(argv[i], "--debug-script-file") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr,
+                    "error: --debug-script-file requires a file path\n");
+                exit(1);
+            }
             g_app.debug_script_path_arg = argv[++i];
-        } else if (strcmp(argv[i], "--script") == 0 && i + 1 < argc) {
+        } else if (strcmp(argv[i], "--debug-script") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "error: --debug-script requires commands\n");
+                exit(1);
+            }
             g_app.inline_script_arg = argv[++i];
         }
+        // Collect deprecated flags (don't exit immediately)
+        else if (strcmp(argv[i], "--screenshot") == 0) {
+            deprecated_screenshot_path = (i + 1 < argc && argv[i + 1][0] != '-')
+                ? argv[++i]
+                : "output.png";
+        } else if (strcmp(argv[i], "--screenshot-frames") == 0) {
+            deprecated_screenshot_frames
+                = (i + 1 < argc && argv[i + 1][0] != '-') ? argv[++i] : "3";
+        } else if (strcmp(argv[i], "--script") == 0) {
+            has_deprecated_script = true;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                i++; // skip the value
+            }
+        }
+        // Unknown argument
+        else if (argv[i][0] == '-') {
+            fprintf(stderr, "error: unknown option: %s\n", argv[i]);
+            fprintf(stderr, "       Run with --help for usage information\n");
+            exit(1);
+        } else {
+            fprintf(stderr, "error: unexpected argument: %s\n", argv[i]);
+            fprintf(stderr, "       Run with --help for usage information\n");
+            exit(1);
+        }
+    }
+
+    // Show combined error for deprecated screenshot flags
+    if (deprecated_screenshot_path || deprecated_screenshot_frames) {
+        const char *path = deprecated_screenshot_path
+            ? deprecated_screenshot_path
+            : "output.png";
+        const char *frames
+            = deprecated_screenshot_frames ? deprecated_screenshot_frames : "3";
+
+        fprintf(stderr,
+            "error: --screenshot and --screenshot-frames are not "
+            "supported\n");
+        fprintf(stderr,
+            "       Use: --debug-script \"frames %s; screenshot %s; quit\"\n",
+            frames, path);
+        exit(1);
+    }
+
+    // Show error for renamed --script flag
+    if (has_deprecated_script) {
+        fprintf(stderr, "error: --script has been renamed to --debug-script\n");
+        exit(1);
     }
 }
 

@@ -15,7 +15,7 @@ There are three ways to run debug script commands:
 ### 1. Script File
 
 ```bash
-./build/tankgame --debug-script path/to/script.dbgscript
+./build/tankgame --debug-script-file path/to/script.dbgscript
 ```
 
 ### 2. Inline Script
@@ -23,7 +23,7 @@ There are three ways to run debug script commands:
 Commands can be passed directly on the command line, separated by semicolons:
 
 ```bash
-./build/tankgame --script "frames 3; screenshot debug-temp/test.png; quit"
+./build/tankgame --debug-script "frames 3; screenshot debug-temp/test.png; quit"
 ```
 
 ### 3. Live Command Pipe
@@ -37,7 +37,7 @@ echo "aim 5.0 3.0; fire; frames 30; screenshot debug-temp/shot.png; quit" > /tmp
 
 Commands sent via the pipe replace any currently executing script.
 
-**Note:** Audio is automatically disabled when running debug scripts (via `--debug-script` or `--script`).
+**Note:** Audio is automatically disabled when running debug scripts (via `--debug-script-file` or `--debug-script`).
 
 ## Environment Variables
 
