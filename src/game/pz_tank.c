@@ -206,13 +206,26 @@ tank_circle_hits_tanks(
     return false;
 }
 
-// Push a tank out of overlap with other tanks
+// Push a tank out of overlap with other tanks, AND push other tanks (shoving)
+// The moving tank pushes other tanks in its movement direction
 static void
 resolve_tank_circle_tanks(
     pz_tank_manager *mgr, pz_tank *tank, pz_vec2 *center, float radius)
 {
     if (!mgr || !tank || !center)
         return;
+
+    // Calculate movement direction for shoving
+    pz_vec2 move_delta = pz_vec2_sub(*center, tank->pos);
+    float move_len = pz_vec2_len(move_delta);
+    pz_vec2 move_dir = { 0.0f, 0.0f };
+    if (move_len > 0.001f) {
+        move_dir = pz_vec2_scale(move_delta, 1.0f / move_len);
+    }
+
+    // Shoving strength: how much of the penetration is transferred to other
+    // tank A higher value means more shoving, lower means more stopping
+    const float shove_ratio = 0.6f;
 
     // Iterate a few times to resolve multiple overlaps
     for (int iter = 0; iter < 4; iter++) {
@@ -234,10 +247,30 @@ resolve_tank_circle_tanks(
             pz_vec2 normal;
             float penetration;
             if (pz_collision_circle_circle(a, b, &normal, &penetration)) {
-                // Push this tank out (opposite of normal direction)
-                // Normal points from a to b, so we push in -normal direction
-                center->x -= normal.x * penetration * 0.5f;
-                center->y -= normal.y * penetration * 0.5f;
+                // Calculate how much to shove vs how much to push self back
+                // If moving toward the other tank, shove more
+                float toward_other = pz_vec2_dot(move_dir, normal);
+                float effective_shove = shove_ratio;
+                if (toward_other < 0.0f) {
+                    // Moving away from other tank - no shoving
+                    effective_shove = 0.0f;
+                } else {
+                    // Scale shove by how directly we're moving toward them
+                    effective_shove = shove_ratio * toward_other;
+                }
+
+                // Push the other tank (shoving)
+                float shove_amount = penetration * effective_shove;
+                pz_vec2 shove_delta = pz_vec2_scale(normal, shove_amount);
+
+                // Apply shove to other tank's position
+                other->pos = pz_vec2_add(other->pos, shove_delta);
+
+                // Push this tank out by the remaining penetration
+                float self_push = penetration * (1.0f - effective_shove * 0.5f);
+                center->x -= normal.x * self_push * 0.5f;
+                center->y -= normal.y * self_push * 0.5f;
+
                 any_push = true;
             }
         }
@@ -731,9 +764,10 @@ pz_tank_damage(pz_tank *tank, int amount)
     if (!tank)
         return false;
 
-    // Ignore if dead or invulnerable
+    // Ignore if dead, invulnerable, or invincible
     if ((tank->flags & PZ_TANK_FLAG_DEAD)
-        || (tank->flags & PZ_TANK_FLAG_INVULNERABLE)) {
+        || (tank->flags & PZ_TANK_FLAG_INVULNERABLE)
+        || (tank->flags & PZ_TANK_FLAG_INVINCIBLE)) {
         return false;
     }
 

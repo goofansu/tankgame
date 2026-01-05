@@ -77,6 +77,7 @@ typedef enum {
     PZ_DEBUG_SCRIPT_SCREENSHOT,
     PZ_DEBUG_SCRIPT_DUMP,
     PZ_DEBUG_SCRIPT_SET_SEED,
+    PZ_DEBUG_SCRIPT_GOD_MODE,
 } pz_debug_script_action;
 
 // Advance script state by one frame
@@ -94,6 +95,9 @@ const char *pz_debug_script_get_dump_path(const pz_debug_script *script);
 
 // Get seed for SET_SEED action
 uint32_t pz_debug_script_get_seed(const pz_debug_script *script);
+
+// Get god mode value for GOD_MODE action (true = enable, false = disable)
+bool pz_debug_script_get_god_mode(const pz_debug_script *script);
 
 // Dump game state to file
 // This is a helper that game code can call with its state

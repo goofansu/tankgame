@@ -91,6 +91,14 @@ float pz_toxic_cloud_distance_to_boundary(
 pz_vec2 pz_toxic_cloud_get_safe_position(
     const pz_toxic_cloud *cloud, pz_vec2 from, float margin);
 
+// Get a safe position with spreading based on index.
+// Different indices get different positions around the safe zone to avoid
+// all AI converging on the same point.
+// index: unique identifier for this entity (0, 1, 2, ...)
+// total: total number of entities (for even distribution)
+pz_vec2 pz_toxic_cloud_get_safe_position_spread(const pz_toxic_cloud *cloud,
+    pz_vec2 from, float margin, int index, int total);
+
 // Check if a position will be inside the toxic zone at a future progress level.
 // Used for AI to predict where the cloud will be.
 bool pz_toxic_cloud_will_be_inside(

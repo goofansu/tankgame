@@ -30,6 +30,7 @@ typedef enum {
     CMD_SCREENSHOT,
     CMD_DUMP,
     CMD_QUIT,
+    CMD_GOD,
 } script_cmd_type;
 
 // Parsed command
@@ -70,6 +71,7 @@ struct pz_debug_script {
     // Action data (for returning to caller)
     char action_path[256];
     uint32_t action_seed;
+    bool action_god_mode;
 };
 
 // Parse a single line into a command
@@ -175,6 +177,9 @@ parse_command(const char *line, script_cmd *cmd)
         strncpy(cmd->str_val, arg1, sizeof(cmd->str_val) - 1);
     } else if (strcmp(keyword, "quit") == 0) {
         cmd->type = CMD_QUIT;
+    } else if (strcmp(keyword, "god") == 0) {
+        cmd->type = CMD_GOD;
+        cmd->bool_val = (strcmp(arg1, "on") == 0 || strcmp(arg1, "1") == 0);
     } else {
         pz_log(PZ_LOG_WARN, PZ_LOG_CAT_CORE,
             "Debug script: unknown command '%s'", keyword);
@@ -501,6 +506,12 @@ pz_debug_script_update(pz_debug_script *script)
             pz_log(PZ_LOG_INFO, PZ_LOG_CAT_CORE, "Debug script: quit");
             script->done = true;
             return PZ_DEBUG_SCRIPT_QUIT;
+
+        case CMD_GOD:
+            script->action_god_mode = cmd->bool_val;
+            pz_log(PZ_LOG_INFO, PZ_LOG_CAT_CORE, "Debug script: god mode %s",
+                cmd->bool_val ? "on" : "off");
+            return PZ_DEBUG_SCRIPT_GOD_MODE;
         }
     }
 
@@ -532,6 +543,12 @@ uint32_t
 pz_debug_script_get_seed(const pz_debug_script *script)
 {
     return script ? script->action_seed : 0;
+}
+
+bool
+pz_debug_script_get_god_mode(const pz_debug_script *script)
+{
+    return script ? script->action_god_mode : false;
 }
 
 void

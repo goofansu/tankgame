@@ -1380,6 +1380,20 @@ app_frame(void)
                     g_app.sim, pz_debug_script_get_seed(g_app.debug_script));
                 break;
 
+            case PZ_DEBUG_SCRIPT_GOD_MODE: {
+                pz_tank *player = pz_tank_get_player(g_app.session.tank_mgr);
+                if (player) {
+                    bool enable
+                        = pz_debug_script_get_god_mode(g_app.debug_script);
+                    if (enable) {
+                        player->flags |= PZ_TANK_FLAG_INVINCIBLE;
+                    } else {
+                        player->flags &= ~PZ_TANK_FLAG_INVINCIBLE;
+                    }
+                }
+                break;
+            }
+
             default:
                 break;
             }

@@ -129,6 +129,12 @@ frames 10          # Stopped
 | `fire` | Fire once (single press) |
 | `hold_fire on\|off` | Hold fire button continuously |
 
+### Debug Cheats
+
+| Command | Description |
+|---------|-------------|
+| `god on\|off` | Enable/disable player invincibility |
+
 ### Output
 
 | Command | Description |
@@ -223,6 +229,24 @@ hold_fire off
 input stop
 screenshot debug-temp/after_shooting.png
 dump debug-temp/projectiles.txt
+quit
+```
+
+### Testing with Invincibility
+
+```
+# Enable god mode for testing without dying
+god on
+
+frames 5
+input +down
+input +right
+
+# Run around without taking damage
+frames 300
+
+screenshot debug-temp/god_mode_test.png
+dump debug-temp/state.txt
 quit
 ```
 

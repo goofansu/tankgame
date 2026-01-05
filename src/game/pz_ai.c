@@ -293,6 +293,107 @@ ai_in_toxic_cloud(const pz_toxic_cloud *toxic_cloud, pz_vec2 pos)
     return toxic_cloud && pz_toxic_cloud_is_inside(toxic_cloud, pos);
 }
 
+// Separation steering: compute a direction to move away from nearby tanks
+// This helps prevent tanks from crowding together, especially when escaping
+// toxic clouds. Returns a normalized direction vector (or zero if no tanks
+// nearby).
+static pz_vec2
+ai_compute_separation(const pz_tank_manager *tank_mgr, pz_vec2 pos, int self_id,
+    float separation_radius, float *out_urgency)
+{
+    if (!tank_mgr) {
+        if (out_urgency) {
+            *out_urgency = 0.0f;
+        }
+        return pz_vec2_zero();
+    }
+
+    pz_vec2 separation = pz_vec2_zero();
+    float total_weight = 0.0f;
+    float max_urgency = 0.0f;
+
+    for (int i = 0; i < PZ_MAX_TANKS; i++) {
+        const pz_tank *other = &tank_mgr->tanks[i];
+
+        if (!(other->flags & PZ_TANK_FLAG_ACTIVE)) {
+            continue;
+        }
+        if (other->flags & PZ_TANK_FLAG_DEAD) {
+            continue;
+        }
+        if (other->id == self_id) {
+            continue;
+        }
+
+        pz_vec2 to_self = pz_vec2_sub(pos, other->pos);
+        float dist = pz_vec2_len(to_self);
+
+        if (dist < 0.001f || dist > separation_radius) {
+            continue;
+        }
+
+        // Weight inversely proportional to distance (closer = stronger push)
+        float weight = (separation_radius - dist) / separation_radius;
+        weight = weight * weight; // Quadratic falloff
+
+        pz_vec2 away_dir = pz_vec2_scale(to_self, 1.0f / dist);
+        separation = pz_vec2_add(separation, pz_vec2_scale(away_dir, weight));
+        total_weight += weight;
+
+        // Track urgency (how close is the closest tank)
+        float tank_urgency = 1.0f - (dist / separation_radius);
+        if (tank_urgency > max_urgency) {
+            max_urgency = tank_urgency;
+        }
+    }
+
+    if (out_urgency) {
+        *out_urgency = max_urgency;
+    }
+
+    if (total_weight < 0.001f) {
+        return pz_vec2_zero();
+    }
+
+    // Normalize the separation vector
+    float len = pz_vec2_len(separation);
+    if (len < 0.001f) {
+        return pz_vec2_zero();
+    }
+
+    return pz_vec2_scale(separation, 1.0f / len);
+}
+
+// Blend separation steering into a movement direction
+// Returns the blended direction (normalized)
+static pz_vec2
+ai_apply_separation(pz_vec2 move_dir, pz_vec2 separation,
+    float separation_urgency, float blend_strength)
+{
+    if (pz_vec2_len_sq(separation) < 0.0001f) {
+        return move_dir;
+    }
+
+    // Scale blend by urgency - more separation when tanks are very close
+    float blend = blend_strength * separation_urgency;
+
+    pz_vec2 result;
+    if (pz_vec2_len_sq(move_dir) < 0.0001f) {
+        // No primary movement - just use separation
+        result = separation;
+    } else {
+        // Blend primary direction with separation
+        result = pz_vec2_add(move_dir, pz_vec2_scale(separation, blend));
+    }
+
+    float len = pz_vec2_len(result);
+    if (len < 0.001f) {
+        return move_dir;
+    }
+
+    return pz_vec2_scale(result, 1.0f / len);
+}
+
 // Tank collision radius for pathfinding
 #define AI_TANK_RADIUS 0.9f
 // How close to waypoint before advancing
@@ -349,10 +450,13 @@ ai_calc_toxic_urgency(const pz_toxic_cloud *toxic_cloud, pz_vec2 pos)
 }
 
 // Find a safe escape target and update the escape path.
+// ai_index and total_ais are used to spread escape targets so AIs don't
+// all converge on the same point.
 // Returns true if escape is needed.
 static bool
 ai_update_toxic_escape(pz_ai_controller *ctrl, const pz_map *map,
-    const pz_toxic_cloud *toxic_cloud, pz_vec2 current_pos, float dt)
+    const pz_toxic_cloud *toxic_cloud, pz_vec2 current_pos, float dt,
+    int ai_index, int total_ais)
 {
     if (!toxic_cloud || !toxic_cloud->config.enabled) {
         ctrl->toxic_escaping = false;
@@ -416,14 +520,16 @@ ai_update_toxic_escape(pz_ai_controller *ctrl, const pz_map *map,
     // Time to find/update escape path
     ctrl->toxic_check_timer = AI_TOXIC_CHECK_INTERVAL * 2.0f; // Less frequent
 
-    // Get a safe target position - always aim for the CENTER of the safe zone
-    pz_vec2 safe_target = pz_toxic_cloud_get_safe_position(
-        toxic_cloud, current_pos, AI_TOXIC_SAFE_MARGIN);
+    // Get a safe target position with spreading so AIs don't all converge
+    // on the same point. Each AI gets a different position around the safe
+    // zone.
+    pz_vec2 safe_target = pz_toxic_cloud_get_safe_position_spread(
+        toxic_cloud, current_pos, AI_TOXIC_SAFE_MARGIN, ai_index, total_ais);
 
     // Log what we're targeting
     pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
-        "AI at (%.1f, %.1f) seeking safe position (%.1f, %.1f)", current_pos.x,
-        current_pos.y, safe_target.x, safe_target.y);
+        "AI %d/%d at (%.1f, %.1f) seeking safe position (%.1f, %.1f)", ai_index,
+        total_ais, current_pos.x, current_pos.y, safe_target.x, safe_target.y);
 
     // Verify target is actually safe
     if (pz_toxic_cloud_is_inside(toxic_cloud, safe_target)) {
@@ -1118,7 +1224,7 @@ static void
 update_level2_ai(pz_ai_controller *ctrl, pz_tank *tank,
     pz_tank_manager *tank_mgr, const pz_map *map, pz_vec2 player_pos,
     const pz_mine_manager *mine_mgr, pz_rng *rng,
-    const pz_toxic_cloud *toxic_cloud, float dt)
+    const pz_toxic_cloud *toxic_cloud, float dt, int ai_index, int total_ais)
 {
     const float move_speed = 3.0f; // Movement speed for AI
     const float arrive_threshold = 0.5f; // How close to target to stop
@@ -1289,7 +1395,8 @@ update_level2_ai(pz_ai_controller *ctrl, pz_tank *tank,
     }
 
     // Toxic cloud escape takes priority over normal behavior
-    if (ai_update_toxic_escape(ctrl, map, toxic_cloud, tank->pos, dt)) {
+    if (ai_update_toxic_escape(
+            ctrl, map, toxic_cloud, tank->pos, dt, ai_index, total_ais)) {
         pz_vec2 escape_dir
             = ai_get_toxic_escape_move(ctrl, toxic_cloud, tank->pos);
         if (pz_vec2_len_sq(escape_dir) > 0.001f) {
@@ -1303,6 +1410,12 @@ update_level2_ai(pz_ai_controller *ctrl, pz_tank *tank,
 
     move_dir = steer_away_from_mines(mine_mgr, tank->pos, move_dir,
         AI_MINE_AVOID_RADIUS, AI_MINE_PANIC_RADIUS);
+
+    // Apply separation steering to avoid crowding other tanks
+    float sep_urgency = 0.0f;
+    pz_vec2 separation = ai_compute_separation(
+        tank_mgr, tank->pos, tank->id, 3.0f, &sep_urgency);
+    move_dir = ai_apply_separation(move_dir, separation, sep_urgency, 0.8f);
 
     // Apply movement - faster when escaping toxic
     float current_speed = move_speed;
@@ -1518,7 +1631,8 @@ static void
 update_level3_ai(pz_ai_controller *ctrl, pz_tank *tank,
     pz_tank_manager *tank_mgr, const pz_map *map, pz_vec2 player_pos,
     pz_projectile_manager *proj_mgr, const pz_mine_manager *mine_mgr,
-    pz_rng *rng, const pz_toxic_cloud *toxic_cloud, float dt)
+    pz_rng *rng, const pz_toxic_cloud *toxic_cloud, float dt, int ai_index,
+    int total_ais)
 {
     const float move_speed = 6.0f; // Fast and aggressive
     const float arrive_threshold = 0.5f;
@@ -1890,7 +2004,8 @@ update_level3_ai(pz_ai_controller *ctrl, pz_tank *tank,
     }
 
     // Toxic cloud escape takes priority over normal behavior
-    if (ai_update_toxic_escape(ctrl, map, toxic_cloud, tank->pos, dt)) {
+    if (ai_update_toxic_escape(
+            ctrl, map, toxic_cloud, tank->pos, dt, ai_index, total_ais)) {
         pz_vec2 escape_dir
             = ai_get_toxic_escape_move(ctrl, toxic_cloud, tank->pos);
         if (pz_vec2_len_sq(escape_dir) > 0.001f) {
@@ -1904,6 +2019,12 @@ update_level3_ai(pz_ai_controller *ctrl, pz_tank *tank,
 
     move_dir = steer_away_from_mines(mine_mgr, tank->pos, move_dir,
         AI_MINE_AVOID_RADIUS, AI_MINE_PANIC_RADIUS);
+
+    // Apply separation steering to avoid crowding other tanks
+    float sep_urgency = 0.0f;
+    pz_vec2 separation = ai_compute_separation(
+        tank_mgr, tank->pos, tank->id, 3.0f, &sep_urgency);
+    move_dir = ai_apply_separation(move_dir, separation, sep_urgency, 0.8f);
 
     // Apply movement - faster when escaping toxic
     float current_speed = move_speed;
@@ -2090,11 +2211,13 @@ pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
         if (ctrl->level == PZ_ENEMY_LEVEL_3) {
             // Level 3: Aggressive hunter
             update_level3_ai(ctrl, tank, ai_mgr->tank_mgr, ai_mgr->map,
-                player_pos, proj_mgr, mine_mgr, rng, toxic_cloud, dt);
+                player_pos, proj_mgr, mine_mgr, rng, toxic_cloud, dt, i,
+                ai_mgr->controller_count);
         } else if (ctrl->level == PZ_ENEMY_LEVEL_2) {
             // Level 2: Cover-based
             update_level2_ai(ctrl, tank, ai_mgr->tank_mgr, ai_mgr->map,
-                player_pos, mine_mgr, rng, toxic_cloud, dt);
+                player_pos, mine_mgr, rng, toxic_cloud, dt, i,
+                ai_mgr->controller_count);
         } else {
             // Stationary turret only (sentry, sniper)
             // But they WILL move to escape toxic cloud!
@@ -2110,8 +2233,8 @@ pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
             }
 
             // Toxic cloud escape is high priority - use A* pathfinding
-            if (ai_update_toxic_escape(
-                    ctrl, ai_mgr->map, toxic_cloud, tank->pos, dt)) {
+            if (ai_update_toxic_escape(ctrl, ai_mgr->map, toxic_cloud,
+                    tank->pos, dt, i, ai_mgr->controller_count)) {
                 pz_vec2 escape_dir
                     = ai_get_toxic_escape_move(ctrl, toxic_cloud, tank->pos);
                 if (pz_vec2_len_sq(escape_dir) > 0.001f) {
@@ -2126,6 +2249,13 @@ pz_ai_update(pz_ai_manager *ai_mgr, pz_vec2 player_pos,
             // Apply mine avoidance steering to final direction
             move_dir = steer_away_from_mines(mine_mgr, tank->pos, move_dir,
                 AI_MINE_AVOID_RADIUS, AI_MINE_PANIC_RADIUS);
+
+            // Apply separation steering to avoid crowding other tanks
+            float sep_urgency = 0.0f;
+            pz_vec2 separation = ai_compute_separation(
+                ai_mgr->tank_mgr, tank->pos, tank->id, 3.0f, &sep_urgency);
+            move_dir
+                = ai_apply_separation(move_dir, separation, sep_urgency, 0.8f);
 
             pz_tank_input input = {
                 .move_dir = pz_vec2_scale(move_dir, move_speed),

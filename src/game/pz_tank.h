@@ -35,6 +35,7 @@ typedef enum {
     PZ_TANK_FLAG_DEAD = (1 << 1),
     PZ_TANK_FLAG_INVULNERABLE = (1 << 2),
     PZ_TANK_FLAG_PLAYER = (1 << 3), // Is this a player-controlled tank?
+    PZ_TANK_FLAG_INVINCIBLE = (1 << 4), // Debug: permanent invincibility
 } pz_tank_flags;
 
 // Forward declaration for weapon type

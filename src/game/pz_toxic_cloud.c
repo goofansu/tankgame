@@ -366,6 +366,67 @@ pz_toxic_cloud_get_safe_position(
     return target;
 }
 
+pz_vec2
+pz_toxic_cloud_get_safe_position_spread(const pz_toxic_cloud *cloud,
+    pz_vec2 from, float margin, int index, int total)
+{
+    if (!cloud || !cloud->config.enabled) {
+        return from;
+    }
+
+    // Get basic safe zone bounds with margin
+    float left = cloud->boundary_left + margin;
+    float right = cloud->boundary_right - margin;
+    float top = cloud->boundary_top + margin;
+    float bottom = cloud->boundary_bottom - margin;
+
+    // Clamp margins if zone is too small
+    if (left > right) {
+        left = right = (cloud->boundary_left + cloud->boundary_right) * 0.5f;
+    }
+    if (top > bottom) {
+        top = bottom = (cloud->boundary_top + cloud->boundary_bottom) * 0.5f;
+    }
+
+    // If already safely inside, stay put
+    if (from.x >= left && from.x <= right && from.y >= top
+        && from.y <= bottom) {
+        return from;
+    }
+
+    pz_vec2 center = cloud->config.center;
+
+    // Clamp center to safe area
+    center.x = pz_clampf(center.x, left, right);
+    center.y = pz_clampf(center.y, top, bottom);
+
+    // If only one entity or invalid total, just go to center
+    if (total <= 1 || index < 0) {
+        return center;
+    }
+
+    // Calculate spread positions around center in a circle
+    // Use angle based on index to distribute entities evenly
+    float angle = (float)index * (2.0f * PZ_PI / (float)total);
+
+    // Calculate spread radius - fraction of the safe zone size
+    float zone_width = right - left;
+    float zone_height = bottom - top;
+    float spread_radius = pz_minf(zone_width, zone_height) * 0.35f;
+
+    // Offset from center based on angle
+    pz_vec2 target = {
+        center.x + spread_radius * sinf(angle),
+        center.y + spread_radius * cosf(angle),
+    };
+
+    // Clamp to safe bounds
+    target.x = pz_clampf(target.x, left, right);
+    target.y = pz_clampf(target.y, top, bottom);
+
+    return target;
+}
+
 bool
 pz_toxic_cloud_will_be_inside(
     const pz_toxic_cloud *cloud, pz_vec2 pos, float future_progress)
