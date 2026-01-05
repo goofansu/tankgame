@@ -167,6 +167,12 @@ typedef struct pz_ai_controller {
     pz_path toxic_escape_path; // Path to escape destination
     float toxic_check_timer; // Timer for rechecking toxic threat
     float toxic_urgency; // 0.0 = safe, 1.0 = critical (in toxic now)
+
+    // Temporary detour when blocked by other tanks
+    bool detour_active; // Using a temporary detour target
+    pz_vec2 detour_target; // Temporary target to make space
+    float detour_timer; // Time remaining for detour attempt
+    float detour_blocked_timer; // Time spent blocked by another tank
 } pz_ai_controller;
 
 /* ============================================================================

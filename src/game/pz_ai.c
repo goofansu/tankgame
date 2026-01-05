@@ -236,6 +236,10 @@ pz_ai_spawn_enemy(
     pz_path_clear(&ctrl->toxic_escape_path);
     ctrl->toxic_check_timer = 0.0f;
     ctrl->toxic_urgency = 0.0f;
+    ctrl->detour_active = false;
+    ctrl->detour_target = pos;
+    ctrl->detour_timer = 0.0f;
+    ctrl->detour_blocked_timer = 0.0f;
 
     pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
         "Spawned %s enemy at (%.1f, %.1f), tank_id=%d%s",
@@ -398,6 +402,203 @@ ai_apply_separation(pz_vec2 move_dir, pz_vec2 separation,
 #define AI_TANK_RADIUS 0.9f
 // How close to waypoint before advancing
 #define AI_PATH_ARRIVE_THRESHOLD 0.8f
+
+// Forward declaration for helper used by stuck handling.
+static bool is_position_valid(const pz_map *map, pz_vec2 pos, float radius);
+
+// Detect when the AI is blocked and briefly back off to make space.
+static bool
+ai_hits_tank(pz_tank_manager *mgr, pz_vec2 center, float radius, int exclude_id)
+{
+    if (!mgr) {
+        return false;
+    }
+
+    float radius_sum = radius + mgr->collision_radius;
+    float radius_sq = radius_sum * radius_sum;
+
+    for (int i = 0; i < PZ_MAX_TANKS; i++) {
+        pz_tank *tank = &mgr->tanks[i];
+        if (!(tank->flags & PZ_TANK_FLAG_ACTIVE)) {
+            continue;
+        }
+        if (tank->flags & PZ_TANK_FLAG_DEAD) {
+            continue;
+        }
+        if (tank->id == exclude_id) {
+            continue;
+        }
+
+        pz_vec2 delta = pz_vec2_sub(center, tank->pos);
+        if (pz_vec2_len_sq(delta) < radius_sq) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static bool
+ai_is_tank_blocking(pz_tank_manager *mgr, pz_vec2 pos, pz_vec2 move_dir,
+    float radius, int exclude_id)
+{
+    if (!mgr) {
+        return false;
+    }
+
+    if (pz_vec2_len_sq(move_dir) < 0.0001f) {
+        return false;
+    }
+
+    pz_vec2 dir = pz_vec2_normalize(move_dir);
+    float forward_limit = radius * 2.2f;
+    float lateral_limit = radius * 1.2f;
+    float combined_radius = radius + mgr->collision_radius;
+    float combined_radius_sq = combined_radius * combined_radius;
+
+    for (int i = 0; i < PZ_MAX_TANKS; i++) {
+        pz_tank *tank = &mgr->tanks[i];
+        if (!(tank->flags & PZ_TANK_FLAG_ACTIVE)) {
+            continue;
+        }
+        if (tank->flags & PZ_TANK_FLAG_DEAD) {
+            continue;
+        }
+        if (tank->id == exclude_id) {
+            continue;
+        }
+
+        pz_vec2 delta = pz_vec2_sub(tank->pos, pos);
+        float dist_sq = pz_vec2_len_sq(delta);
+        if (dist_sq > combined_radius_sq * 4.0f) {
+            continue;
+        }
+
+        float forward = pz_vec2_dot(delta, dir);
+        if (forward <= 0.0f || forward > forward_limit) {
+            continue;
+        }
+
+        pz_vec2 perp = (pz_vec2) { -dir.y, dir.x };
+        float lateral = fabsf(pz_vec2_dot(delta, perp));
+        if (lateral > lateral_limit) {
+            continue;
+        }
+
+        return true;
+    }
+
+    return false;
+}
+
+static bool
+ai_pick_detour_target(pz_ai_controller *ctrl, const pz_tank *tank,
+    const pz_map *map, pz_tank_manager *tank_mgr, pz_vec2 move_dir, pz_rng *rng)
+{
+    const float detour_dist = AI_TANK_RADIUS * 2.0f;
+    pz_vec2 base_dir = pz_vec2_normalize(move_dir);
+    if (pz_vec2_len_sq(base_dir) < 0.0001f) {
+        return false;
+    }
+
+    pz_vec2 candidates[3] = {
+        pz_vec2_rotate(base_dir, PZ_PI * 0.5f),
+        pz_vec2_rotate(base_dir, -PZ_PI * 0.5f),
+        pz_vec2_scale(base_dir, -1.0f),
+    };
+
+    int start = 0;
+    if (rng) {
+        start = pz_rng_int(rng, 0, 2);
+    }
+
+    for (int i = 0; i < 3; i++) {
+        int idx = (start + i) % 3;
+        pz_vec2 target = pz_vec2_add(
+            tank->pos, pz_vec2_scale(candidates[idx], detour_dist));
+
+        if (map && !is_position_valid(map, target, AI_TANK_RADIUS)) {
+            continue;
+        }
+        if (ai_hits_tank(tank_mgr, target, AI_TANK_RADIUS, tank->id)) {
+            continue;
+        }
+
+        ctrl->detour_active = true;
+        ctrl->detour_target = target;
+        ctrl->detour_timer = 1.0f;
+        if (rng) {
+            ctrl->detour_timer = 1.0f + pz_rng_float(rng) * 2.0f;
+        }
+        return true;
+    }
+
+    return false;
+}
+
+static void
+ai_apply_detour(pz_ai_controller *ctrl, const pz_tank *tank, const pz_map *map,
+    pz_tank_manager *tank_mgr, pz_vec2 *move_dir, pz_rng *rng, float dt)
+{
+    if (!ctrl || !tank || !move_dir || !tank_mgr) {
+        return;
+    }
+
+    const float min_input = 0.25f;
+    const float arrive_threshold = 0.4f;
+    const float blocked_speed_sq = 0.02f * 0.02f;
+    const float blocked_time = 0.25f;
+    const float step = AI_TANK_RADIUS * 1.1f;
+
+    if (ctrl->detour_active) {
+        ctrl->detour_timer -= dt;
+        pz_vec2 to_target = pz_vec2_sub(ctrl->detour_target, tank->pos);
+        float dist = pz_vec2_len(to_target);
+        if (ctrl->detour_timer <= 0.0f || dist <= arrive_threshold) {
+            ctrl->detour_active = false;
+            ctrl->detour_blocked_timer = 0.0f;
+        } else if (dist > 0.01f) {
+            *move_dir = pz_vec2_scale(to_target, 1.0f / dist);
+        }
+        return;
+    }
+
+    if (pz_vec2_len(*move_dir) < min_input) {
+        ctrl->detour_blocked_timer = 0.0f;
+        return;
+    }
+
+    pz_vec2 test = pz_vec2_add(tank->pos, pz_vec2_scale(*move_dir, step));
+    if (map && !is_position_valid(map, test, AI_TANK_RADIUS)) {
+        ctrl->detour_blocked_timer = 0.0f;
+        return;
+    }
+
+    if (!ai_is_tank_blocking(
+            tank_mgr, tank->pos, *move_dir, AI_TANK_RADIUS, tank->id)) {
+        ctrl->detour_blocked_timer = 0.0f;
+        return;
+    }
+
+    if (pz_vec2_len_sq(tank->vel) < blocked_speed_sq) {
+        ctrl->detour_blocked_timer += dt;
+    } else {
+        ctrl->detour_blocked_timer = 0.0f;
+    }
+
+    if (ctrl->detour_blocked_timer < blocked_time) {
+        return;
+    }
+
+    ai_pick_detour_target(ctrl, tank, map, tank_mgr, *move_dir, rng);
+    if (ctrl->detour_active) {
+        pz_vec2 to_target = pz_vec2_sub(ctrl->detour_target, tank->pos);
+        float dist = pz_vec2_len(to_target);
+        if (dist > 0.01f) {
+            *move_dir = pz_vec2_scale(to_target, 1.0f / dist);
+        }
+    }
+}
 
 // Distance margin from boundary to consider "safe enough"
 #define AI_TOXIC_SAFE_MARGIN 2.5f
@@ -1422,6 +1623,7 @@ update_level2_ai(pz_ai_controller *ctrl, pz_tank *tank,
     pz_vec2 separation = ai_compute_separation(
         tank_mgr, tank->pos, tank->id, 3.0f, &sep_urgency);
     move_dir = ai_apply_separation(move_dir, separation, sep_urgency, 0.8f);
+    ai_apply_detour(ctrl, tank, map, tank_mgr, &move_dir, rng, dt);
 
     // Apply movement - faster when escaping toxic
     float current_speed = move_speed;
@@ -2031,6 +2233,7 @@ update_level3_ai(pz_ai_controller *ctrl, pz_tank *tank,
     pz_vec2 separation = ai_compute_separation(
         tank_mgr, tank->pos, tank->id, 3.0f, &sep_urgency);
     move_dir = ai_apply_separation(move_dir, separation, sep_urgency, 0.8f);
+    ai_apply_detour(ctrl, tank, map, tank_mgr, &move_dir, rng, dt);
 
     // Apply movement - faster when escaping toxic
     float current_speed = move_speed;

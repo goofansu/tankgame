@@ -688,6 +688,10 @@ pz_debug_script_dump_state(const char *path, pz_tank_manager *tank_mgr,
             float path_target_dist = 0.0f;
             float path_goal_dist = 0.0f;
             pz_vec2 path_dir = pz_vec2_zero();
+            bool detour_active = ctrl->detour_active;
+            float detour_timer = ctrl->detour_timer;
+            pz_vec2 detour_target = ctrl->detour_target;
+            float detour_blocked_timer = ctrl->detour_blocked_timer;
             if (tank && toxic_cloud) {
                 in_toxic = pz_toxic_cloud_is_inside(toxic_cloud, tank->pos);
                 toxic_at_end = pz_toxic_cloud_will_be_inside(
@@ -714,7 +718,9 @@ pz_debug_script_dump_state(const char *path, pz_tank_manager *tank_mgr,
                 "path_valid=%d path_count=%d path_current=%d "
                 "path_complete=%d path_target=(%.3f, %.3f) "
                 "path_target_dist=%.3f path_goal=(%.3f, %.3f) "
-                "path_goal_dist=%.3f move_dir=(%.3f, %.3f)\n",
+                "path_goal_dist=%.3f move_dir=(%.3f, %.3f) detour=%d "
+                "detour_timer=%.2f detour_blocked=%.2f detour_target=(%.3f, "
+                "%.3f)\n",
                 ctrl->tank_id, level_name ? level_name : "unknown",
                 pz_debug_ai_state_name(ctrl->state), tank ? tank->pos.x : 0.0f,
                 tank ? tank->pos.y : 0.0f, ctrl->toxic_escaping ? 1 : 0,
@@ -724,7 +730,9 @@ pz_debug_script_dump_state(const char *path, pz_tank_manager *tank_mgr,
                 ctrl->toxic_escape_path.count, ctrl->toxic_escape_path.current,
                 pz_path_is_complete(&ctrl->toxic_escape_path) ? 1 : 0,
                 path_target.x, path_target.y, path_target_dist, path_goal.x,
-                path_goal.y, path_goal_dist, path_dir.x, path_dir.y);
+                path_goal.y, path_goal_dist, path_dir.x, path_dir.y,
+                detour_active ? 1 : 0, detour_timer, detour_blocked_timer,
+                detour_target.x, detour_target.y);
         }
         fprintf(f, "\n");
     }
