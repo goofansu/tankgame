@@ -201,7 +201,7 @@ pz_barrier_manager_create(pz_renderer *renderer,
             .attr_count = 4,
             .stride = BARRIER_VERTEX_SIZE * sizeof(float),
         },
-        .blend = PZ_BLEND_NONE,
+        .blend = PZ_BLEND_ALPHA,
         .depth = PZ_DEPTH_READ_WRITE,
         .cull = PZ_CULL_BACK,
         .primitive = PZ_PRIMITIVE_TRIANGLES,
@@ -313,14 +313,15 @@ int
 pz_barrier_add(
     pz_barrier_manager *mgr, pz_vec2 pos, const char *tile_name, float health)
 {
-    // Map-placed barriers have no owner and no tint
-    return pz_barrier_add_owned(
-        mgr, pos, tile_name, health, -1, (pz_vec4) { 1.0f, 1.0f, 1.0f, 1.0f });
+    // Map-placed barriers have no owner, no tint, and no lifetime
+    return pz_barrier_add_owned(mgr, pos, tile_name, health, -1,
+        (pz_vec4) { 1.0f, 1.0f, 1.0f, 1.0f }, 0.0f);
 }
 
 int
 pz_barrier_add_owned(pz_barrier_manager *mgr, pz_vec2 pos,
-    const char *tile_name, float health, int owner_tank_id, pz_vec4 tint_color)
+    const char *tile_name, float health, int owner_tank_id, pz_vec4 tint_color,
+    float lifetime)
 {
     if (!mgr || !tile_name)
         return -1;
@@ -349,6 +350,8 @@ pz_barrier_add_owned(pz_barrier_manager *mgr, pz_vec2 pos,
     barrier->destroy_timer = 0.0f;
     barrier->owner_tank_id = owner_tank_id;
     barrier->tint_color = tint_color;
+    barrier->lifetime = lifetime;
+    barrier->max_lifetime = lifetime;
     strncpy(barrier->tile_name, tile_name, sizeof(barrier->tile_name) - 1);
     barrier->tile_name[sizeof(barrier->tile_name) - 1] = '\0';
 
@@ -357,9 +360,9 @@ pz_barrier_add_owned(pz_barrier_manager *mgr, pz_vec2 pos,
     if (owner_tank_id >= 0) {
         pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
             "Player barrier added at (%.1f, %.1f), tile=%s, health=%.0f, "
-            "owner=%d, tint=(%.2f, %.2f, %.2f)",
-            pos.x, pos.y, tile_name, health, owner_tank_id, tint_color.x,
-            tint_color.y, tint_color.z);
+            "owner=%d, lifetime=%.1fs, tint=(%.2f, %.2f, %.2f)",
+            pos.x, pos.y, tile_name, health, owner_tank_id, lifetime,
+            tint_color.x, tint_color.y, tint_color.z);
     } else {
         pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
             "Barrier added at (%.1f, %.1f), tile=%s, health=%.0f", pos.x, pos.y,
@@ -382,6 +385,20 @@ pz_barrier_update(pz_barrier_manager *mgr, float dt)
 
         if (barrier->destroy_timer > 0.0f) {
             barrier->destroy_timer -= dt;
+        }
+
+        // Handle lifetime expiration for player-placed barriers
+        if (!barrier->destroyed && barrier->lifetime > 0.0f) {
+            barrier->lifetime -= dt;
+            if (barrier->lifetime <= 0.0f) {
+                barrier->lifetime = 0.0f;
+                barrier->destroyed = true;
+                barrier->destroy_timer = 1.0f; // Same destruction effect
+                mgr->active_count--;
+                pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
+                    "Barrier at (%.1f, %.1f) expired (lifetime ended)",
+                    barrier->pos.x, barrier->pos.y);
+            }
         }
     }
 }
@@ -746,9 +763,18 @@ pz_barrier_render(pz_barrier_manager *mgr, pz_renderer *renderer,
             pz_renderer_bind_texture(renderer, 1, side_texture);
         }
 
+        // Calculate tint color with lifetime-based alpha
+        pz_vec4 tint = barrier->tint_color;
+        if (barrier->max_lifetime > 0.0f && barrier->lifetime > 0.0f) {
+            // Fade from full alpha to 35% alpha as lifetime decreases
+            float ratio = barrier->lifetime / barrier->max_lifetime;
+            float alpha
+                = 0.35f + 0.65f * ratio; // 100% -> 35% as ratio goes 1->0
+            tint.w *= alpha;
+        }
+
         // Set tint color for this barrier
-        pz_renderer_set_uniform_vec4(
-            renderer, mgr->shader, "u_tint", barrier->tint_color);
+        pz_renderer_set_uniform_vec4(renderer, mgr->shader, "u_tint", tint);
 
         // Draw
         pz_draw_cmd cmd = {

@@ -222,7 +222,7 @@ pz_powerup_add(pz_powerup_manager *mgr, pz_vec2 pos, pz_powerup_type type,
 int
 pz_powerup_add_barrier_placer(pz_powerup_manager *mgr, pz_vec2 pos,
     float respawn_time, const char *barrier_tile, float barrier_health,
-    int barrier_count)
+    int barrier_count, float barrier_lifetime)
 {
     int slot
         = pz_powerup_add(mgr, pos, PZ_POWERUP_BARRIER_PLACER, respawn_time);
@@ -235,10 +235,12 @@ pz_powerup_add_barrier_placer(pz_powerup_manager *mgr, pz_vec2 pos,
             = '\0';
         powerup->barrier_data.barrier_health = barrier_health;
         powerup->barrier_data.barrier_count = barrier_count;
+        powerup->barrier_data.barrier_lifetime = barrier_lifetime;
 
         pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
-            "Barrier placer configured: tile=%s, health=%.0f, count=%d",
-            barrier_tile, barrier_health, barrier_count);
+            "Barrier placer configured: tile=%s, health=%.0f, count=%d, "
+            "lifetime=%.1fs",
+            barrier_tile, barrier_health, barrier_count, barrier_lifetime);
     }
     return slot;
 }

@@ -61,6 +61,7 @@ typedef struct pz_tank_barrier_placer {
     char barrier_tile[32]; // Tile name for barriers
     float barrier_health; // Health for placed barriers
     int max_barriers; // Max barriers allowed at once
+    float barrier_lifetime; // Barrier lifetime in seconds (0 = infinite)
     int placed_barrier_ids[PZ_MAX_PLACED_BARRIERS]; // IDs of placed barriers
     int placed_count; // How many barriers currently placed
 } pz_tank_barrier_placer;
@@ -241,8 +242,9 @@ int pz_tank_get_current_weapon(const pz_tank *tank);
 void pz_tank_reset_loadout(pz_tank *tank);
 
 // Set barrier placer data when collecting a barrier_placer powerup
-void pz_tank_set_barrier_placer(
-    pz_tank *tank, const char *tile, float health, int max_count);
+// lifetime: time in seconds until placed barriers auto-destroy (0 = infinite)
+void pz_tank_set_barrier_placer(pz_tank *tank, const char *tile, float health,
+    int max_count, float lifetime);
 
 // Add a placed barrier to the tank's tracking
 // Returns true if added successfully

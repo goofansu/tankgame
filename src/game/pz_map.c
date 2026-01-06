@@ -1130,6 +1130,7 @@ parse_powerup_tag(const char *params, pz_powerup_spawn *powerup,
     powerup->barrier_tile[0] = '\0';
     powerup->barrier_health = 20.0f;
     powerup->barrier_count = 2; // Default barrier count
+    powerup->barrier_lifetime = 0.0f; // Default: no lifetime (infinite)
 
     if (barrier_tag_out && barrier_tag_size > 0) {
         barrier_tag_out[0] = '\0';
@@ -1183,6 +1184,10 @@ parse_powerup_tag(const char *params, pz_powerup_spawn *powerup,
                 powerup->barrier_count = 1;
             if (powerup->barrier_count > 8)
                 powerup->barrier_count = 8;
+        } else if (strncmp(p, "barrier_lifetime=", 17) == 0) {
+            powerup->barrier_lifetime = (float)atof(p + 17);
+            if (powerup->barrier_lifetime < 0.0f)
+                powerup->barrier_lifetime = 0.0f;
         }
 
         while (*p && !isspace((unsigned char)*p) && *p != ',') {

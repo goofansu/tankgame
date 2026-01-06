@@ -14,7 +14,7 @@ tag P4 spawn angle=-2.356 team=0
 tag E1 enemy angle=3.14 type=sentry
 tag B barrier tile=cobble health=20
 tag BP barrier tile=cobble health=15
-tag PB powerup type=barrier_placer barrier=BP barrier_count=5 respawn=30
+tag PB powerup type=barrier_placer barrier=BP barrier_count=5 barrier_lifetime=8 respawn=30
 
 <grid>
 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2#

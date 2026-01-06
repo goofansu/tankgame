@@ -108,7 +108,8 @@ In this example, the single `B` barrier tag creates 3 separate barriers at diffe
 
 **Spawn params:** `angle`, `team`, `team_spawn`
 **Enemy params:** `angle`, `type` (sentry, skirmisher, hunter, sniper)
-**Powerup params:** `type` (machine_gun, ricochet), `respawn` (seconds, default 15)
+**Powerup params:** `type` (machine_gun, ricochet, barrier_placer), `respawn` (seconds, default 15)
+**Barrier placer params:** `barrier` (tag name), `barrier_count` (max active barriers), `barrier_lifetime` (seconds until auto-destroy, 0 = infinite)
 **Barrier params:** `tile` (tile name for texture), `health` (default 20)
 
 ## Water Level

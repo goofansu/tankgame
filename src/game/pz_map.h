@@ -66,6 +66,7 @@ typedef struct pz_powerup_spawn {
                            // tag)
     float barrier_health; // Health for placed barriers
     int barrier_count; // Max barriers that can be placed at once (default: 2)
+    float barrier_lifetime; // Barrier lifetime in seconds (0 = infinite)
 } pz_powerup_spawn;
 
 // Barrier spawn data (destructible obstacles)

@@ -985,8 +985,8 @@ pz_tank_reset_loadout(pz_tank *tank)
  */
 
 void
-pz_tank_set_barrier_placer(
-    pz_tank *tank, const char *tile, float health, int max_count)
+pz_tank_set_barrier_placer(pz_tank *tank, const char *tile, float health,
+    int max_count, float lifetime)
 {
     if (!tank || !tile)
         return;
@@ -998,11 +998,13 @@ pz_tank_set_barrier_placer(
         = '\0';
     tank->barrier_placer.barrier_health = health;
     tank->barrier_placer.max_barriers = max_count;
+    tank->barrier_placer.barrier_lifetime = lifetime;
     // Don't reset placed_count or placed_barrier_ids - barriers persist
 
     pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
-        "Tank %d barrier placer set: tile=%s, health=%.0f, max=%d", tank->id,
-        tile, health, max_count);
+        "Tank %d barrier placer set: tile=%s, health=%.0f, max=%d, "
+        "lifetime=%.1fs",
+        tank->id, tile, health, max_count, lifetime);
 }
 
 bool

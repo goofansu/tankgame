@@ -42,6 +42,10 @@ typedef struct pz_barrier {
     int owner_tank_id; // -1 if map-placed, tank ID if player-placed
     pz_vec4 tint_color; // Color tint from owner's tank (1,1,1,1 = no tint)
 
+    // Lifetime (for player-placed barriers with timed expiration)
+    float lifetime; // Remaining lifetime in seconds (0 = infinite)
+    float max_lifetime; // Starting lifetime (for alpha calculation)
+
     // Destruction animation state
     float destroy_timer; // Counts down during destruction effect
 } pz_barrier;
@@ -83,8 +87,10 @@ int pz_barrier_add(
 // Add a barrier with owner (for player-placed barriers)
 // owner_tank_id: -1 for map-placed, tank ID for player-placed
 // tint_color: color overlay (1,1,1,1 = no tint)
+// lifetime: time in seconds until barrier auto-destroys (0 = infinite)
 int pz_barrier_add_owned(pz_barrier_manager *mgr, pz_vec2 pos,
-    const char *tile_name, float health, int owner_tank_id, pz_vec4 tint_color);
+    const char *tile_name, float health, int owner_tank_id, pz_vec4 tint_color,
+    float lifetime);
 
 // Update all barriers (destruction timers, etc.)
 void pz_barrier_update(pz_barrier_manager *mgr, float dt);

@@ -510,7 +510,7 @@ map_session_load(map_session *session, const char *map_path)
                 // Barrier placer needs extra config
                 pz_powerup_add_barrier_placer(session->powerup_mgr, ps->pos,
                     ps->respawn_time, ps->barrier_tile, ps->barrier_health,
-                    ps->barrier_count);
+                    ps->barrier_count, ps->barrier_lifetime);
             } else if (type != PZ_POWERUP_NONE) {
                 pz_powerup_add(
                     session->powerup_mgr, ps->pos, type, ps->respawn_time);
@@ -1552,7 +1552,8 @@ done_script_commands:
                 if (collected == PZ_POWERUP_BARRIER_PLACER) {
                     pz_tank_set_barrier_placer(g_app.session.player_tank,
                         barrier_data.barrier_tile, barrier_data.barrier_health,
-                        barrier_data.barrier_count);
+                        barrier_data.barrier_count,
+                        barrier_data.barrier_lifetime);
                 }
             }
 

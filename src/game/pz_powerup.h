@@ -35,6 +35,7 @@ typedef struct pz_barrier_placer_data {
     char barrier_tile[32]; // Tile name for barriers
     float barrier_health; // Health for placed barriers
     int barrier_count; // Max barriers that can be placed at once
+    float barrier_lifetime; // Barrier lifetime in seconds (0 = infinite)
 } pz_barrier_placer_data;
 
 // Powerup structure
@@ -108,9 +109,10 @@ int pz_powerup_add(pz_powerup_manager *mgr, pz_vec2 pos, pz_powerup_type type,
     float respawn_time);
 
 // Add a barrier placer powerup with barrier configuration
+// lifetime: time in seconds until placed barriers auto-destroy (0 = infinite)
 int pz_powerup_add_barrier_placer(pz_powerup_manager *mgr, pz_vec2 pos,
     float respawn_time, const char *barrier_tile, float barrier_health,
-    int barrier_count);
+    int barrier_count, float barrier_lifetime);
 
 // Update all powerups (animation, respawn timers)
 void pz_powerup_update(pz_powerup_manager *mgr, float dt);
