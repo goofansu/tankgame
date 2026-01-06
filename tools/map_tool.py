@@ -563,6 +563,13 @@ CLASSES:
     
     TagDef(name: str, type: str, params: dict)
         Defines a tag (spawn, enemy, powerup, barrier) with parameters.
+        
+        Tag types and their parameters:
+          spawn:   angle, team, team_spawn
+          enemy:   angle, type (sentry, skirmisher, hunter, sniper)
+          powerup: type (machine_gun, ricochet, barrier_placer), respawn
+                   For barrier_placer: barrier (tag ref), barrier_count, barrier_lifetime
+          barrier: tile, health
     
     TileDef(symbol: str, name: str)
         Maps a symbol (like '#') to a tile name (like 'wall').
@@ -633,7 +640,18 @@ EXAMPLE USAGE:
     
     # Define tiles and tags
     m.tile_defs = [TileDef(".", "ground"), TileDef("#", "wall")]
-    m.tag_defs = [TagDef("P1", "spawn", {"angle": "0", "team": "0"})]
+    m.tag_defs = [
+        TagDef("P1", "spawn", {"angle": "0", "team": "0"}),
+        TagDef("E1", "enemy", {"angle": "3.14", "type": "sentry"}),
+        TagDef("B", "barrier", {"tile": "cobble", "health": "20"}),
+        TagDef("PB", "powerup", {
+            "type": "barrier_placer",
+            "barrier": "B",           # Reference to barrier tag
+            "barrier_count": "3",     # Max 3 barriers at once
+            "barrier_lifetime": "10", # Barriers last 10 seconds
+            "respawn": "30"
+        }),
+    ]
     m.place_tag(5, 5, "P1")
     
     # Set lighting

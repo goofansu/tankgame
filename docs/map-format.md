@@ -106,11 +106,39 @@ tag B barrier tile=cobble health=20
 
 In this example, the single `B` barrier tag creates 3 separate barriers at different positions.
 
-**Spawn params:** `angle`, `team`, `team_spawn`
-**Enemy params:** `angle`, `type` (sentry, skirmisher, hunter, sniper)
-**Powerup params:** `type` (machine_gun, ricochet, barrier_placer), `respawn` (seconds, default 15)
-**Barrier placer params:** `barrier` (tag name), `barrier_count` (max active barriers), `barrier_lifetime` (seconds until auto-destroy, 0 = infinite)
-**Barrier params:** `tile` (tile name for texture), `health` (default 20)
+### Spawn Tag
+`tag NAME spawn angle=<radians> team=<n> team_spawn=<0|1>`
+- `angle`: Facing direction in radians
+- `team`: Team number (0 = FFA)
+- `team_spawn`: 1 = team mode only
+
+### Enemy Tag
+`tag NAME enemy angle=<radians> type=<type>`
+- `angle`: Facing direction in radians
+- `type`: sentry, skirmisher, hunter, sniper
+
+### Powerup Tag
+`tag NAME powerup type=<type> respawn=<seconds>`
+- `type`: machine_gun, ricochet, barrier_placer
+- `respawn`: Seconds until respawn after collection (default 15)
+
+**For `type=barrier_placer` only:**
+- `barrier=<tag>`: Reference to a barrier tag for tile/health config
+- `barrier_count=<n>`: Max barriers player can place at once (default 2)
+- `barrier_lifetime=<seconds>`: Time until barriers auto-destroy (default 0 = infinite)
+
+Example:
+```
+tag B barrier tile=cobble health=15
+tag PB powerup type=barrier_placer barrier=B barrier_count=3 barrier_lifetime=10 respawn=30
+```
+
+When collected, the player can place up to 3 barriers that use the cobble texture, have 15 health, and automatically destroy after 10 seconds (fading from 100% to 35% opacity before destruction).
+
+### Barrier Tag
+`tag NAME barrier tile=<name> health=<n>`
+- `tile`: Tile name for texture (e.g., cobble, stone)
+- `health`: Starting health (default 20)
 
 ## Water Level
 
@@ -271,7 +299,17 @@ for x in range(10):
 
 # Define tiles and tags
 m.tile_defs = [TileDef(".", "ground"), TileDef("#", "wall")]
-m.tag_defs = [TagDef("P1", "spawn", {"angle": "0", "team": "0"})]
+m.tag_defs = [
+    TagDef("P1", "spawn", {"angle": "0", "team": "0"}),
+    TagDef("B", "barrier", {"tile": "cobble", "health": "15"}),
+    TagDef("PB", "powerup", {
+        "type": "barrier_placer",
+        "barrier": "B",
+        "barrier_count": "3",
+        "barrier_lifetime": "10",  # Barriers last 10 seconds
+        "respawn": "30"
+    }),
+]
 m.place_tag(5, 5, "P1")
 
 # Set lighting
