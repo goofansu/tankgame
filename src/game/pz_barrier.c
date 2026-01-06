@@ -378,6 +378,9 @@ pz_barrier_update(pz_barrier_manager *mgr, float dt)
     if (!mgr)
         return;
 
+    // Clear expired list from previous frame
+    mgr->expired_count = 0;
+
     for (int i = 0; i < PZ_MAX_BARRIERS; i++) {
         pz_barrier *barrier = &mgr->barriers[i];
         if (!barrier->active)
@@ -395,12 +398,36 @@ pz_barrier_update(pz_barrier_manager *mgr, float dt)
                 barrier->destroyed = true;
                 barrier->destroy_timer = 1.0f; // Same destruction effect
                 mgr->active_count--;
+
+                // Track expired barrier so it can be credited back to player
+                if (mgr->expired_count < PZ_MAX_EXPIRED_BARRIERS) {
+                    pz_expired_barrier *exp
+                        = &mgr->expired[mgr->expired_count++];
+                    exp->barrier_index = i;
+                    exp->owner_tank_id = barrier->owner_tank_id;
+                    exp->pos = barrier->pos;
+                }
+
                 pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
                     "Barrier at (%.1f, %.1f) expired (lifetime ended)",
                     barrier->pos.x, barrier->pos.y);
             }
         }
     }
+}
+
+const pz_expired_barrier *
+pz_barrier_get_expired(const pz_barrier_manager *mgr, int *count)
+{
+    if (!mgr) {
+        if (count)
+            *count = 0;
+        return NULL;
+    }
+
+    if (count)
+        *count = mgr->expired_count;
+    return mgr->expired;
 }
 
 bool

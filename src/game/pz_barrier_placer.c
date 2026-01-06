@@ -339,9 +339,14 @@ pz_barrier_placer_render_ghost(pz_barrier_placer_renderer *bpr,
         return;
 
     // Build model matrix
+    // Scale ghost slightly larger to prevent z-fighting with existing barriers.
+    // The ghost fully envelops any barrier beneath it.
+    static const float GHOST_SCALE = 1.02f; // 2% larger
     pz_mat4 model = pz_mat4_identity();
     model = pz_mat4_mul(model,
         pz_mat4_translate((pz_vec3) { ghost->pos.x, 0.0f, ghost->pos.y }));
+    model = pz_mat4_mul(model,
+        pz_mat4_scale((pz_vec3) { GHOST_SCALE, GHOST_SCALE, GHOST_SCALE }));
 
     pz_mat4 mvp = pz_mat4_mul(*view_projection, model);
 

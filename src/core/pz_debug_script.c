@@ -34,6 +34,11 @@ typedef enum {
     CMD_QUIT,
     CMD_GOD,
     CMD_WEAPON,
+    CMD_TELEPORT,
+    CMD_GIVE,
+    CMD_CURSOR,
+    CMD_SPAWN_BARRIER,
+    CMD_SPAWN_POWERUP,
 } script_cmd_type;
 
 // Parsed command
@@ -43,7 +48,7 @@ typedef struct {
         bool bool_val; // turbo, render, hold_fire
         int int_val; // frames
         uint32_t seed_val; // seed
-        char str_val[256]; // map, screenshot, dump paths
+        char str_val[256]; // map, screenshot, dump paths, give item
         struct {
             float x, y;
         } aim_val; // aim
@@ -51,6 +56,13 @@ typedef struct {
             float x, y;
             int mode; // 0=replace (stop), 1=add, -1=subtract
         } input_val; // input (move direction)
+        struct {
+            float x, y;
+        } pos_val; // teleport, cursor, spawn_barrier
+        struct {
+            float x, y;
+            char type[64];
+        } spawn_powerup_val; // spawn_powerup
     };
 } script_cmd;
 
@@ -75,6 +87,9 @@ struct pz_debug_script {
     char action_path[256];
     uint32_t action_seed;
     bool action_god_mode;
+    float action_x, action_y;
+    char action_item[64];
+    char action_powerup_type[64];
 };
 
 // Parse a single line into a command
@@ -187,6 +202,30 @@ parse_command(const char *line, script_cmd *cmd)
         cmd->type = CMD_WEAPON;
         // weapon next (default) or weapon prev
         cmd->int_val = (strcmp(arg1, "prev") == 0) ? -1 : 1;
+    } else if (strcmp(keyword, "teleport") == 0) {
+        cmd->type = CMD_TELEPORT;
+        cmd->pos_val.x = (float)atof(arg1);
+        cmd->pos_val.y = (float)atof(arg2);
+    } else if (strcmp(keyword, "give") == 0) {
+        cmd->type = CMD_GIVE;
+        strncpy(cmd->str_val, arg1, sizeof(cmd->str_val) - 1);
+    } else if (strcmp(keyword, "cursor") == 0) {
+        cmd->type = CMD_CURSOR;
+        cmd->pos_val.x = (float)atof(arg1);
+        cmd->pos_val.y = (float)atof(arg2);
+    } else if (strcmp(keyword, "spawn_barrier") == 0) {
+        cmd->type = CMD_SPAWN_BARRIER;
+        cmd->pos_val.x = (float)atof(arg1);
+        cmd->pos_val.y = (float)atof(arg2);
+    } else if (strcmp(keyword, "spawn_powerup") == 0) {
+        cmd->type = CMD_SPAWN_POWERUP;
+        cmd->spawn_powerup_val.x = (float)atof(arg1);
+        cmd->spawn_powerup_val.y = (float)atof(arg2);
+        // Third argument is the type - need to re-parse
+        char arg3[64] = { 0 };
+        sscanf(line, "%*s %*s %*s %63s", arg3);
+        strncpy(cmd->spawn_powerup_val.type, arg3,
+            sizeof(cmd->spawn_powerup_val.type) - 1);
     } else {
         pz_log(PZ_LOG_WARN, PZ_LOG_CAT_CORE,
             "Debug script: unknown command '%s'", keyword);
@@ -526,6 +565,48 @@ pz_debug_script_update(pz_debug_script *script)
             pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_CORE, "Debug script: weapon %s",
                 cmd->int_val > 0 ? "next" : "prev");
             break;
+
+        case CMD_TELEPORT:
+            script->action_x = cmd->pos_val.x;
+            script->action_y = cmd->pos_val.y;
+            pz_log(PZ_LOG_INFO, PZ_LOG_CAT_CORE,
+                "Debug script: teleport to (%.2f, %.2f)", cmd->pos_val.x,
+                cmd->pos_val.y);
+            return PZ_DEBUG_SCRIPT_TELEPORT;
+
+        case CMD_GIVE:
+            strncpy(script->action_item, cmd->str_val,
+                sizeof(script->action_item) - 1);
+            pz_log(PZ_LOG_INFO, PZ_LOG_CAT_CORE, "Debug script: give '%s'",
+                cmd->str_val);
+            return PZ_DEBUG_SCRIPT_GIVE;
+
+        case CMD_CURSOR:
+            script->action_x = cmd->pos_val.x;
+            script->action_y = cmd->pos_val.y;
+            pz_log(PZ_LOG_INFO, PZ_LOG_CAT_CORE,
+                "Debug script: cursor at (%.2f, %.2f)", cmd->pos_val.x,
+                cmd->pos_val.y);
+            return PZ_DEBUG_SCRIPT_CURSOR;
+
+        case CMD_SPAWN_BARRIER:
+            script->action_x = cmd->pos_val.x;
+            script->action_y = cmd->pos_val.y;
+            pz_log(PZ_LOG_INFO, PZ_LOG_CAT_CORE,
+                "Debug script: spawn_barrier at (%.2f, %.2f)", cmd->pos_val.x,
+                cmd->pos_val.y);
+            return PZ_DEBUG_SCRIPT_SPAWN_BARRIER;
+
+        case CMD_SPAWN_POWERUP:
+            script->action_x = cmd->spawn_powerup_val.x;
+            script->action_y = cmd->spawn_powerup_val.y;
+            strncpy(script->action_powerup_type, cmd->spawn_powerup_val.type,
+                sizeof(script->action_powerup_type) - 1);
+            pz_log(PZ_LOG_INFO, PZ_LOG_CAT_CORE,
+                "Debug script: spawn_powerup '%s' at (%.2f, %.2f)",
+                cmd->spawn_powerup_val.type, cmd->spawn_powerup_val.x,
+                cmd->spawn_powerup_val.y);
+            return PZ_DEBUG_SCRIPT_SPAWN_POWERUP;
         }
     }
 
@@ -563,6 +644,69 @@ bool
 pz_debug_script_get_god_mode(const pz_debug_script *script)
 {
     return script ? script->action_god_mode : false;
+}
+
+void
+pz_debug_script_get_teleport_pos(
+    const pz_debug_script *script, float *x, float *y)
+{
+    if (script) {
+        if (x)
+            *x = script->action_x;
+        if (y)
+            *y = script->action_y;
+    }
+}
+
+const char *
+pz_debug_script_get_give_item(const pz_debug_script *script)
+{
+    return script ? script->action_item : NULL;
+}
+
+void
+pz_debug_script_get_cursor_pos(
+    const pz_debug_script *script, float *x, float *y)
+{
+    if (script) {
+        if (x)
+            *x = script->action_x;
+        if (y)
+            *y = script->action_y;
+    }
+}
+
+void
+pz_debug_script_get_spawn_barrier(
+    const pz_debug_script *script, float *x, float *y)
+{
+    if (script) {
+        if (x)
+            *x = script->action_x;
+        if (y)
+            *y = script->action_y;
+    }
+}
+
+void
+pz_debug_script_get_spawn_powerup(
+    const pz_debug_script *script, float *x, float *y, const char **type)
+{
+    if (script) {
+        if (x)
+            *x = script->action_x;
+        if (y)
+            *y = script->action_y;
+        if (type)
+            *type = script->action_powerup_type;
+    }
+}
+
+bool
+pz_debug_script_blocks_input(const pz_debug_script *script)
+{
+    // Block physical input when a script is active and not done
+    return script && !script->done;
 }
 
 static const char *

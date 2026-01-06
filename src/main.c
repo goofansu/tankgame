@@ -298,6 +298,11 @@ typedef struct app_state {
     bool key_f_just_pressed;
     bool key_g_just_pressed;
     bool key_down[SAPP_KEYCODE_COUNT];
+
+    // Script cursor override (world coordinates)
+    float script_cursor_x;
+    float script_cursor_y;
+    bool script_cursor_active;
 } app_state;
 
 static app_state g_app;
@@ -1408,6 +1413,128 @@ app_frame(void)
                 break;
             }
 
+            case PZ_DEBUG_SCRIPT_TELEPORT: {
+                pz_tank *player = pz_tank_get_player(g_app.session.tank_mgr);
+                if (player) {
+                    float x, y;
+                    pz_debug_script_get_teleport_pos(
+                        g_app.debug_script, &x, &y);
+                    player->pos.x = x;
+                    player->pos.y = y;
+                    player->vel = pz_vec2_zero();
+                    pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
+                        "Debug: teleported player to (%.2f, %.2f)", x, y);
+                }
+                break;
+            }
+
+            case PZ_DEBUG_SCRIPT_GIVE: {
+                pz_tank *player = pz_tank_get_player(g_app.session.tank_mgr);
+                if (player) {
+                    const char *item
+                        = pz_debug_script_get_give_item(g_app.debug_script);
+                    if (item) {
+                        // Handle known item types
+                        if (strcmp(item, "barrier_placer") == 0) {
+                            pz_tank_set_barrier_placer(
+                                player, "cobble", 15, 5, 30.0f);
+                            pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
+                                "Debug: gave barrier_placer to player");
+                        } else if (strcmp(item, "machine_gun") == 0) {
+                            pz_tank_add_weapon(
+                                player, (int)PZ_POWERUP_MACHINE_GUN);
+                            pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
+                                "Debug: gave machine_gun to player");
+                        } else if (strcmp(item, "ricochet") == 0) {
+                            pz_tank_add_weapon(
+                                player, (int)PZ_POWERUP_RICOCHET);
+                            pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
+                                "Debug: gave ricochet to player");
+                        } else {
+                            pz_log(PZ_LOG_WARN, PZ_LOG_CAT_GAME,
+                                "Debug: unknown item '%s'", item);
+                        }
+                    }
+                }
+                break;
+            }
+
+            case PZ_DEBUG_SCRIPT_CURSOR: {
+                float x, y;
+                pz_debug_script_get_cursor_pos(g_app.debug_script, &x, &y);
+
+                // Snap to tile center if map is loaded
+                if (g_app.session.map) {
+                    float tile_size = g_app.session.map->tile_size;
+                    int tile_x = (int)floorf(x / tile_size);
+                    int tile_y = (int)floorf(y / tile_size);
+                    x = (tile_x + 0.5f) * tile_size;
+                    y = (tile_y + 0.5f) * tile_size;
+                }
+
+                // Convert world position to screen pixels
+                // World coords are (x, 0, z) where z is our y parameter
+                pz_vec3 world_pos = { x, 0.0f, y };
+                pz_vec3 screen_pos
+                    = pz_camera_world_to_screen(&g_app.camera, world_pos);
+
+                // Set mouse position directly (bypasses script_cursor system)
+                g_app.mouse_x = screen_pos.x;
+                g_app.mouse_y = screen_pos.y;
+                g_app.script_cursor_active = false; // Use mouse path now
+
+                pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
+                    "Debug: cursor at world (%.2f, %.2f) -> screen (%.0f, "
+                    "%.0f)",
+                    x, y, screen_pos.x, screen_pos.y);
+                break;
+            }
+
+            case PZ_DEBUG_SCRIPT_SPAWN_BARRIER: {
+                if (g_app.session.barrier_mgr) {
+                    float x, y;
+                    pz_debug_script_get_spawn_barrier(
+                        g_app.debug_script, &x, &y);
+
+                    // Snap to tile center if map is loaded
+                    if (g_app.session.map) {
+                        float tile_size = g_app.session.map->tile_size;
+                        int tile_x = (int)floorf(x / tile_size);
+                        int tile_y = (int)floorf(y / tile_size);
+                        x = (tile_x + 0.5f) * tile_size;
+                        y = (tile_y + 0.5f) * tile_size;
+                    }
+
+                    pz_vec2 pos = { x, y };
+                    pz_barrier_add(g_app.session.barrier_mgr, pos, "cobble",
+                        20); // default tile and health
+                    pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
+                        "Debug: spawned barrier at (%.2f, %.2f)", x, y);
+                }
+                break;
+            }
+
+            case PZ_DEBUG_SCRIPT_SPAWN_POWERUP: {
+                if (g_app.session.powerup_mgr) {
+                    float x, y;
+                    const char *type;
+                    pz_debug_script_get_spawn_powerup(
+                        g_app.debug_script, &x, &y, &type);
+                    pz_vec2 pos = { x, y };
+                    pz_powerup_type ptype = PZ_POWERUP_BARRIER_PLACER;
+                    if (type && strcmp(type, "machine_gun") == 0) {
+                        ptype = PZ_POWERUP_MACHINE_GUN;
+                    } else if (type && strcmp(type, "ricochet") == 0) {
+                        ptype = PZ_POWERUP_RICOCHET;
+                    }
+                    pz_powerup_add(g_app.session.powerup_mgr, pos, ptype, 0.0f);
+                    pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
+                        "Debug: spawned powerup '%s' at (%.2f, %.2f)",
+                        type ? type : "barrier_placer", x, y);
+                }
+                break;
+            }
+
             default:
                 break;
             }
@@ -1557,10 +1684,19 @@ done_script_commands:
                 }
             }
 
-            // Update barrier placement ghost (uses mouse world position)
-            pz_vec3 ghost_cursor_world = pz_camera_screen_to_world(
-                &g_app.camera, (int)g_app.mouse_x, (int)g_app.mouse_y);
-            pz_vec2 cursor_2d = { ghost_cursor_world.x, ghost_cursor_world.z };
+            // Update barrier placement ghost (uses mouse or script cursor)
+            pz_vec2 cursor_2d;
+            if (g_app.script_cursor_active) {
+                // Use script-controlled cursor position
+                cursor_2d.x = g_app.script_cursor_x;
+                cursor_2d.y = g_app.script_cursor_y;
+            } else {
+                // Use mouse position converted to world coords
+                pz_vec3 ghost_cursor_world = pz_camera_screen_to_world(
+                    &g_app.camera, (int)g_app.mouse_x, (int)g_app.mouse_y);
+                cursor_2d.x = ghost_cursor_world.x;
+                cursor_2d.y = ghost_cursor_world.z;
+            }
             pz_barrier_placer_update_ghost(&g_app.session.barrier_ghost,
                 g_app.session.player_tank, g_app.session.map,
                 g_app.session.barrier_mgr, g_app.session.map->tile_size,
@@ -1724,6 +1860,21 @@ done_script_commands:
         pz_powerup_update(g_app.session.powerup_mgr, dt);
         if (g_app.session.barrier_mgr) {
             pz_barrier_update(g_app.session.barrier_mgr, dt);
+
+            // Credit expired barriers back to their owners
+            int expired_count = 0;
+            const pz_expired_barrier *expired = pz_barrier_get_expired(
+                g_app.session.barrier_mgr, &expired_count);
+            for (int i = 0; i < expired_count; i++) {
+                if (expired[i].owner_tank_id >= 0) {
+                    pz_tank *owner = pz_tank_get_by_id(
+                        g_app.session.tank_mgr, expired[i].owner_tank_id);
+                    if (owner) {
+                        pz_tank_on_barrier_destroyed(
+                            owner, expired[i].barrier_index);
+                    }
+                }
+            }
         }
         if (g_app.session.mine_mgr) {
             pz_mine_update(g_app.session.mine_mgr, g_app.session.tank_mgr,
@@ -2833,8 +2984,19 @@ app_event(const sapp_event *event)
     if (!event)
         return;
 
+    // Block physical input when debug script is active
+    bool block_input = pz_debug_script_blocks_input(g_app.debug_script);
+
     switch (event->type) {
     case SAPP_EVENTTYPE_KEY_DOWN:
+        // Allow F-keys and escape even during scripts for debugging/emergencies
+        if (block_input && event->key_code != SAPP_KEYCODE_ESCAPE
+            && event->key_code != SAPP_KEYCODE_F2
+            && event->key_code != SAPP_KEYCODE_F3
+            && event->key_code != SAPP_KEYCODE_F11
+            && event->key_code != SAPP_KEYCODE_F12) {
+            return;
+        }
         if (event->key_code >= 0 && event->key_code < SAPP_KEYCODE_COUNT) {
             g_app.key_down[event->key_code] = true;
         }
@@ -2948,6 +3110,8 @@ app_event(const sapp_event *event)
         }
         break;
     case SAPP_EVENTTYPE_KEY_UP:
+        if (block_input)
+            break;
         if (event->key_code >= 0 && event->key_code < SAPP_KEYCODE_COUNT) {
             g_app.key_down[event->key_code] = false;
         }
@@ -2956,11 +3120,15 @@ app_event(const sapp_event *event)
         }
         break;
     case SAPP_EVENTTYPE_MOUSE_MOVE:
+        if (block_input)
+            break;
         g_app.mouse_x = event->mouse_x;
         g_app.mouse_y = event->mouse_y;
         pz_cursor_set_position(g_app.cursor, g_app.mouse_x, g_app.mouse_y);
         break;
     case SAPP_EVENTTYPE_MOUSE_DOWN:
+        if (block_input)
+            break;
         if (event->mouse_button == SAPP_MOUSEBUTTON_LEFT) {
             g_app.mouse_left_down = true;
             g_app.mouse_left_just_pressed = true;
@@ -2969,11 +3137,15 @@ app_event(const sapp_event *event)
         }
         break;
     case SAPP_EVENTTYPE_MOUSE_UP:
+        if (block_input)
+            break;
         if (event->mouse_button == SAPP_MOUSEBUTTON_LEFT) {
             g_app.mouse_left_down = false;
         }
         break;
     case SAPP_EVENTTYPE_MOUSE_SCROLL:
+        if (block_input)
+            break;
         g_app.scroll_accumulator += event->scroll_y;
         break;
     case SAPP_EVENTTYPE_RESIZED: {

@@ -22,6 +22,16 @@
 // Maximum number of barriers per map
 #define PZ_MAX_BARRIERS 32
 
+// Maximum expired barriers tracked per frame (matches max barriers)
+#define PZ_MAX_EXPIRED_BARRIERS PZ_MAX_BARRIERS
+
+// Info about an expired barrier (for crediting back to player)
+typedef struct pz_expired_barrier {
+    int barrier_index; // Index in barrier array
+    int owner_tank_id; // Owner tank ID (-1 if map-placed)
+    pz_vec2 pos; // Position (for effects)
+} pz_expired_barrier;
+
 // Forward declarations
 typedef struct pz_map pz_map;
 typedef struct pz_particle_manager pz_particle_manager;
@@ -67,6 +77,10 @@ typedef struct pz_barrier_manager {
 
     // Cached tile size from map (for mesh generation)
     float tile_size;
+
+    // Expired barriers from last update (for crediting back to players)
+    pz_expired_barrier expired[PZ_MAX_EXPIRED_BARRIERS];
+    int expired_count;
 } pz_barrier_manager;
 
 /* ============================================================================
@@ -93,7 +107,13 @@ int pz_barrier_add_owned(pz_barrier_manager *mgr, pz_vec2 pos,
     float lifetime);
 
 // Update all barriers (destruction timers, etc.)
+// After update, check mgr->expired_count for barriers that expired this frame
 void pz_barrier_update(pz_barrier_manager *mgr, float dt);
+
+// Get expired barriers from last update (for crediting back to players)
+// Returns array of expired barrier info, count stored in *count
+const pz_expired_barrier *pz_barrier_get_expired(
+    const pz_barrier_manager *mgr, int *count);
 
 // Apply damage to a barrier at a position
 // Returns true if a barrier was hit

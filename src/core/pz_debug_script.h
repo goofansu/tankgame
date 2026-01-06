@@ -81,6 +81,11 @@ typedef enum {
     PZ_DEBUG_SCRIPT_DUMP,
     PZ_DEBUG_SCRIPT_SET_SEED,
     PZ_DEBUG_SCRIPT_GOD_MODE,
+    PZ_DEBUG_SCRIPT_TELEPORT,
+    PZ_DEBUG_SCRIPT_GIVE,
+    PZ_DEBUG_SCRIPT_CURSOR,
+    PZ_DEBUG_SCRIPT_SPAWN_BARRIER,
+    PZ_DEBUG_SCRIPT_SPAWN_POWERUP,
 } pz_debug_script_action;
 
 // Advance script state by one frame
@@ -101,6 +106,28 @@ uint32_t pz_debug_script_get_seed(const pz_debug_script *script);
 
 // Get god mode value for GOD_MODE action (true = enable, false = disable)
 bool pz_debug_script_get_god_mode(const pz_debug_script *script);
+
+// Get teleport position for TELEPORT action
+void pz_debug_script_get_teleport_pos(
+    const pz_debug_script *script, float *x, float *y);
+
+// Get give item type for GIVE action (returns item name string)
+const char *pz_debug_script_get_give_item(const pz_debug_script *script);
+
+// Get cursor position for CURSOR action
+void pz_debug_script_get_cursor_pos(
+    const pz_debug_script *script, float *x, float *y);
+
+// Get spawn barrier position for SPAWN_BARRIER action
+void pz_debug_script_get_spawn_barrier(
+    const pz_debug_script *script, float *x, float *y);
+
+// Get spawn powerup data for SPAWN_POWERUP action
+void pz_debug_script_get_spawn_powerup(
+    const pz_debug_script *script, float *x, float *y, const char **type);
+
+// Check if physical input should be blocked (script is active)
+bool pz_debug_script_blocks_input(const pz_debug_script *script);
 
 // Dump game state to file
 // This is a helper that game code can call with its state

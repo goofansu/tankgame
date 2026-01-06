@@ -39,6 +39,13 @@ Commands sent via the pipe replace any currently executing script.
 
 **Note:** Audio is automatically disabled when running debug scripts (via `--debug-script-file` or `--debug-script`).
 
+**Input Blocking:** Physical keyboard and mouse input is automatically blocked while a debug script is executing. This prevents accidental interference with automated tests. The following keys remain active for emergencies:
+- `Escape` - Quit the game
+- `F2` - Toggle debug overlay
+- `F3` - Toggle texture scale debug
+- `F11` - Save lightmap debug image
+- `F12` - Take manual screenshot
+
 ## Environment Variables
 
 These environment variables control audio independently of debug scripts:
@@ -158,6 +165,21 @@ frames 10          # Stopped
 | Command | Description |
 |---------|-------------|
 | `god on\|off` | Enable/disable player invincibility |
+| `teleport <x> <y>` | Teleport player to world coordinates |
+| `give <item>` | Give item to player (see below) |
+| `cursor <x> <y>` | Set cursor position in world coordinates |
+| `spawn_barrier <x> <y>` | Spawn a barrier at world coordinates |
+| `spawn_powerup <x> <y> <type>` | Spawn a powerup at world coordinates |
+
+**Available items for `give`:**
+- `barrier_placer` - Grants barrier placement ability (5 barriers, 30s lifetime)
+- `machine_gun` - Grants machine gun weapon
+- `ricochet` - Grants ricochet weapon
+
+**Available powerup types for `spawn_powerup`:**
+- `barrier_placer`
+- `machine_gun`
+- `ricochet`
 
 ### Output
 
@@ -299,6 +321,61 @@ frames 1800
 render on
 screenshot debug-temp/toxic_late.png
 dump debug-temp/toxic_state.txt
+quit
+```
+
+### Using Teleport and Give
+
+```
+# Load test arena
+map assets/maps/test_arena.map
+frames 5
+
+# Teleport to center of map and give barrier placer
+teleport 0.0 0.0
+give barrier_placer
+frames 5
+screenshot debug-temp/at_center_with_placer.png
+
+# Spawn a barrier nearby to test overlap
+spawn_barrier 2.0 0.0
+frames 5
+
+# Set cursor to overlap the spawned barrier
+cursor 2.0 0.0
+frames 5
+screenshot debug-temp/ghost_over_barrier.png
+
+quit
+```
+
+### Testing Barrier Placement Ghost Z-Fighting
+
+```
+# This script tests ghost barrier rendering over existing barriers
+map assets/maps/test_arena.map
+frames 5
+
+# Teleport player to a clear area at bottom of map (higher z = bottom)
+teleport -5.0 5.0
+give barrier_placer
+frames 5
+
+# Place a barrier
+cursor -3.0 5.0
+fire
+frames 10
+screenshot debug-temp/placed.png
+
+# Now set cursor directly on the placed barrier to test z-fighting
+cursor -3.0 5.0
+frames 5
+screenshot debug-temp/zfight1.png
+frames 1
+screenshot debug-temp/zfight2.png
+frames 1
+screenshot debug-temp/zfight3.png
+
 quit
 ```
 
