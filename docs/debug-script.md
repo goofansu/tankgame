@@ -84,8 +84,32 @@ frames 10; screenshot test.png; quit
 
 | Command | Description |
 |---------|-------------|
-| `map <path>` | Load a map file |
+| `map <path>` | Load a map file (path relative to working directory) |
 | `seed <n>` | Set RNG seed for reproducibility |
+
+**Map loading notes:**
+- The `map` command should appear **before** any `frames` commands to ensure the map is loaded before gameplay begins
+- Paths are relative to the working directory (typically the project root)
+- Maps are located in `assets/maps/` with `.map` extension
+- If no `map` command is given, the game uses its default map selection
+
+**Available maps** (in `assets/maps/`):
+- `test_arena.map` - Simple test map with powerups and barriers
+- `toxic_dawn.map` - Map with toxic zone mechanic
+- `night_arena.map`, `day_arena.map` - Day/night themed arenas
+- `lava_crossing.map`, `volcanic_ridge.map` - Lava-themed maps
+- `frozen_peaks.map`, `fjord.map` - Ice/water themed maps
+- Run `ls assets/maps/` for full list
+
+**Example:**
+```
+# Load a specific map at the start
+map assets/maps/test_arena.map
+
+# Then proceed with testing
+frames 5
+screenshot debug-temp/map_loaded.png
+```
 
 ### Input Control
 
@@ -247,6 +271,34 @@ frames 300
 
 screenshot debug-temp/god_mode_test.png
 dump debug-temp/state.txt
+quit
+```
+
+### Loading a Specific Map
+
+```
+# Load a specific map for testing
+map assets/maps/toxic_dawn.map
+
+# Set seed for reproducible enemy behavior
+seed 42
+
+# Enable god mode to observe without interference
+god on
+
+# Wait for everything to initialize
+frames 5
+screenshot debug-temp/toxic_start.png
+
+# Fast-forward to observe toxic zone behavior
+turbo on
+render off
+frames 1800
+
+# Capture the result
+render on
+screenshot debug-temp/toxic_late.png
+dump debug-temp/toxic_state.txt
 quit
 ```
 
