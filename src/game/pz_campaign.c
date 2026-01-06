@@ -285,7 +285,15 @@ pz_campaign_get_lives(const pz_campaign_manager *mgr)
 int
 pz_campaign_get_level_number(const pz_campaign_manager *mgr)
 {
-    return mgr ? mgr->progress.current_map + 1 : 0;
+    if (!mgr) {
+        return 0;
+    }
+    int level = mgr->progress.current_map + 1;
+    // Cap at map_count when campaign is complete (current_map may exceed it)
+    if (level > mgr->campaign.map_count) {
+        level = mgr->campaign.map_count;
+    }
+    return level;
 }
 
 // Get total levels
