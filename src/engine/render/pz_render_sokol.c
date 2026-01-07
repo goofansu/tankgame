@@ -71,6 +71,9 @@ static const shader_desc_entry SHADER_DESC_TABLE[] = {
     { "sdf_text", tankgame_sdf_text_shader_desc },
     { "background", tankgame_background_shader_desc },
     { "cursor", tankgame_cursor_shader_desc },
+    { "editor_grid", tankgame_editor_grid_shader_desc },
+    { "ui_quad", tankgame_ui_quad_shader_desc },
+    { "ui_textured", tankgame_ui_textured_shader_desc },
 };
 
 typedef int (*pz_uniform_offset_fn)(const char *ub_name, const char *u_name);
@@ -115,6 +118,9 @@ static const char *SHADER_BLOCKS_DEBUG_LINE_3D[]
 static const char *SHADER_BLOCKS_SDF_TEXT[] = { "sdf_text_vs_params" };
 static const char *SHADER_BLOCKS_BACKGROUND[] = { "background_fs_params" };
 static const char *SHADER_BLOCKS_CURSOR[] = { "cursor_vs_params" };
+static const char *SHADER_BLOCKS_EDITOR_GRID[] = { "editor_grid_vs_params" };
+static const char *SHADER_BLOCKS_UI_QUAD[] = { "ui_quad_vs_params" };
+static const char *SHADER_BLOCKS_UI_TEXTURED[] = { "ui_textured_vs_params" };
 
 static const shader_reflection SHADER_REFLECTION_TABLE[] = {
     { "test", tankgame_test_uniform_offset, tankgame_test_uniform_desc,
@@ -212,6 +218,23 @@ static const shader_reflection SHADER_REFLECTION_TABLE[] = {
         tankgame_cursor_uniformblock_slot, tankgame_cursor_uniformblock_size,
         SHADER_BLOCKS_CURSOR,
         (int)(sizeof(SHADER_BLOCKS_CURSOR) / sizeof(SHADER_BLOCKS_CURSOR[0])) },
+    { "editor_grid", tankgame_editor_grid_uniform_offset,
+        tankgame_editor_grid_uniform_desc,
+        tankgame_editor_grid_uniformblock_slot,
+        tankgame_editor_grid_uniformblock_size, SHADER_BLOCKS_EDITOR_GRID,
+        (int)(sizeof(SHADER_BLOCKS_EDITOR_GRID)
+            / sizeof(SHADER_BLOCKS_EDITOR_GRID[0])) },
+    { "ui_quad", tankgame_ui_quad_uniform_offset, tankgame_ui_quad_uniform_desc,
+        tankgame_ui_quad_uniformblock_slot, tankgame_ui_quad_uniformblock_size,
+        SHADER_BLOCKS_UI_QUAD,
+        (int)(sizeof(SHADER_BLOCKS_UI_QUAD)
+            / sizeof(SHADER_BLOCKS_UI_QUAD[0])) },
+    { "ui_textured", tankgame_ui_textured_uniform_offset,
+        tankgame_ui_textured_uniform_desc,
+        tankgame_ui_textured_uniformblock_slot,
+        tankgame_ui_textured_uniformblock_size, SHADER_BLOCKS_UI_TEXTURED,
+        (int)(sizeof(SHADER_BLOCKS_UI_TEXTURED)
+            / sizeof(SHADER_BLOCKS_UI_TEXTURED[0])) },
 };
 
 static const sg_shader_desc *
@@ -326,6 +349,12 @@ typedef struct sokol_backend_data {
     bool pass_active;
     pz_render_target_handle current_target;
     int sample_count;
+    bool scissor_enabled;
+    bool scissor_dirty;
+    int scissor_x;
+    int scissor_y;
+    int scissor_w;
+    int scissor_h;
 } sokol_backend_data;
 
 /* ============================================================================
@@ -813,7 +842,54 @@ begin_pass_if_needed(pz_renderer *r)
     }
 
     data->pass_active = true;
+    data->scissor_dirty = true;
     init_pass_action(&data->pass_action);
+}
+
+static void
+sokol_apply_scissor(pz_renderer *r)
+{
+    sokol_backend_data *data = r->backend_data;
+    if (!data->scissor_dirty) {
+        return;
+    }
+
+    int x = 0;
+    int y = 0;
+    int w = 0;
+    int h = 0;
+
+    if (data->scissor_enabled) {
+        x = data->scissor_x;
+        y = data->scissor_y;
+        w = data->scissor_w;
+        h = data->scissor_h;
+    } else {
+        if (data->current_target == 0
+            || data->current_target == PZ_INVALID_HANDLE) {
+            w = r->viewport_width;
+            h = r->viewport_height;
+        } else if (data->current_target < MAX_RENDER_TARGETS
+            && data->render_targets[data->current_target].used) {
+            sokol_render_target *rt
+                = &data->render_targets[data->current_target];
+            w = rt->width;
+            h = rt->height;
+        } else {
+            w = r->viewport_width;
+            h = r->viewport_height;
+        }
+    }
+
+    if (w < 0) {
+        w = 0;
+    }
+    if (h < 0) {
+        h = 0;
+    }
+
+    sg_apply_scissor_rect(x, y, w, h, true);
+    data->scissor_dirty = false;
 }
 
 static void
@@ -920,6 +996,11 @@ sokol_set_viewport(pz_renderer *r, int width, int height)
 {
     r->viewport_width = width;
     r->viewport_height = height;
+
+    sokol_backend_data *data = r->backend_data;
+    if (data) {
+        data->scissor_dirty = true;
+    }
 }
 
 static float
@@ -927,6 +1008,32 @@ sokol_get_dpi_scale(pz_renderer *r)
 {
     (void)r;
     return sapp_dpi_scale();
+}
+
+static void
+sokol_set_scissor(pz_renderer *r, int x, int y, int width, int height)
+{
+    sokol_backend_data *data = r->backend_data;
+    if (!data) {
+        return;
+    }
+    data->scissor_enabled = true;
+    data->scissor_x = x;
+    data->scissor_y = y;
+    data->scissor_w = width;
+    data->scissor_h = height;
+    data->scissor_dirty = true;
+}
+
+static void
+sokol_clear_scissor(pz_renderer *r)
+{
+    sokol_backend_data *data = r->backend_data;
+    if (!data) {
+        return;
+    }
+    data->scissor_enabled = false;
+    data->scissor_dirty = true;
 }
 
 static pz_shader_handle
@@ -1615,6 +1722,8 @@ sokol_begin_frame(pz_renderer *r)
     sokol_backend_data *data = r->backend_data;
     data->current_target = 0;
     data->pass_active = false;
+    data->scissor_enabled = false;
+    data->scissor_dirty = true;
     init_pass_action(&data->pass_action);
 }
 
@@ -1632,6 +1741,7 @@ sokol_set_render_target(pz_renderer *r, pz_render_target_handle handle)
     sokol_backend_data *data = r->backend_data;
     end_pass_if_active(data);
     data->current_target = handle == PZ_INVALID_HANDLE ? 0 : handle;
+    data->scissor_dirty = true;
     init_pass_action(&data->pass_action);
 }
 
@@ -1823,6 +1933,7 @@ sokol_draw(pz_renderer *r, const pz_draw_cmd *cmd)
         return;
 
     begin_pass_if_needed(r);
+    sokol_apply_scissor(r);
 
     sokol_pipeline *pipeline = &data->pipelines[cmd->pipeline];
     sg_apply_pipeline(pipeline->pipeline);
@@ -1983,6 +2094,8 @@ pz_render_backend_sokol_vtable(void)
         .get_viewport = sokol_get_viewport,
         .set_viewport = sokol_set_viewport,
         .get_dpi_scale = sokol_get_dpi_scale,
+        .set_scissor = sokol_set_scissor,
+        .clear_scissor = sokol_clear_scissor,
         .create_shader = sokol_create_shader,
         .destroy_shader = sokol_destroy_shader,
         .create_texture = sokol_create_texture,

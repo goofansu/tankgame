@@ -130,6 +130,9 @@ void pz_font_draw(pz_font_manager *mgr, const pz_text_style *style, float x,
 void pz_font_drawf(pz_font_manager *mgr, const pz_text_style *style, float x,
     float y, const char *fmt, ...);
 
+// Flush pending text without ending the frame (allows multiple layers)
+void pz_font_flush(pz_font_manager *mgr);
+
 // End text rendering (flushes batched quads)
 void pz_font_end_frame(pz_font_manager *mgr);
 

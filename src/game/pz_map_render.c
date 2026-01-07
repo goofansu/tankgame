@@ -671,7 +671,7 @@ pz_map_renderer_create(pz_renderer *renderer, pz_texture_manager *tex_manager,
         return NULL;
     }
 
-    // Water pipeline (same vertex layout as ground)
+    // Water pipeline (same vertex layout as ground, with alpha blending)
     pz_pipeline_desc water_desc = {
         .shader = mr->water_shader,
         .vertex_layout = {
@@ -679,7 +679,7 @@ pz_map_renderer_create(pz_renderer *renderer, pz_texture_manager *tex_manager,
             .attr_count = 2,
             .stride = 5 * sizeof(float),
         },
-        .blend = PZ_BLEND_NONE,
+        .blend = PZ_BLEND_ALPHA,
         .depth = PZ_DEPTH_READ_WRITE,
         .cull = PZ_CULL_BACK,
         .primitive = PZ_PRIMITIVE_TRIANGLES,
@@ -1781,6 +1781,12 @@ pz_map_renderer_draw_water(pz_map_renderer *mr, const pz_mat4 *view_projection,
     pz_renderer_set_uniform_float(mr->renderer, mr->water_shader,
         "u_wind_strength", mr->map->wind_strength);
 
+    // Alpha (default 1.0 for normal gameplay, 0.5 for editor)
+    float water_alpha
+        = (params && params->water_alpha > 0.0f) ? params->water_alpha : 1.0f;
+    pz_renderer_set_uniform_float(
+        mr->renderer, mr->water_shader, "u_alpha", water_alpha);
+
     // Caustic texture
     if (mr->water_caustic_texture != PZ_INVALID_HANDLE) {
         pz_renderer_bind_texture(mr->renderer, 1, mr->water_caustic_texture);
@@ -1885,6 +1891,13 @@ pz_map_renderer_draw_fog(pz_map_renderer *mr, const pz_mat4 *view_projection,
             "u_track_offset",
             (pz_vec2) { params->track_offset_x, params->track_offset_z });
     } else {
+        // Bind a dummy 2D texture to slot 0 to satisfy shader requirements
+        // (ground uses a texture array at slot 0, fog expects a 2D texture)
+        const pz_tile_config *fallback
+            = pz_tile_registry_get_fallback(mr->tile_registry);
+        if (fallback && fallback->ground_texture != PZ_INVALID_HANDLE) {
+            pz_renderer_bind_texture(mr->renderer, 0, fallback->ground_texture);
+        }
         pz_renderer_set_uniform_int(
             mr->renderer, mr->fog_shader, "u_use_tracks", 0);
     }

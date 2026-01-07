@@ -378,6 +378,153 @@ pz_map_find_tile_def(const pz_map *map, char symbol)
     return -1;
 }
 
+int
+pz_map_find_tag_def(const pz_map *map, const char *name)
+{
+    if (!map || !name || !name[0]) {
+        return -1;
+    }
+
+    for (int i = 0; i < map->tag_def_count; i++) {
+        if (strcmp(map->tag_defs[i].name, name) == 0) {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+int
+pz_map_add_tag_def(pz_map *map, const pz_tag_def *def)
+{
+    if (!map || !def || !def->name[0]) {
+        return -1;
+    }
+
+    int existing = pz_map_find_tag_def(map, def->name);
+    if (existing >= 0) {
+        return existing;
+    }
+
+    if (map->tag_def_count >= PZ_MAP_MAX_TAG_DEFS) {
+        return -1;
+    }
+
+    int idx = map->tag_def_count++;
+    map->tag_defs[idx] = *def;
+    return idx;
+}
+
+bool
+pz_map_remove_tag_def(pz_map *map, int index)
+{
+    if (!map || index < 0 || index >= map->tag_def_count) {
+        return false;
+    }
+
+    char removed_name[32];
+    strncpy(removed_name, map->tag_defs[index].name, sizeof(removed_name) - 1);
+    removed_name[sizeof(removed_name) - 1] = '\0';
+
+    for (int i = 0; i < map->tag_placement_count;) {
+        if (map->tag_placements[i].tag_index == index) {
+            pz_map_remove_tag_placement(map, i);
+            continue;
+        }
+        if (map->tag_placements[i].tag_index > index) {
+            map->tag_placements[i].tag_index--;
+        }
+        i++;
+    }
+
+    for (int i = index; i < map->tag_def_count - 1; i++) {
+        map->tag_defs[i] = map->tag_defs[i + 1];
+    }
+    map->tag_def_count--;
+
+    for (int i = 0; i < map->tag_def_count; i++) {
+        pz_tag_def *def = &map->tag_defs[i];
+        if (def->type == PZ_TAG_POWERUP
+            && strcmp(def->data.powerup.barrier_tag, removed_name) == 0) {
+            def->data.powerup.barrier_tag[0] = '\0';
+        }
+    }
+
+    return true;
+}
+
+int
+pz_map_add_tag_placement(pz_map *map, int tag_index, int tile_x, int tile_y)
+{
+    if (!map || tag_index < 0 || tag_index >= map->tag_def_count) {
+        return -1;
+    }
+    if (map->tag_placement_count >= PZ_MAP_MAX_TAG_PLACEMENTS) {
+        return -1;
+    }
+
+    int idx = map->tag_placement_count++;
+    map->tag_placements[idx] = (pz_tag_placement) {
+        .tag_index = tag_index,
+        .tile_x = tile_x,
+        .tile_y = tile_y,
+    };
+    return idx;
+}
+
+bool
+pz_map_remove_tag_placement(pz_map *map, int placement_index)
+{
+    if (!map || placement_index < 0
+        || placement_index >= map->tag_placement_count) {
+        return false;
+    }
+
+    for (int i = placement_index; i < map->tag_placement_count - 1; i++) {
+        map->tag_placements[i] = map->tag_placements[i + 1];
+    }
+    map->tag_placement_count--;
+    return true;
+}
+
+int
+pz_map_find_tag_placement(
+    const pz_map *map, int tile_x, int tile_y, int tag_index)
+{
+    if (!map) {
+        return -1;
+    }
+
+    for (int i = 0; i < map->tag_placement_count; i++) {
+        const pz_tag_placement *placement = &map->tag_placements[i];
+        if (placement->tile_x != tile_x || placement->tile_y != tile_y) {
+            continue;
+        }
+        if (tag_index >= 0 && placement->tag_index != tag_index) {
+            continue;
+        }
+        return i;
+    }
+
+    return -1;
+}
+
+int
+pz_map_count_tag_placements(const pz_map *map, int tag_index)
+{
+    if (!map) {
+        return 0;
+    }
+
+    int count = 0;
+    for (int i = 0; i < map->tag_placement_count; i++) {
+        if (map->tag_placements[i].tag_index == tag_index) {
+            count++;
+        }
+    }
+    return count;
+}
+
 // ============================================================================
 // Collision and Movement
 // ============================================================================
@@ -1238,25 +1385,164 @@ parse_barrier_tag(const char *params, pz_barrier_spawn *barrier)
     return barrier->tile_name[0] != '\0';
 }
 
-// Tag storage for v2 format
-typedef struct tag_def {
-    char name[32];
-    char type[16]; // "spawn", "enemy", "powerup", or "barrier"
-    char params[128];
-    char barrier_tag[32]; // For powerup type=barrier_placer: referenced barrier
-                          // tag
-} tag_def;
+static bool
+tag_type_from_string(const char *type, pz_tag_type *out_type)
+{
+    if (!type || !out_type) {
+        return false;
+    }
 
-#define MAX_TAGS 64
+    if (pz_str_casecmp(type, "spawn") == 0) {
+        *out_type = PZ_TAG_SPAWN;
+        return true;
+    }
+    if (pz_str_casecmp(type, "enemy") == 0) {
+        *out_type = PZ_TAG_ENEMY;
+        return true;
+    }
+    if (pz_str_casecmp(type, "powerup") == 0) {
+        *out_type = PZ_TAG_POWERUP;
+        return true;
+    }
+    if (pz_str_casecmp(type, "barrier") == 0) {
+        *out_type = PZ_TAG_BARRIER;
+        return true;
+    }
+
+    return false;
+}
+
+static const char *
+tag_type_name(pz_tag_type type)
+{
+    switch (type) {
+    case PZ_TAG_SPAWN:
+        return "spawn";
+    case PZ_TAG_ENEMY:
+        return "enemy";
+    case PZ_TAG_POWERUP:
+        return "powerup";
+    case PZ_TAG_BARRIER:
+        return "barrier";
+    default:
+        return "spawn";
+    }
+}
+
+static void
+tag_def_defaults(pz_tag_def *def, pz_tag_type type)
+{
+    if (!def) {
+        return;
+    }
+
+    memset(def, 0, sizeof(*def));
+    def->type = type;
+
+    switch (type) {
+    case PZ_TAG_SPAWN:
+        def->data.spawn.angle = 0.0f;
+        def->data.spawn.team = 0;
+        def->data.spawn.team_spawn = false;
+        break;
+    case PZ_TAG_ENEMY:
+        def->data.enemy.angle = 0.0f;
+        def->data.enemy.type = 1;
+        break;
+    case PZ_TAG_POWERUP:
+        strncpy(def->data.powerup.type_name, "machine_gun",
+            sizeof(def->data.powerup.type_name) - 1);
+        def->data.powerup.type_name[sizeof(def->data.powerup.type_name) - 1]
+            = '\0';
+        def->data.powerup.respawn_time = 15.0f;
+        def->data.powerup.barrier_tag[0] = '\0';
+        def->data.powerup.barrier_count = 2;
+        def->data.powerup.barrier_lifetime = 0.0f;
+        break;
+    case PZ_TAG_BARRIER:
+        def->data.barrier.tile_name[0] = '\0';
+        def->data.barrier.health = 20.0f;
+        break;
+    default:
+        break;
+    }
+}
+
+static bool
+parse_tag_definition(const char *name, const char *type_str, const char *params,
+    pz_tag_def *out_def)
+{
+    if (!name || !name[0] || !type_str || !out_def) {
+        return false;
+    }
+
+    pz_tag_type type;
+    if (!tag_type_from_string(type_str, &type)) {
+        return false;
+    }
+
+    tag_def_defaults(out_def, type);
+    strncpy(out_def->name, name, sizeof(out_def->name) - 1);
+    out_def->name[sizeof(out_def->name) - 1] = '\0';
+
+    if (!params || !params[0]) {
+        return true;
+    }
+
+    if (type == PZ_TAG_SPAWN) {
+        pz_spawn_point temp = { 0 };
+        parse_spawn_tag(params, &temp);
+        out_def->data.spawn.angle = temp.angle;
+        out_def->data.spawn.team = temp.team;
+        out_def->data.spawn.team_spawn = temp.team_spawn;
+    } else if (type == PZ_TAG_ENEMY) {
+        pz_enemy_spawn temp = { 0 };
+        parse_enemy_tag(params, &temp);
+        out_def->data.enemy.angle = temp.angle;
+        out_def->data.enemy.type = temp.type;
+    } else if (type == PZ_TAG_POWERUP) {
+        pz_powerup_spawn temp = { 0 };
+        char barrier_tag[32] = { 0 };
+        parse_powerup_tag(params, &temp, barrier_tag, sizeof(barrier_tag));
+        if (temp.type_name[0] != '\0') {
+            strncpy(out_def->data.powerup.type_name, temp.type_name,
+                sizeof(out_def->data.powerup.type_name) - 1);
+            out_def->data.powerup
+                .type_name[sizeof(out_def->data.powerup.type_name) - 1]
+                = '\0';
+        }
+        out_def->data.powerup.respawn_time = temp.respawn_time;
+        out_def->data.powerup.barrier_count = temp.barrier_count;
+        out_def->data.powerup.barrier_lifetime = temp.barrier_lifetime;
+        if (barrier_tag[0]) {
+            strncpy(out_def->data.powerup.barrier_tag, barrier_tag,
+                sizeof(out_def->data.powerup.barrier_tag) - 1);
+            out_def->data.powerup
+                .barrier_tag[sizeof(out_def->data.powerup.barrier_tag) - 1]
+                = '\0';
+        }
+    } else if (type == PZ_TAG_BARRIER) {
+        pz_barrier_spawn temp = { 0 };
+        parse_barrier_tag(params, &temp);
+        if (temp.tile_name[0]) {
+            strncpy(out_def->data.barrier.tile_name, temp.tile_name,
+                sizeof(out_def->data.barrier.tile_name) - 1);
+            out_def->data.barrier
+                .tile_name[sizeof(out_def->data.barrier.tile_name) - 1]
+                = '\0';
+        }
+        out_def->data.barrier.health = temp.health;
+    }
+
+    return true;
+}
 
 // Pending tag placement (to resolve after grid is parsed)
-typedef struct tag_placement {
+typedef struct tag_placement_pending {
     char tag_name[32];
     int tile_x;
     int tile_y;
-} tag_placement;
-
-#define MAX_TAG_PLACEMENTS 256
+} tag_placement_pending;
 
 // Count cells in a row string
 static int
@@ -1301,6 +1587,104 @@ count_row_cells(const char *row)
     return count;
 }
 
+void
+pz_map_rebuild_spawns_from_tags(pz_map *map)
+{
+    if (!map) {
+        return;
+    }
+
+    map->spawn_count = 0;
+    map->enemy_count = 0;
+    map->powerup_count = 0;
+    map->barrier_count = 0;
+
+    for (int i = 0; i < map->tag_placement_count; i++) {
+        const pz_tag_placement *placement = &map->tag_placements[i];
+        if (placement->tag_index < 0
+            || placement->tag_index >= map->tag_def_count) {
+            continue;
+        }
+
+        const pz_tag_def *def = &map->tag_defs[placement->tag_index];
+        pz_vec2 pos
+            = pz_map_tile_to_world(map, placement->tile_x, placement->tile_y);
+
+        switch (def->type) {
+        case PZ_TAG_SPAWN: {
+            if (map->spawn_count >= PZ_MAP_MAX_SPAWNS) {
+                break;
+            }
+            pz_spawn_point *sp = &map->spawns[map->spawn_count++];
+            sp->pos = pos;
+            sp->angle = def->data.spawn.angle;
+            sp->team = def->data.spawn.team;
+            sp->team_spawn = def->data.spawn.team_spawn;
+        } break;
+        case PZ_TAG_ENEMY: {
+            if (map->enemy_count >= PZ_MAP_MAX_ENEMIES) {
+                break;
+            }
+            pz_enemy_spawn *es = &map->enemies[map->enemy_count++];
+            es->pos = pos;
+            es->angle = def->data.enemy.angle;
+            es->type = def->data.enemy.type;
+        } break;
+        case PZ_TAG_POWERUP: {
+            if (map->powerup_count >= PZ_MAP_MAX_POWERUPS) {
+                break;
+            }
+            pz_powerup_spawn *ps = &map->powerups[map->powerup_count++];
+            memset(ps, 0, sizeof(*ps));
+            ps->pos = pos;
+            strncpy(ps->type_name, def->data.powerup.type_name,
+                sizeof(ps->type_name) - 1);
+            ps->type_name[sizeof(ps->type_name) - 1] = '\0';
+            if (ps->type_name[0] == '\0') {
+                strncpy(
+                    ps->type_name, "machine_gun", sizeof(ps->type_name) - 1);
+                ps->type_name[sizeof(ps->type_name) - 1] = '\0';
+            }
+            ps->respawn_time = def->data.powerup.respawn_time;
+            ps->barrier_count = def->data.powerup.barrier_count;
+            ps->barrier_lifetime = def->data.powerup.barrier_lifetime;
+
+            if (strcmp(def->data.powerup.type_name, "barrier_placer") == 0
+                && def->data.powerup.barrier_tag[0]) {
+                int barrier_idx
+                    = pz_map_find_tag_def(map, def->data.powerup.barrier_tag);
+                if (barrier_idx >= 0
+                    && map->tag_defs[barrier_idx].type == PZ_TAG_BARRIER) {
+                    const pz_tag_def *barrier_def = &map->tag_defs[barrier_idx];
+                    strncpy(ps->barrier_tile,
+                        barrier_def->data.barrier.tile_name,
+                        sizeof(ps->barrier_tile) - 1);
+                    ps->barrier_tile[sizeof(ps->barrier_tile) - 1] = '\0';
+                    ps->barrier_health = barrier_def->data.barrier.health;
+                } else {
+                    pz_log(PZ_LOG_WARN, PZ_LOG_CAT_GAME,
+                        "Barrier placer references unknown barrier tag: %s",
+                        def->data.powerup.barrier_tag);
+                }
+            }
+        } break;
+        case PZ_TAG_BARRIER: {
+            if (map->barrier_count >= PZ_MAP_MAX_BARRIERS) {
+                break;
+            }
+            pz_barrier_spawn *bs = &map->barriers[map->barrier_count++];
+            bs->pos = pos;
+            strncpy(bs->tile_name, def->data.barrier.tile_name,
+                sizeof(bs->tile_name) - 1);
+            bs->tile_name[sizeof(bs->tile_name) - 1] = '\0';
+            bs->health = def->data.barrier.health;
+        } break;
+        default:
+            break;
+        }
+    }
+}
+
 pz_map *
 pz_map_load(const char *path)
 {
@@ -1321,11 +1705,11 @@ pz_map_load(const char *path)
     bool has_music = false;
 
     // Tag definitions
-    tag_def tags[MAX_TAGS];
-    int tag_count = 0;
+    pz_tag_def tag_defs[PZ_MAP_MAX_TAG_DEFS];
+    int tag_def_count = 0;
 
     // Tag placements (resolved after grid)
-    tag_placement placements[MAX_TAG_PLACEMENTS];
+    tag_placement_pending placements[PZ_MAP_MAX_TAG_PLACEMENTS];
     int placement_count = 0;
 
     // Temporary tile defs (before map creation)
@@ -1425,11 +1809,14 @@ pz_map_load(const char *path)
             // Parse: tag <name> <type> <params...>
             char tname[32], ttype[16], tparams[128] = "";
             int n = sscanf(p + 4, "%31s %15s %127[^\n]", tname, ttype, tparams);
-            if (n >= 2 && tag_count < MAX_TAGS) {
-                strncpy(tags[tag_count].name, tname, 31);
-                strncpy(tags[tag_count].type, ttype, 15);
-                strncpy(tags[tag_count].params, tparams, 127);
-                tag_count++;
+            if (n >= 2 && tag_def_count < PZ_MAP_MAX_TAG_DEFS) {
+                if (parse_tag_definition(
+                        tname, ttype, tparams, &tag_defs[tag_def_count])) {
+                    tag_def_count++;
+                } else {
+                    pz_log(PZ_LOG_WARN, PZ_LOG_CAT_GAME,
+                        "Unknown tag type '%s' for tag '%s'", ttype, tname);
+                }
             }
         } else if (strcmp(p, "<grid>") == 0) {
             in_grid = true;
@@ -1472,6 +1859,14 @@ pz_map_load(const char *path)
     // Add tile definitions from file
     for (int i = 0; i < tile_def_count; i++) {
         pz_map_add_tile_def(map, tile_symbols[i], tile_names[i]);
+    }
+
+    // Add tag definitions from file
+    for (int i = 0; i < tag_def_count; i++) {
+        if (pz_map_add_tag_def(map, &tag_defs[i]) < 0) {
+            pz_log(PZ_LOG_WARN, PZ_LOG_CAT_GAME,
+                "Skipping tag def '%s' (limit reached?)", tag_defs[i].name);
+        }
     }
 
     // Parse grid rows (file rows are top-down, y=0 is top)
@@ -1524,7 +1919,8 @@ pz_map_load(const char *path)
                         tag += strlen(tag); // end loop
                     }
 
-                    if (single_tag[0] && placement_count < MAX_TAG_PLACEMENTS) {
+                    if (single_tag[0]
+                        && placement_count < PZ_MAP_MAX_TAG_PLACEMENTS) {
                         strncpy(placements[placement_count].tag_name,
                             single_tag, 31);
                         placements[placement_count].tile_x = x;
@@ -1541,83 +1937,24 @@ pz_map_load(const char *path)
         }
     }
 
-    // Resolve tag placements
+    // Resolve tag placements into map storage
     for (int i = 0; i < placement_count; i++) {
-        pz_vec2 pos = pz_map_tile_to_world(
-            map, placements[i].tile_x, placements[i].tile_y);
-
-        // Find tag definition
-        tag_def *tag = NULL;
-        for (int j = 0; j < tag_count; j++) {
-            if (strcmp(tags[j].name, placements[i].tag_name) == 0) {
-                tag = &tags[j];
-                break;
-            }
-        }
-
-        if (!tag) {
+        int tag_index = pz_map_find_tag_def(map, placements[i].tag_name);
+        if (tag_index < 0) {
             pz_log(PZ_LOG_WARN, PZ_LOG_CAT_GAME, "Unknown tag: %s",
                 placements[i].tag_name);
             continue;
         }
-
-        if (strcmp(tag->type, "spawn") == 0) {
-            if (map->spawn_count < PZ_MAP_MAX_SPAWNS) {
-                pz_spawn_point *sp = &map->spawns[map->spawn_count++];
-                sp->pos = pos;
-                parse_spawn_tag(tag->params, sp);
-            }
-        } else if (strcmp(tag->type, "enemy") == 0) {
-            if (map->enemy_count < PZ_MAP_MAX_ENEMIES) {
-                pz_enemy_spawn *es = &map->enemies[map->enemy_count++];
-                es->pos = pos;
-                parse_enemy_tag(tag->params, es);
-            }
-        } else if (strcmp(tag->type, "powerup") == 0) {
-            if (map->powerup_count < PZ_MAP_MAX_POWERUPS) {
-                pz_powerup_spawn *ps = &map->powerups[map->powerup_count++];
-                ps->pos = pos;
-                char barrier_tag_name[32] = { 0 };
-                parse_powerup_tag(tag->params, ps, barrier_tag_name,
-                    sizeof(barrier_tag_name));
-
-                // If this is a barrier_placer, resolve the barrier tag
-                // reference
-                if (barrier_tag_name[0] != '\0') {
-                    // Find the barrier tag definition
-                    for (int k = 0; k < tag_count; k++) {
-                        if (strcmp(tags[k].name, barrier_tag_name) == 0
-                            && strcmp(tags[k].type, "barrier") == 0) {
-                            // Parse barrier params into a temp struct
-                            pz_barrier_spawn temp_barrier = { 0 };
-                            parse_barrier_tag(tags[k].params, &temp_barrier);
-                            // Copy barrier properties to powerup spawn
-                            strncpy(ps->barrier_tile, temp_barrier.tile_name,
-                                sizeof(ps->barrier_tile) - 1);
-                            ps->barrier_health = temp_barrier.health;
-                            pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
-                                "Barrier placer: tile=%s, health=%.0f, "
-                                "count=%d",
-                                ps->barrier_tile, ps->barrier_health,
-                                ps->barrier_count);
-                            break;
-                        }
-                    }
-                    if (ps->barrier_tile[0] == '\0') {
-                        pz_log(PZ_LOG_WARN, PZ_LOG_CAT_GAME,
-                            "Barrier placer references unknown barrier tag: %s",
-                            barrier_tag_name);
-                    }
-                }
-            }
-        } else if (strcmp(tag->type, "barrier") == 0) {
-            if (map->barrier_count < PZ_MAP_MAX_BARRIERS) {
-                pz_barrier_spawn *bs = &map->barriers[map->barrier_count++];
-                bs->pos = pos;
-                parse_barrier_tag(tag->params, bs);
-            }
+        if (pz_map_add_tag_placement(
+                map, tag_index, placements[i].tile_x, placements[i].tile_y)
+            < 0) {
+            pz_log(PZ_LOG_WARN, PZ_LOG_CAT_GAME,
+                "Too many tag placements (max=%d)", PZ_MAP_MAX_TAG_PLACEMENTS);
+            break;
         }
     }
+
+    pz_map_rebuild_spawns_from_tags(map);
 
     // Process post-grid directives
     for (int i = 0; i < post_grid_count; i++) {
@@ -1794,6 +2131,45 @@ pz_map_load_with_registry(const char *path, const pz_tile_registry *registry)
     return map;
 }
 
+static int
+map_build_cell_tag_list(
+    const pz_map *map, int x, int y, char *out, size_t out_size)
+{
+    if (!map || !out || out_size == 0) {
+        return 0;
+    }
+
+    out[0] = '\0';
+    int count = 0;
+
+    for (int i = 0; i < map->tag_placement_count; i++) {
+        const pz_tag_placement *placement = &map->tag_placements[i];
+        if (placement->tile_x != x || placement->tile_y != y) {
+            continue;
+        }
+        if (placement->tag_index < 0
+            || placement->tag_index >= map->tag_def_count) {
+            continue;
+        }
+
+        const char *name = map->tag_defs[placement->tag_index].name;
+        size_t len = strlen(out);
+        size_t name_len = strlen(name);
+        size_t extra = name_len + (count > 0 ? 1 : 0) + 1;
+        if (len + extra > out_size) {
+            break;
+        }
+        if (count > 0) {
+            out[len++] = ',';
+            out[len] = '\0';
+        }
+        strncat(out, name, out_size - len - 1);
+        count++;
+    }
+
+    return count;
+}
+
 bool
 pz_map_save(const pz_map *map, const char *path)
 {
@@ -1801,10 +2177,12 @@ pz_map_save(const pz_map *map, const char *path)
         return false;
     }
 
-    // Calculate buffer size
-    // Each cell needs up to 8 chars (e.g., "-10.|P1 "), plus row overhead
-    size_t buf_size = 2048 + (size_t)(map->width * 10 + 4) * (size_t)map->height
-        + (size_t)map->spawn_count * 128 + (size_t)map->enemy_count * 128;
+    // Calculate buffer size (generous to avoid realloc)
+    size_t buf_size = 4096 + (size_t)(map->width * 40 + 8) * (size_t)map->height
+        + (size_t)map->tile_def_count * 64 + (size_t)map->tag_def_count * 128;
+    if (map->tag_def_count == 0) {
+        buf_size += (size_t)(map->spawn_count + map->enemy_count) * 128;
+    }
     char *buf = pz_alloc(buf_size);
     if (!buf) {
         return false;
@@ -1843,6 +2221,69 @@ pz_map_save(const pz_map *map, const char *path)
             map->tile_defs[i].symbol, map->tile_defs[i].name);
         p += written;
         remaining -= written;
+    }
+
+    // Tag definitions
+    if (map->tag_def_count > 0) {
+        written = snprintf(p, remaining, "\n# Object tags\n");
+        p += written;
+        remaining -= written;
+
+        for (int i = 0; i < map->tag_def_count; i++) {
+            const pz_tag_def *def = &map->tag_defs[i];
+            if (def->type == PZ_TAG_SPAWN) {
+                written = snprintf(p, remaining,
+                    "tag %s %s angle=%.3f team=%d team_spawn=%d\n", def->name,
+                    tag_type_name(def->type), def->data.spawn.angle,
+                    def->data.spawn.team, def->data.spawn.team_spawn ? 1 : 0);
+            } else if (def->type == PZ_TAG_ENEMY) {
+                written = snprintf(p, remaining,
+                    "tag %s %s angle=%.3f type=%s\n", def->name,
+                    tag_type_name(def->type), def->data.enemy.angle,
+                    enemy_type_name(def->data.enemy.type));
+            } else if (def->type == PZ_TAG_POWERUP) {
+                const char *powerup_type = def->data.powerup.type_name[0]
+                    ? def->data.powerup.type_name
+                    : "machine_gun";
+                written
+                    = snprintf(p, remaining, "tag %s %s type=%s respawn=%.1f",
+                        def->name, tag_type_name(def->type), powerup_type,
+                        def->data.powerup.respawn_time);
+                p += written;
+                remaining -= written;
+
+                if (strcmp(powerup_type, "barrier_placer") == 0) {
+                    if (def->data.powerup.barrier_tag[0]) {
+                        written = snprintf(p, remaining, " barrier=%s",
+                            def->data.powerup.barrier_tag);
+                        p += written;
+                        remaining -= written;
+                    }
+                    written = snprintf(p, remaining,
+                        " barrier_count=%d barrier_lifetime=%.1f",
+                        def->data.powerup.barrier_count,
+                        def->data.powerup.barrier_lifetime);
+                    p += written;
+                    remaining -= written;
+                }
+
+                written = snprintf(p, remaining, "\n");
+            } else if (def->type == PZ_TAG_BARRIER) {
+                const char *tile_name = def->data.barrier.tile_name[0]
+                    ? def->data.barrier.tile_name
+                    : (map->tile_def_count > 0 ? map->tile_defs[0].name
+                                               : "wood_rustic_dark");
+                written
+                    = snprintf(p, remaining, "tag %s %s tile=%s health=%.1f\n",
+                        def->name, tag_type_name(def->type), tile_name,
+                        def->data.barrier.health);
+            } else {
+                written = 0;
+            }
+
+            p += written;
+            remaining -= written;
+        }
     }
 
     // Water level
@@ -1941,9 +2382,8 @@ pz_map_save(const pz_map *map, const char *path)
         remaining -= written;
     }
 
-    // For save, we output spawns/enemies after the grid
-    // (In a more complete implementation, we'd track which ones
-    // came from tags and which from explicit coordinates)
+    // If tags are present, serialize them inline in the grid. Otherwise, fall
+    // back to legacy spawn/enemy blocks after the grid.
 
     // Grid
     written = snprintf(p, remaining, "\n<grid>\n");
@@ -1958,6 +2398,11 @@ pz_map_save(const pz_map *map, const char *path)
             char tmp[16];
             int len = snprintf(tmp, sizeof(tmp), "%d", cell.height);
             len += 1; // tile char
+            char tag_buf[128];
+            if (map_build_cell_tag_list(map, x, y, tag_buf, sizeof(tag_buf))
+                > 0) {
+                len += 1 + (int)strlen(tag_buf);
+            }
             if (len > max_cell_width)
                 max_cell_width = len;
         }
@@ -1971,8 +2416,17 @@ pz_map_save(const pz_map *map, const char *path)
                 = pz_map_get_tile_def_by_index(map, cell.tile_index);
             char symbol = def ? def->symbol : '.';
 
-            char cell_str[16];
-            snprintf(cell_str, sizeof(cell_str), "%d%c", cell.height, symbol);
+            char cell_str[256];
+            char tag_buf[128];
+            int tag_count
+                = map_build_cell_tag_list(map, x, y, tag_buf, sizeof(tag_buf));
+            if (tag_count > 0) {
+                snprintf(cell_str, sizeof(cell_str), "%d%c|%s", cell.height,
+                    symbol, tag_buf);
+            } else {
+                snprintf(
+                    cell_str, sizeof(cell_str), "%d%c", cell.height, symbol);
+            }
 
             // Pad to max_cell_width
             written = snprintf(p, remaining, "%*s ", max_cell_width, cell_str);
@@ -1987,34 +2441,35 @@ pz_map_save(const pz_map *map, const char *path)
     p += written;
     remaining -= written;
 
-    // Spawn points (using explicit coordinates for now)
-    if (map->spawn_count > 0) {
-        written = snprintf(p, remaining, "\n# Spawn points\n");
-        p += written;
-        remaining -= written;
-
-        for (int i = 0; i < map->spawn_count; i++) {
-            const pz_spawn_point *sp = &map->spawns[i];
-            written = snprintf(p, remaining, "spawn %.2f %.2f %.3f %d %d\n",
-                sp->pos.x, sp->pos.y, sp->angle, sp->team,
-                sp->team_spawn ? 1 : 0);
+    // Spawn/enemy blocks are only emitted when no tags are defined.
+    if (map->tag_def_count == 0) {
+        if (map->spawn_count > 0) {
+            written = snprintf(p, remaining, "\n# Spawn points\n");
             p += written;
             remaining -= written;
+
+            for (int i = 0; i < map->spawn_count; i++) {
+                const pz_spawn_point *sp = &map->spawns[i];
+                written = snprintf(p, remaining, "spawn %.2f %.2f %.3f %d %d\n",
+                    sp->pos.x, sp->pos.y, sp->angle, sp->team,
+                    sp->team_spawn ? 1 : 0);
+                p += written;
+                remaining -= written;
+            }
         }
-    }
 
-    // Enemy spawns
-    if (map->enemy_count > 0) {
-        written = snprintf(p, remaining, "\n# Enemy spawns\n");
-        p += written;
-        remaining -= written;
-
-        for (int i = 0; i < map->enemy_count; i++) {
-            const pz_enemy_spawn *es = &map->enemies[i];
-            written = snprintf(p, remaining, "enemy %.2f %.2f %.3f %s\n",
-                es->pos.x, es->pos.y, es->angle, enemy_type_name(es->type));
+        if (map->enemy_count > 0) {
+            written = snprintf(p, remaining, "\n# Enemy spawns\n");
             p += written;
             remaining -= written;
+
+            for (int i = 0; i < map->enemy_count; i++) {
+                const pz_enemy_spawn *es = &map->enemies[i];
+                written = snprintf(p, remaining, "enemy %.2f %.2f %.3f %s\n",
+                    es->pos.x, es->pos.y, es->angle, enemy_type_name(es->type));
+                p += written;
+                remaining -= written;
+            }
         }
     }
 

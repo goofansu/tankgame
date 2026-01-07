@@ -90,12 +90,23 @@
 - [x] M10.4: crate placing (pickup gives crate placer)
 
 ## Phase 11: Map Editor
-- [ ] M11.1: editor mode toggle (F1)
-- [ ] M11.2: tile painting
-- [ ] M11.3: wall height editing
+- [x] M11.1: --edit-map flag (F1 toggle removed)
+- [x] M11.2: tile painting (left click place/raise, right click lower)
+- [x] M11.3: wall height editing (via tile painting)
 - [ ] M11.4: entity placement
 - [x] M11.5: map format + saving (text format exists, used by map_tool.py)
-- [ ] M11.6: game mode objects
+- [x] M11.6: auto-save on edit (Phase 1 of editor spec)
+- [x] M11.7: grid overlay rendering
+- [x] M11.8: shortcut bar UI (Phase 2)
+- [x] M11.9: editor UI system (buttons, panels, slots)
+- [x] M11.10: hover highlight / ghost preview (Phase 3)
+- [x] M11.11: scroll wheel slot cycling (Phase 3)
+- [x] M11.12: number keys 1-6 slot selection (Phase 3)
+- [x] M11.13: Tab toggle slot 1/2 (Phase 3)
+- [x] M11.14: mouse_screen debug script command
+- [x] M11.15: tile picker with quick-assign (hover + 1-6 assigns to slot)
+- [x] M11.16: tag picker dropdown (Phase 4)
+- [x] M11.17: tags editor (Phase 7+)
 
 ## Phase 12: Game Modes
 - [ ] M12.1: mode framework

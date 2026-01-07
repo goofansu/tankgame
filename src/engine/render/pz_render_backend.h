@@ -27,6 +27,10 @@ typedef struct pz_render_backend_vtable {
     void (*set_viewport)(pz_renderer *r, int width, int height);
     float (*get_dpi_scale)(pz_renderer *r);
 
+    // Scissor
+    void (*set_scissor)(pz_renderer *r, int x, int y, int width, int height);
+    void (*clear_scissor)(pz_renderer *r);
+
     // Shaders
     pz_shader_handle (*create_shader)(
         pz_renderer *r, const pz_shader_desc *desc);

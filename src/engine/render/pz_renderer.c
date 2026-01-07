@@ -111,6 +111,22 @@ pz_renderer_get_dpi_scale(pz_renderer *r)
     return 1.0f;
 }
 
+void
+pz_renderer_set_scissor(pz_renderer *r, int x, int y, int width, int height)
+{
+    if (r->vtable->set_scissor) {
+        r->vtable->set_scissor(r, x, y, width, height);
+    }
+}
+
+void
+pz_renderer_clear_scissor(pz_renderer *r)
+{
+    if (r->vtable->clear_scissor) {
+        r->vtable->clear_scissor(r);
+    }
+}
+
 /* ============================================================================
  * Shaders
  * ============================================================================

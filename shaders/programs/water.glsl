@@ -47,6 +47,7 @@ layout(std140, binding=1) uniform water_fs_params {
     vec3 u_water_highlight;
     vec2 u_wind_dir;  // Normalized wind direction (x, z)
     float u_wind_strength;  // Wind strength multiplier
+    float u_alpha;  // Water opacity (1.0 = opaque, 0.5 = translucent for editor)
 };
 
 layout(location=0) in vec2 v_texcoord;
@@ -122,7 +123,7 @@ void main() {
         color *= 1.0;
     }
     
-    frag_color = vec4(color, 1.0);
+    frag_color = vec4(color, u_alpha);
 }
 @end
 

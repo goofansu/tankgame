@@ -30,6 +30,8 @@ typedef struct pz_tile_registry pz_tile_registry;
 #define PZ_MAP_MAX_POWERUPS 16
 #define PZ_MAP_MAX_BARRIERS 32
 #define PZ_MAP_MAX_TILE_DEFS 32
+#define PZ_MAP_MAX_TAG_DEFS 64
+#define PZ_MAP_MAX_TAG_PLACEMENTS 256
 
 // Tile definition - maps a symbol to a tile name
 // Symbols are defined per-map in the map file
@@ -38,6 +40,55 @@ typedef struct pz_tile_def {
     char symbol; // Single char used in map grid (e.g., '.', '#')
     char name[32]; // Tile name (e.g., "wood_oak_brown") - looked up in registry
 } pz_tile_def;
+
+// Tag types
+typedef enum pz_tag_type {
+    PZ_TAG_SPAWN,
+    PZ_TAG_ENEMY,
+    PZ_TAG_POWERUP,
+    PZ_TAG_BARRIER,
+} pz_tag_type;
+
+typedef struct pz_tag_spawn_def {
+    float angle;
+    int team;
+    bool team_spawn;
+} pz_tag_spawn_def;
+
+typedef struct pz_tag_enemy_def {
+    float angle;
+    int type;
+} pz_tag_enemy_def;
+
+typedef struct pz_tag_powerup_def {
+    char type_name[32];
+    float respawn_time;
+    char barrier_tag[32];
+    int barrier_count;
+    float barrier_lifetime;
+} pz_tag_powerup_def;
+
+typedef struct pz_tag_barrier_def {
+    char tile_name[32];
+    float health;
+} pz_tag_barrier_def;
+
+typedef struct pz_tag_def {
+    char name[32];
+    pz_tag_type type;
+    union {
+        pz_tag_spawn_def spawn;
+        pz_tag_enemy_def enemy;
+        pz_tag_powerup_def powerup;
+        pz_tag_barrier_def barrier;
+    } data;
+} pz_tag_def;
+
+typedef struct pz_tag_placement {
+    int tag_index;
+    int tile_x;
+    int tile_y;
+} pz_tag_placement;
 
 // Spawn point data
 typedef struct pz_spawn_point {
@@ -126,6 +177,12 @@ typedef struct pz_map {
     pz_tile_def tile_defs[PZ_MAP_MAX_TILE_DEFS];
     int tile_def_count;
 
+    // Tag definitions and placements (v2 format)
+    pz_tag_def tag_defs[PZ_MAP_MAX_TAG_DEFS];
+    int tag_def_count;
+    pz_tag_placement tag_placements[PZ_MAP_MAX_TAG_PLACEMENTS];
+    int tag_placement_count;
+
     // Tile registry reference (owned externally, used for lookups)
     const pz_tile_registry *tile_registry;
 
@@ -211,6 +268,18 @@ int pz_map_add_tile_def(pz_map *map, char symbol, const char *name);
 
 // Find tile definition by symbol, returns index or -1 if not found
 int pz_map_find_tile_def(const pz_map *map, char symbol);
+
+// Tag helpers
+int pz_map_find_tag_def(const pz_map *map, const char *name);
+int pz_map_add_tag_def(pz_map *map, const pz_tag_def *def);
+bool pz_map_remove_tag_def(pz_map *map, int index);
+int pz_map_add_tag_placement(
+    pz_map *map, int tag_index, int tile_x, int tile_y);
+bool pz_map_remove_tag_placement(pz_map *map, int placement_index);
+int pz_map_find_tag_placement(
+    const pz_map *map, int tile_x, int tile_y, int tag_index);
+int pz_map_count_tag_placements(const pz_map *map, int tag_index);
+void pz_map_rebuild_spawns_from_tags(pz_map *map);
 
 // World coordinate queries
 bool pz_map_is_solid(const pz_map *map, pz_vec2 world_pos);

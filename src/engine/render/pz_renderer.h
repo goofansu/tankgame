@@ -207,6 +207,11 @@ void pz_renderer_get_viewport(pz_renderer *r, int *width, int *height);
 void pz_renderer_set_viewport(pz_renderer *r, int width, int height);
 float pz_renderer_get_dpi_scale(pz_renderer *r);
 
+// Scissor (pixel coordinates, origin top-left)
+void pz_renderer_set_scissor(
+    pz_renderer *r, int x, int y, int width, int height);
+void pz_renderer_clear_scissor(pz_renderer *r);
+
 // Shader operations
 pz_shader_handle pz_renderer_create_shader(
     pz_renderer *r, const pz_shader_desc *desc);

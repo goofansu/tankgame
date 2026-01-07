@@ -35,6 +35,7 @@ font_strlcpy(char *dst, const char *src, size_t size)
 
 #define MAX_FONTS 16
 #define MAX_QUADS_PER_FRAME 4096
+#define PZ_FONT_MAX_FLUSHES 8
 #define SDF_SIZE 48 // Base size for SDF generation (larger = better quality)
 
 /* ============================================================================
@@ -109,10 +110,12 @@ struct pz_font_manager {
 
     // Rendering resources
     pz_shader_handle shader;
-    pz_buffer_handle vertex_buffer;
+    pz_buffer_handle vertex_buffers[PZ_FONT_MAX_FLUSHES];
     pz_pipeline_handle pipeline;
     int screen_width, screen_height;
     float dpi_scale;
+    int flush_index;
+    bool atlas_updated_this_frame;
 };
 
 /* ============================================================================
@@ -300,14 +303,16 @@ pz_font_manager_create(pz_renderer *renderer)
     mgr->vertex_capacity = MAX_QUADS_PER_FRAME * 6; // 6 vertices per quad
     mgr->vertices = pz_alloc(mgr->vertex_capacity * sizeof(pz_font_vertex));
 
-    // Create vertex buffer
+    // Create vertex buffers (ring for multi-flush frames)
     pz_buffer_desc buf_desc = {
         .type = PZ_BUFFER_VERTEX,
         .usage = PZ_BUFFER_STREAM,
         .data = NULL,
         .size = mgr->vertex_capacity * sizeof(pz_font_vertex),
     };
-    mgr->vertex_buffer = pz_renderer_create_buffer(renderer, &buf_desc);
+    for (int i = 0; i < PZ_FONT_MAX_FLUSHES; i++) {
+        mgr->vertex_buffers[i] = pz_renderer_create_buffer(renderer, &buf_desc);
+    }
 
     // Get shader (loaded by sokol shader system)
     mgr->shader = pz_renderer_create_shader(
@@ -370,7 +375,11 @@ pz_font_manager_destroy(pz_font_manager *mgr)
 
     // Destroy rendering resources
     pz_renderer_destroy_pipeline(mgr->renderer, mgr->pipeline);
-    pz_renderer_destroy_buffer(mgr->renderer, mgr->vertex_buffer);
+    for (int i = 0; i < PZ_FONT_MAX_FLUSHES; i++) {
+        if (mgr->vertex_buffers[i] != PZ_INVALID_HANDLE) {
+            pz_renderer_destroy_buffer(mgr->renderer, mgr->vertex_buffers[i]);
+        }
+    }
     pz_renderer_destroy_shader(mgr->renderer, mgr->shader);
     pz_renderer_destroy_texture(mgr->renderer, mgr->atlas_texture);
 
@@ -551,6 +560,8 @@ void
 pz_font_begin_frame(pz_font_manager *mgr)
 {
     mgr->vertex_count = 0;
+    mgr->flush_index = 0;
+    mgr->atlas_updated_this_frame = false;
     pz_renderer_get_viewport(
         mgr->renderer, &mgr->screen_width, &mgr->screen_height);
     mgr->dpi_scale = pz_renderer_get_dpi_scale(mgr->renderer);
@@ -707,21 +718,33 @@ pz_font_drawf(pz_font_manager *mgr, const pz_text_style *style, float x,
 }
 
 void
-pz_font_end_frame(pz_font_manager *mgr)
+pz_font_flush(pz_font_manager *mgr)
 {
+    if (!mgr) {
+        return;
+    }
     if (mgr->vertex_count == 0)
         return;
 
-    // Update atlas if dirty
-    if (mgr->atlas_dirty) {
+    if (mgr->flush_index >= PZ_FONT_MAX_FLUSHES) {
+        pz_log(PZ_LOG_WARN, PZ_LOG_CAT_RENDER,
+            "FONT: Flush limit reached, dropping text batch");
+        mgr->vertex_count = 0;
+        return;
+    }
+
+    // Update atlas if dirty (Sokol allows one update per image per frame)
+    if (mgr->atlas_dirty && !mgr->atlas_updated_this_frame) {
         pz_renderer_update_texture(mgr->renderer, mgr->atlas_texture, 0, 0,
             PZ_FONT_ATLAS_SIZE, PZ_FONT_ATLAS_SIZE, mgr->atlas_data);
         mgr->atlas_dirty = false;
+        mgr->atlas_updated_this_frame = true;
     }
 
     // Update vertex buffer
-    pz_renderer_update_buffer(mgr->renderer, mgr->vertex_buffer, 0,
-        mgr->vertices, mgr->vertex_count * sizeof(pz_font_vertex));
+    pz_buffer_handle buffer = mgr->vertex_buffers[mgr->flush_index];
+    pz_renderer_update_buffer(mgr->renderer, buffer, 0, mgr->vertices,
+        mgr->vertex_count * sizeof(pz_font_vertex));
 
     // Set up uniforms
     pz_renderer_set_uniform_vec2(mgr->renderer, mgr->shader, "u_screen_size",
@@ -733,8 +756,17 @@ pz_font_end_frame(pz_font_manager *mgr)
     // Draw
     pz_draw_cmd cmd = {
         .pipeline = mgr->pipeline,
-        .vertex_buffer = mgr->vertex_buffer,
+        .vertex_buffer = buffer,
         .vertex_count = mgr->vertex_count,
     };
     pz_renderer_draw(mgr->renderer, &cmd);
+
+    mgr->vertex_count = 0;
+    mgr->flush_index++;
+}
+
+void
+pz_font_end_frame(pz_font_manager *mgr)
+{
+    pz_font_flush(mgr);
 }

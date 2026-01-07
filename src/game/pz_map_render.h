@@ -57,6 +57,9 @@ typedef struct pz_map_render_params {
 
     // Animation time (for water/fog)
     float time;
+
+    // Water alpha (1.0 = opaque, 0.5 = translucent for editor)
+    float water_alpha;
 } pz_map_render_params;
 
 // Render the map ground layer

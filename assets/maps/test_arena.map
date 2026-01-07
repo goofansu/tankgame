@@ -1,38 +1,54 @@
+# Tank Game Map
 name Test Arena
 tile_size 2.0
 music march
 
+# Tile definitions
 tile . wood_oak_brown
 tile # wood_rustic_dark
 tile : mud_wet
 tile * carpet_gray
 
-tag P1 spawn angle=0.785 team=0
-tag P2 spawn angle=2.356 team=0
-tag P3 spawn angle=-0.785 team=0
-tag P4 spawn angle=-2.356 team=0
-tag E1 enemy angle=3.14 type=sentry
-tag B barrier tile=cobble health=20
-tag BP barrier tile=cobble health=15
-tag PB powerup type=barrier_placer barrier=BP barrier_count=5 barrier_lifetime=8 respawn=30
+# Object tags
+tag P1 spawn angle=0.785 team=0 team_spawn=0
+tag P2 spawn angle=2.356 team=0 team_spawn=0
+tag P3 spawn angle=-0.785 team=0 team_spawn=0
+tag P4 spawn angle=-2.356 team=0 team_spawn=0
+tag E1 enemy angle=3.140 type=sentry
+tag B barrier tile=cobble health=20.0
+tag BP barrier tile=cobble health=15.0
+tag PB powerup type=barrier_placer respawn=30.0 barrier=BP barrier_count=5 barrier_lifetime=8.0
+
+water_level -1
+water_color 0.20 0.40 0.60
+
+toxic_cloud enabled
+toxic_delay 10.0
+toxic_duration 90.0
+toxic_safe_zone 0.20
+toxic_damage 1
+toxic_interval 5.0
+toxic_slowdown 0.70
+toxic_color 0.20 0.80 0.30
+toxic_center 11.50 6.50
 
 <grid>
-2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2#
-2# 0.|P1 0. 0.|PB 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.|P2 2#
-2# 0. 0. 2# 2# 0. 0. 0. 2# 2# 0. 0. 0. 0. 2# 2# 0. 0. 0. 0. 0. 0. 0. 2#
-2# 0. 0. 2# 2# 0. 0. 0. 2# 2# 0. 0. 0. 0. 2# 2# 0. 0. 0. 0* 0. 0. 0. 2#
-2# 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0* 0. 0. 0. 0. 0* 0* 0* 0. 0. 0. 2#
-2# 0. 0.|PB 0. 0. 0: 0: 0. 0. 0. 0. 0. 0* 0. 0. 0. 0. 0* 0. 0. 0. 0. 0. 2#
-2# 0. 0. 0. 0. 0: 0: 0. 0.|B 0. 0. 0. 0. 0.|B 0. 0. 0. 0. 0. 0. 0. 0. 0. 2#
-2# 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 2#
-2# 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.|E1 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 2#
-2# 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 2# 2# 0. 0. 0. 0. 2#
-2# 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 2# 2# 0. 0. 0. 0. 2#
-2# 0. 0. 2# 2# 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 2#
-2# 0.|P3 0. 2# 2# 0. 0. 0. 2# 2# 0. 0. 0. 0. 2# 2# 0. 0. 0. 0. 0. 0. 0.|P4 2#
-2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2# 2#
+   2#    2#    2#    2#    2#    2#    2#    2#    2#    2#    2#    2#    2#    2#    2#    2#    2#    2#    2#    2#    2#    2#    2#    2# 
+   2# 0.|P1    0. 0.|PB    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    0. 0.|P2    2# 
+   2#    0.    0.    2#    2#    0.    0.    0.    2#    2#    0.    0.    0.    0.    2#    2#    0.    0.    0.    0.    0.    0.    0.    2# 
+   2#    0.    0.    2#    2#    0.    0.    0.    2#    2#    0.    0.    0.    0.    2#    2#    0.    0.    0.    0*    0.    0.    0.    2# 
+   2#    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    0*    0.    0.    0.    0.    0*    0*    0*    0.    0.    0.    2# 
+   2#    0. 0.|PB    0.    0.    0:    0:    0.    0.    0.    0.    0.    0*    0.    0.    0.    0.    0*    0.    0.    0.    0.    0.    2# 
+   2#    0.    0.    0.    0.    0:    0:    0.  0.|B    0.    0.    0.    0.  0.|B    0.    0.    0.    0.    0.    0.    0.    0.    0.    2# 
+   2#    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    2# 
+   2#    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    0. 1.|E1    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    2# 
+   2#    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    2#    2#    0.    0.    0.    0.    2# 
+   2#    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    2#    2#    0.    0.    0.    0.    2# 
+   2#    0.    0.    2#    2#    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    0.    2# 
+   2# 0.|P3    0.    2#    2#    0.    0.    0.    2#    2#    0.    0.    0.    0.    2#    2#    0.    0.    0.    0.    0.    0. 0.|P4    2# 
+   2#    2#    2#    2#    2#    2#    2#    2#    2#    2#    2#    2#    2#    2#    2#    2#    2#    2#    2#    2#    2#    2#    2#    2# 
 </grid>
 
+# Lighting
 ambient_color 0.12 0.12 0.15
 ambient_darkness 0.85
-background_gradient vertical 0.02 0.03 0.08 0.12 0.08 0.15

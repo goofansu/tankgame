@@ -18,3 +18,6 @@
 @include programs/sdf_text.glsl
 @include programs/background.glsl
 @include programs/cursor.glsl
+@include programs/editor_grid.glsl
+@include programs/ui_quad.glsl
+@include programs/ui_textured.glsl

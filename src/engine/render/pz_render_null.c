@@ -83,6 +83,27 @@ null_get_dpi_scale(pz_renderer *r)
 }
 
 /* ============================================================================
+ * Scissor
+ * ============================================================================
+ */
+
+static void
+null_set_scissor(pz_renderer *r, int x, int y, int width, int height)
+{
+    (void)r;
+    (void)x;
+    (void)y;
+    (void)width;
+    (void)height;
+}
+
+static void
+null_clear_scissor(pz_renderer *r)
+{
+    (void)r;
+}
+
+/* ============================================================================
  * Shaders
  * ============================================================================
  */
@@ -406,6 +427,8 @@ static const pz_render_backend_vtable s_null_vtable = {
     .get_viewport = null_get_viewport,
     .set_viewport = null_set_viewport,
     .get_dpi_scale = null_get_dpi_scale,
+    .set_scissor = null_set_scissor,
+    .clear_scissor = null_clear_scissor,
     .create_shader = null_create_shader,
     .destroy_shader = null_destroy_shader,
     .create_texture = null_create_texture,

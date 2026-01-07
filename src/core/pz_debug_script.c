@@ -37,6 +37,7 @@ typedef enum {
     CMD_TELEPORT,
     CMD_GIVE,
     CMD_CURSOR,
+    CMD_MOUSE_SCREEN,
     CMD_SPAWN_BARRIER,
     CMD_SPAWN_POWERUP,
 } script_cmd_type;
@@ -211,6 +212,10 @@ parse_command(const char *line, script_cmd *cmd)
         strncpy(cmd->str_val, arg1, sizeof(cmd->str_val) - 1);
     } else if (strcmp(keyword, "cursor") == 0) {
         cmd->type = CMD_CURSOR;
+        cmd->pos_val.x = (float)atof(arg1);
+        cmd->pos_val.y = (float)atof(arg2);
+    } else if (strcmp(keyword, "mouse_screen") == 0) {
+        cmd->type = CMD_MOUSE_SCREEN;
         cmd->pos_val.x = (float)atof(arg1);
         cmd->pos_val.y = (float)atof(arg2);
     } else if (strcmp(keyword, "spawn_barrier") == 0) {
@@ -588,6 +593,14 @@ pz_debug_script_update(pz_debug_script *script)
                 "Debug script: cursor at (%.2f, %.2f)", cmd->pos_val.x,
                 cmd->pos_val.y);
             return PZ_DEBUG_SCRIPT_CURSOR;
+
+        case CMD_MOUSE_SCREEN:
+            script->action_x = cmd->pos_val.x;
+            script->action_y = cmd->pos_val.y;
+            pz_log(PZ_LOG_INFO, PZ_LOG_CAT_CORE,
+                "Debug script: mouse_screen at (%.0f, %.0f)", cmd->pos_val.x,
+                cmd->pos_val.y);
+            return PZ_DEBUG_SCRIPT_MOUSE_SCREEN;
 
         case CMD_SPAWN_BARRIER:
             script->action_x = cmd->pos_val.x;

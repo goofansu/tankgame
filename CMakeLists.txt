@@ -125,7 +125,8 @@ set(GAME_SOURCES
 )
 
 set(EDITOR_SOURCES
-    # src/editor/pz_editor.c
+    src/editor/pz_editor.c
+    src/editor/pz_editor_ui.c
 )
 
 set(NET_SOURCES

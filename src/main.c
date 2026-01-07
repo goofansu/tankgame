@@ -19,6 +19,7 @@
 #include "core/pz_platform.h"
 #include "core/pz_sim.h"
 #include "core/pz_str.h"
+#include "editor/pz_editor.h"
 #include "engine/pz_audio.h"
 #include "engine/pz_camera.h"
 #include "engine/pz_cursor.h"
@@ -191,6 +192,7 @@ typedef enum {
     GAME_STATE_LEVEL_COMPLETE, // All enemies defeated, waiting for transition
     GAME_STATE_GAME_OVER, // No lives left
     GAME_STATE_CAMPAIGN_COMPLETE, // All levels done
+    GAME_STATE_EDITOR, // Map editor active
 } game_state;
 
 // Map session - all state that needs to be reset when loading a new map
@@ -237,6 +239,7 @@ typedef struct app_state {
     const char *lightmap_debug_path;
     const char *map_path_arg;
     const char *campaign_path_arg;
+    const char *edit_map_path_arg; // --edit-map <path>
     bool show_debug_overlay;
     bool show_debug_texture_scale;
     const char *debug_script_path_arg; // --debug-script-file <file>
@@ -272,6 +275,9 @@ typedef struct app_state {
     // Campaign system
     pz_campaign_manager *campaign_mgr;
 
+    // Map editor
+    pz_editor *editor;
+
     // Current map session (all map-dependent state)
     map_session session;
 
@@ -306,6 +312,12 @@ typedef struct app_state {
 } app_state;
 
 static app_state g_app;
+
+static bool
+app_editor_active(void)
+{
+    return g_app.state == GAME_STATE_EDITOR && g_app.editor;
+}
 
 static const float LASER_WIDTH = 0.08f;
 static const float LASER_MAX_DIST = 50.0f;
@@ -826,6 +838,7 @@ print_help(const char *program_name)
     printf("  --help                    Show this help message and exit\n");
     printf("  --map <path>              Load a specific map file\n");
     printf("  --campaign <path>         Load a specific campaign file\n");
+    printf("  --edit-map <path>         Open map in editor (creates if new)\n");
     printf("  --debug                   Enable debug overlay (F2 to toggle)\n");
     printf("  --debug-script <commands> Run inline debug script commands\n");
     printf("  --debug-script-file <path> Run debug script from file\n");
@@ -844,6 +857,7 @@ parse_args(int argc, char *argv[])
     g_app.lightmap_debug_path = NULL;
     g_app.map_path_arg = NULL;
     g_app.campaign_path_arg = NULL;
+    g_app.edit_map_path_arg = NULL;
     g_app.show_debug_overlay = false;
     g_app.show_debug_texture_scale = false;
     g_app.debug_script_path_arg = NULL;
@@ -882,6 +896,12 @@ parse_args(int argc, char *argv[])
                 exit(1);
             }
             g_app.campaign_path_arg = argv[++i];
+        } else if (strcmp(argv[i], "--edit-map") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "error: --edit-map requires a path\n");
+                exit(1);
+            }
+            g_app.edit_map_path_arg = argv[++i];
         } else if (strcmp(argv[i], "--debug") == 0) {
             g_app.show_debug_overlay = true;
         } else if (strcmp(argv[i], "--debug-texture-scale") == 0) {
@@ -1132,43 +1152,70 @@ app_init(void)
     // Initialize simulation system
     g_app.sim = pz_sim_create((uint32_t)time(NULL));
 
-    // Load campaign or single map
-    g_app.campaign_mgr = pz_campaign_create();
-
-    const char *first_map_path = NULL;
-
-    if (g_app.map_path_arg) {
-        // Single map mode (--map flag)
-        first_map_path = g_app.map_path_arg;
-        pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME, "Single map mode: %s",
-            first_map_path);
+    // Create map editor
+    g_app.editor = pz_editor_create(
+        g_app.renderer, g_app.tex_manager, g_app.font_mgr, g_app.tile_registry);
+    if (!g_app.editor) {
+        pz_log(PZ_LOG_WARN, PZ_LOG_CAT_CORE, "Failed to create map editor");
     } else {
-        // Campaign mode
-        const char *campaign_path = g_app.campaign_path_arg
-            ? g_app.campaign_path_arg
-            : "assets/campaigns/main.campaign";
+        pz_editor_set_background(g_app.editor, g_app.background);
+    }
 
-        if (pz_campaign_load(g_app.campaign_mgr, campaign_path)) {
-            pz_campaign_start(g_app.campaign_mgr, 0); // Use campaign's lives
-            first_map_path = pz_campaign_get_current_map(g_app.campaign_mgr);
-        } else {
-            pz_log(PZ_LOG_WARN, PZ_LOG_CAT_GAME,
-                "Failed to load campaign, falling back to default map");
-            first_map_path = "assets/maps/night_arena.map";
+    // Check if launching directly into editor mode
+    if (g_app.edit_map_path_arg) {
+        pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME, "Editor mode: %s",
+            g_app.edit_map_path_arg);
+
+        if (!pz_editor_enter_file(g_app.editor, g_app.edit_map_path_arg)) {
+            pz_log(PZ_LOG_ERROR, PZ_LOG_CAT_GAME,
+                "Failed to open map in editor, exiting");
+            sapp_quit();
+            return;
         }
-    }
 
-    // Load the first map
-    if (!map_session_load(&g_app.session, first_map_path)) {
-        pz_log(PZ_LOG_ERROR, PZ_LOG_CAT_GAME,
-            "Failed to load initial map, exiting");
-        sapp_quit();
-        return;
-    }
+        g_app.state = GAME_STATE_EDITOR;
+        g_app.state_timer = 0.0f;
+    } else {
+        // Load campaign or single map
+        g_app.campaign_mgr = pz_campaign_create();
 
-    // Initialize game state
-    g_app.state = GAME_STATE_PLAYING;
-    g_app.state_timer = 0.0f;
+        const char *first_map_path = NULL;
+
+        if (g_app.map_path_arg) {
+            // Single map mode (--map flag)
+            first_map_path = g_app.map_path_arg;
+            pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME, "Single map mode: %s",
+                first_map_path);
+        } else {
+            // Campaign mode
+            const char *campaign_path = g_app.campaign_path_arg
+                ? g_app.campaign_path_arg
+                : "assets/campaigns/main.campaign";
+
+            if (pz_campaign_load(g_app.campaign_mgr, campaign_path)) {
+                pz_campaign_start(
+                    g_app.campaign_mgr, 0); // Use campaign's lives
+                first_map_path
+                    = pz_campaign_get_current_map(g_app.campaign_mgr);
+            } else {
+                pz_log(PZ_LOG_WARN, PZ_LOG_CAT_GAME,
+                    "Failed to load campaign, falling back to default map");
+                first_map_path = "assets/maps/night_arena.map";
+            }
+        }
+
+        // Load the first map
+        if (!map_session_load(&g_app.session, first_map_path)) {
+            pz_log(PZ_LOG_ERROR, PZ_LOG_CAT_GAME,
+                "Failed to load initial map, exiting");
+            sapp_quit();
+            return;
+        }
+
+        // Initialize game state
+        g_app.state = GAME_STATE_PLAYING;
+        g_app.state_timer = 0.0f;
+    }
 
     // Frame timing
     g_app.frame_count = 0;
@@ -1483,10 +1530,39 @@ app_frame(void)
                 g_app.mouse_y = screen_pos.y;
                 g_app.script_cursor_active = false; // Use mouse path now
 
+                // Also update editor if in editor mode
+                if (app_editor_active()) {
+                    pz_editor_set_mouse(
+                        g_app.editor, screen_pos.x, screen_pos.y);
+                }
+
                 pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
                     "Debug: cursor at world (%.2f, %.2f) -> screen (%.0f, "
                     "%.0f)",
                     x, y, screen_pos.x, screen_pos.y);
+                break;
+            }
+
+            case PZ_DEBUG_SCRIPT_MOUSE_SCREEN: {
+                float x, y;
+                pz_debug_script_get_cursor_pos(g_app.debug_script, &x, &y);
+
+                // Set mouse position directly in screen coordinates
+                g_app.mouse_x = x;
+                g_app.mouse_y = y;
+
+                // Update cursor visual position
+                if (g_app.cursor) {
+                    pz_cursor_set_position(g_app.cursor, x, y);
+                }
+
+                // Update editor if in editor mode
+                if (app_editor_active()) {
+                    pz_editor_set_mouse(g_app.editor, x, y);
+                }
+
+                pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
+                    "Debug: mouse_screen at (%.0f, %.0f)", x, y);
                 break;
             }
 
@@ -1563,699 +1639,744 @@ done_script_commands:
     }
     g_app.total_time += frame_dt;
 
-    // Determine number of simulation ticks to run this frame
-    int sim_ticks = script_turbo ? 1 : pz_sim_accumulate(g_app.sim, frame_dt);
+    bool editor_active = app_editor_active();
+    int sim_ticks = 0;
     float dt = pz_sim_dt(); // Fixed timestep for simulation
+    uint64_t sim_start_us = 0;
+    uint64_t sim_end_us = 0;
+    uint64_t events_start_us = 0;
+    uint64_t events_end_us = 0;
+    uint64_t visual_start_us = 0;
+    uint64_t visual_end_us = 0;
 
-    // Gather input (once per frame)
-    pz_tank_input player_input = { 0 };
-
-    // Check if debug script is providing input
-    const pz_debug_script_input *script_input = g_app.debug_script
-        ? pz_debug_script_get_input(g_app.debug_script)
-        : NULL;
-    bool use_script_input = script_input && g_app.debug_script
-        && !pz_debug_script_is_done(g_app.debug_script);
-
-    if (use_script_input) {
-        // Use script input
-        player_input.move_dir.x = script_input->move_x;
-        player_input.move_dir.y = script_input->move_y;
-
-        if (script_input->has_aim && g_app.session.player_tank) {
-            float aim_dx
-                = script_input->aim_x - g_app.session.player_tank->pos.x;
-            float aim_dz
-                = script_input->aim_y - g_app.session.player_tank->pos.y;
-            player_input.target_turret = atan2f(aim_dx, aim_dz);
-        }
-
-        player_input.fire = script_input->fire || script_input->hold_fire;
+    if (editor_active) {
+        pz_editor_update(g_app.editor, frame_dt);
     } else {
-        // Normal keyboard/mouse input
-        if (g_app.key_down[SAPP_KEYCODE_W] || g_app.key_down[SAPP_KEYCODE_UP])
-            player_input.move_dir.y -= 1.0f;
-        if (g_app.key_down[SAPP_KEYCODE_S] || g_app.key_down[SAPP_KEYCODE_DOWN])
-            player_input.move_dir.y += 1.0f;
-        if (g_app.key_down[SAPP_KEYCODE_A] || g_app.key_down[SAPP_KEYCODE_LEFT])
-            player_input.move_dir.x -= 1.0f;
-        if (g_app.key_down[SAPP_KEYCODE_D]
-            || g_app.key_down[SAPP_KEYCODE_RIGHT])
-            player_input.move_dir.x += 1.0f;
+        // Determine number of simulation ticks to run this frame
+        sim_ticks = script_turbo ? 1 : pz_sim_accumulate(g_app.sim, frame_dt);
 
-        if (g_app.session.player_tank
-            && !(g_app.session.player_tank->flags & PZ_TANK_FLAG_DEAD)) {
-            pz_vec3 mouse_world = pz_camera_screen_to_world(
-                &g_app.camera, (int)g_app.mouse_x, (int)g_app.mouse_y);
-            float aim_dx = mouse_world.x - g_app.session.player_tank->pos.x;
-            float aim_dz = mouse_world.z - g_app.session.player_tank->pos.y;
-            player_input.target_turret = atan2f(aim_dx, aim_dz);
-            player_input.fire = g_app.mouse_left_down || g_app.space_down;
-        }
-    }
+        // Gather input (once per frame)
+        pz_tank_input player_input = { 0 };
 
-    // Handle weapon cycling (once per frame, not per sim tick)
-    if (g_app.session.player_tank
-        && !(g_app.session.player_tank->flags & PZ_TANK_FLAG_DEAD)) {
-        if (g_app.scroll_accumulator >= 3.0f) {
-            pz_tank_cycle_weapon(g_app.session.player_tank, 1);
-            g_app.scroll_accumulator = 0.0f;
-        } else if (g_app.scroll_accumulator <= -3.0f) {
-            pz_tank_cycle_weapon(g_app.session.player_tank, -1);
-            g_app.scroll_accumulator = 0.0f;
-        }
-        if (g_app.key_f_just_pressed) {
-            pz_tank_cycle_weapon(g_app.session.player_tank, 1);
-        }
-        // Debug script weapon cycling
-        if (script_input && script_input->weapon_cycle != 0) {
-            pz_tank_cycle_weapon(
-                g_app.session.player_tank, script_input->weapon_cycle);
-        }
-    }
+        // Check if debug script is providing input
+        const pz_debug_script_input *script_input = g_app.debug_script
+            ? pz_debug_script_get_input(g_app.debug_script)
+            : NULL;
+        bool use_script_input = script_input && g_app.debug_script
+            && !pz_debug_script_is_done(g_app.debug_script);
 
-    uint64_t sim_start_us = pz_time_now_us();
+        if (use_script_input) {
+            // Use script input
+            player_input.move_dir.x = script_input->move_x;
+            player_input.move_dir.y = script_input->move_y;
 
-    // =========================================================================
-    // FIXED TIMESTEP SIMULATION LOOP
-    // Run N simulation ticks at fixed dt for deterministic gameplay
-    // =========================================================================
-    for (int tick = 0; tick < sim_ticks; tick++) {
-        pz_sim_begin_tick(g_app.sim);
-
-        if (g_app.session.toxic_cloud) {
-            pz_toxic_cloud_update(g_app.session.toxic_cloud, dt);
-        }
-
-        // Player tank update
-        if (g_app.session.player_tank
-            && !(g_app.session.player_tank->flags & PZ_TANK_FLAG_DEAD)) {
-            pz_tank_update(g_app.session.tank_mgr, g_app.session.player_tank,
-                &player_input, g_app.session.map, g_app.session.toxic_cloud,
-                dt);
-
-            // Track marks for player
-            if (g_app.session.tracks
-                && pz_vec2_len(g_app.session.player_tank->vel) > 0.1f) {
-                pz_tracks_add_mark(g_app.session.tracks,
-                    g_app.session.player_tank->id,
-                    g_app.session.player_tank->pos.x,
-                    g_app.session.player_tank->pos.y,
-                    g_app.session.player_tank->body_angle, 0.45f,
-                    track_strength_for_tank(g_app.session.player_tank));
+            if (script_input->has_aim && g_app.session.player_tank) {
+                float aim_dx
+                    = script_input->aim_x - g_app.session.player_tank->pos.x;
+                float aim_dz
+                    = script_input->aim_y - g_app.session.player_tank->pos.y;
+                player_input.target_turret = atan2f(aim_dx, aim_dz);
             }
 
-            // Powerup collection
-            pz_barrier_placer_data barrier_data = { 0 };
-            pz_powerup_type collected
-                = pz_powerup_check_collection_ex(g_app.session.powerup_mgr,
-                    g_app.session.player_tank->pos, 0.7f, &barrier_data);
-            if (collected != PZ_POWERUP_NONE) {
-                pz_tank_add_weapon(g_app.session.player_tank, (int)collected);
-                pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME, "Player collected: %s",
-                    pz_powerup_type_name(collected));
-
-                // If barrier placer, set the barrier data on the tank
-                if (collected == PZ_POWERUP_BARRIER_PLACER) {
-                    pz_tank_set_barrier_placer(g_app.session.player_tank,
-                        barrier_data.barrier_tile, barrier_data.barrier_health,
-                        barrier_data.barrier_count,
-                        barrier_data.barrier_lifetime);
-                }
+            player_input.fire = script_input->fire || script_input->hold_fire;
+        } else {
+            // Normal keyboard/mouse input
+            if (g_app.key_down[SAPP_KEYCODE_W]
+                || g_app.key_down[SAPP_KEYCODE_UP]) {
+                player_input.move_dir.y -= 1.0f;
+            }
+            if (g_app.key_down[SAPP_KEYCODE_S]
+                || g_app.key_down[SAPP_KEYCODE_DOWN]) {
+                player_input.move_dir.y += 1.0f;
+            }
+            if (g_app.key_down[SAPP_KEYCODE_A]
+                || g_app.key_down[SAPP_KEYCODE_LEFT]) {
+                player_input.move_dir.x -= 1.0f;
+            }
+            if (g_app.key_down[SAPP_KEYCODE_D]
+                || g_app.key_down[SAPP_KEYCODE_RIGHT]) {
+                player_input.move_dir.x += 1.0f;
             }
 
-            // Update barrier placement ghost (uses mouse or script cursor)
-            pz_vec2 cursor_2d;
-            if (g_app.script_cursor_active) {
-                // Use script-controlled cursor position
-                cursor_2d.x = g_app.script_cursor_x;
-                cursor_2d.y = g_app.script_cursor_y;
-            } else {
-                // Use mouse position converted to world coords
-                pz_vec3 ghost_cursor_world = pz_camera_screen_to_world(
+            if (g_app.session.player_tank
+                && !(g_app.session.player_tank->flags & PZ_TANK_FLAG_DEAD)) {
+                pz_vec3 mouse_world = pz_camera_screen_to_world(
                     &g_app.camera, (int)g_app.mouse_x, (int)g_app.mouse_y);
-                cursor_2d.x = ghost_cursor_world.x;
-                cursor_2d.y = ghost_cursor_world.z;
+                float aim_dx = mouse_world.x - g_app.session.player_tank->pos.x;
+                float aim_dz = mouse_world.z - g_app.session.player_tank->pos.y;
+                player_input.target_turret = atan2f(aim_dx, aim_dz);
+                player_input.fire = g_app.mouse_left_down || g_app.space_down;
             }
-            pz_barrier_placer_update_ghost(&g_app.session.barrier_ghost,
-                g_app.session.player_tank, g_app.session.map,
-                g_app.session.barrier_mgr, g_app.session.map->tile_size,
-                cursor_2d);
+        }
 
-            // Player firing / barrier placement
-            int current_weapon
-                = pz_tank_get_current_weapon(g_app.session.player_tank);
-            const pz_weapon_stats *weapon
-                = pz_weapon_get_stats((pz_powerup_type)current_weapon);
-
-            bool fire_held = g_app.mouse_left_down || g_app.space_down;
-            bool fire_pressed
-                = g_app.mouse_left_just_pressed || g_app.space_just_pressed;
-            // Debug script fire input (script->fire is single-press)
-            if (use_script_input && script_input->fire) {
-                fire_pressed = true;
+        // Handle weapon cycling (once per frame, not per sim tick)
+        if (g_app.session.player_tank
+            && !(g_app.session.player_tank->flags & PZ_TANK_FLAG_DEAD)) {
+            if (g_app.scroll_accumulator >= 3.0f) {
+                pz_tank_cycle_weapon(g_app.session.player_tank, 1);
+                g_app.scroll_accumulator = 0.0f;
+            } else if (g_app.scroll_accumulator <= -3.0f) {
+                pz_tank_cycle_weapon(g_app.session.player_tank, -1);
+                g_app.scroll_accumulator = 0.0f;
             }
-            if (use_script_input && script_input->hold_fire) {
-                fire_held = true;
+            if (g_app.key_f_just_pressed) {
+                pz_tank_cycle_weapon(g_app.session.player_tank, 1);
             }
-            bool should_fire = weapon->auto_fire ? fire_held : fire_pressed;
+            // Debug script weapon cycling
+            if (script_input && script_input->weapon_cycle != 0) {
+                pz_tank_cycle_weapon(
+                    g_app.session.player_tank, script_input->weapon_cycle);
+            }
+        }
 
-            // Check if this is a barrier placer weapon
-            if (current_weapon == PZ_POWERUP_BARRIER_PLACER) {
-                // Barrier placement instead of firing
-                if (fire_pressed
-                    && g_app.session.player_tank->fire_cooldown <= 0.0f) {
-                    int placed = pz_barrier_placer_place(
-                        g_app.session.player_tank, g_app.session.barrier_mgr,
-                        g_app.session.map, &g_app.session.barrier_ghost,
-                        g_app.session.map->tile_size);
-                    if (placed >= 0) {
+        sim_start_us = pz_time_now_us();
+
+        // =========================================================================
+        // FIXED TIMESTEP SIMULATION LOOP
+        // Run N simulation ticks at fixed dt for deterministic gameplay
+        // =========================================================================
+        for (int tick = 0; tick < sim_ticks && g_app.session.map; tick++) {
+            pz_sim_begin_tick(g_app.sim);
+
+            if (g_app.session.toxic_cloud) {
+                pz_toxic_cloud_update(g_app.session.toxic_cloud, dt);
+            }
+
+            // Player tank update
+            if (g_app.session.player_tank
+                && !(g_app.session.player_tank->flags & PZ_TANK_FLAG_DEAD)) {
+                pz_tank_update(g_app.session.tank_mgr,
+                    g_app.session.player_tank, &player_input, g_app.session.map,
+                    g_app.session.toxic_cloud, dt);
+
+                // Track marks for player
+                if (g_app.session.tracks
+                    && pz_vec2_len(g_app.session.player_tank->vel) > 0.1f) {
+                    pz_tracks_add_mark(g_app.session.tracks,
+                        g_app.session.player_tank->id,
+                        g_app.session.player_tank->pos.x,
+                        g_app.session.player_tank->pos.y,
+                        g_app.session.player_tank->body_angle, 0.45f,
+                        track_strength_for_tank(g_app.session.player_tank));
+                }
+
+                // Powerup collection
+                pz_barrier_placer_data barrier_data = { 0 };
+                pz_powerup_type collected
+                    = pz_powerup_check_collection_ex(g_app.session.powerup_mgr,
+                        g_app.session.player_tank->pos, 0.7f, &barrier_data);
+                if (collected != PZ_POWERUP_NONE) {
+                    pz_tank_add_weapon(
+                        g_app.session.player_tank, (int)collected);
+                    pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME, "Player collected: %s",
+                        pz_powerup_type_name(collected));
+
+                    // If barrier placer, set the barrier data on the tank
+                    if (collected == PZ_POWERUP_BARRIER_PLACER) {
+                        pz_tank_set_barrier_placer(g_app.session.player_tank,
+                            barrier_data.barrier_tile,
+                            barrier_data.barrier_health,
+                            barrier_data.barrier_count,
+                            barrier_data.barrier_lifetime);
+                    }
+                }
+
+                // Update barrier placement ghost (uses mouse or script cursor)
+                pz_vec2 cursor_2d;
+                if (g_app.script_cursor_active) {
+                    // Use script-controlled cursor position
+                    cursor_2d.x = g_app.script_cursor_x;
+                    cursor_2d.y = g_app.script_cursor_y;
+                } else {
+                    // Use mouse position converted to world coords
+                    pz_vec3 ghost_cursor_world = pz_camera_screen_to_world(
+                        &g_app.camera, (int)g_app.mouse_x, (int)g_app.mouse_y);
+                    cursor_2d.x = ghost_cursor_world.x;
+                    cursor_2d.y = ghost_cursor_world.z;
+                }
+                pz_barrier_placer_update_ghost(&g_app.session.barrier_ghost,
+                    g_app.session.player_tank, g_app.session.map,
+                    g_app.session.barrier_mgr, g_app.session.map->tile_size,
+                    cursor_2d);
+
+                // Player firing / barrier placement
+                int current_weapon
+                    = pz_tank_get_current_weapon(g_app.session.player_tank);
+                const pz_weapon_stats *weapon
+                    = pz_weapon_get_stats((pz_powerup_type)current_weapon);
+
+                bool fire_held = g_app.mouse_left_down || g_app.space_down;
+                bool fire_pressed
+                    = g_app.mouse_left_just_pressed || g_app.space_just_pressed;
+                // Debug script fire input (script->fire is single-press)
+                if (use_script_input && script_input->fire) {
+                    fire_pressed = true;
+                }
+                if (use_script_input && script_input->hold_fire) {
+                    fire_held = true;
+                }
+                bool should_fire = weapon->auto_fire ? fire_held : fire_pressed;
+
+                // Check if this is a barrier placer weapon
+                if (current_weapon == PZ_POWERUP_BARRIER_PLACER) {
+                    // Barrier placement instead of firing
+                    if (fire_pressed
+                        && g_app.session.player_tank->fire_cooldown <= 0.0f) {
+                        int placed
+                            = pz_barrier_placer_place(g_app.session.player_tank,
+                                g_app.session.barrier_mgr, g_app.session.map,
+                                &g_app.session.barrier_ghost,
+                                g_app.session.map->tile_size);
+                        if (placed >= 0) {
+                            g_app.session.player_tank->fire_cooldown
+                                = weapon->fire_cooldown;
+                            // Play placement sound
+                            pz_game_sfx_play_plop(g_app.game_sfx);
+                        }
+                    }
+                } else {
+                    // Normal weapon firing
+                    int active_projectiles = pz_projectile_count_by_owner(
+                        g_app.session.projectile_mgr,
+                        g_app.session.player_tank->id);
+                    bool can_fire
+                        = active_projectiles < weapon->max_active_projectiles;
+
+                    if (should_fire && can_fire
+                        && g_app.session.player_tank->fire_cooldown <= 0.0f) {
+                        pz_vec2 spawn_pos = { 0 };
+                        pz_vec2 fire_dir = { 0 };
+                        int bounce_cost = 0;
+                        pz_tank_get_fire_solution(g_app.session.player_tank,
+                            g_app.session.map, &spawn_pos, &fire_dir,
+                            &bounce_cost);
+
+                        pz_projectile_config proj_config = {
+                            .speed = weapon->projectile_speed,
+                            .max_bounces = weapon->max_bounces,
+                            .lifetime = -1.0f,
+                            .damage = weapon->damage,
+                            .scale = weapon->projectile_scale,
+                            .color = weapon->projectile_color,
+                        };
+
+                        int proj_slot = pz_projectile_spawn(
+                            g_app.session.projectile_mgr, spawn_pos, fire_dir,
+                            &proj_config, g_app.session.player_tank->id);
+                        if (proj_slot >= 0 && bounce_cost > 0) {
+                            pz_projectile *proj = &g_app.session.projectile_mgr
+                                                       ->projectiles[proj_slot];
+                            if (proj->bounces_remaining > 0) {
+                                proj->bounces_remaining -= 1;
+                            }
+                        }
+
                         g_app.session.player_tank->fire_cooldown
                             = weapon->fire_cooldown;
-                        // Play placement sound
-                        pz_game_sfx_play_plop(g_app.game_sfx);
+
+                        // Trigger visual recoil
+                        g_app.session.player_tank->recoil
+                            = weapon->recoil_strength;
+
+                        // Play gunfire sound
+                        pz_game_sfx_play_gunfire(g_app.game_sfx);
                     }
                 }
-            } else {
-                // Normal weapon firing
-                int active_projectiles
-                    = pz_projectile_count_by_owner(g_app.session.projectile_mgr,
+
+                // Mine placement (right-click or G key)
+                bool place_mine = g_app.mouse_right_just_pressed
+                    || g_app.key_g_just_pressed;
+                if (place_mine && g_app.session.player_tank->mine_count > 0
+                    && g_app.session.mine_mgr) {
+                    // Place mine behind the tank
+                    float behind_dist = 1.2f;
+                    pz_vec2 back_dir
+                        = { -sinf(g_app.session.player_tank->body_angle),
+                              -cosf(g_app.session.player_tank->body_angle) };
+                    pz_vec2 mine_pos
+                        = pz_vec2_add(g_app.session.player_tank->pos,
+                            pz_vec2_scale(back_dir, behind_dist));
+
+                    int slot = pz_mine_place(g_app.session.mine_mgr, mine_pos,
                         g_app.session.player_tank->id);
-                bool can_fire
-                    = active_projectiles < weapon->max_active_projectiles;
-
-                if (should_fire && can_fire
-                    && g_app.session.player_tank->fire_cooldown <= 0.0f) {
-                    pz_vec2 spawn_pos = { 0 };
-                    pz_vec2 fire_dir = { 0 };
-                    int bounce_cost = 0;
-                    pz_tank_get_fire_solution(g_app.session.player_tank,
-                        g_app.session.map, &spawn_pos, &fire_dir, &bounce_cost);
-
-                    pz_projectile_config proj_config = {
-                        .speed = weapon->projectile_speed,
-                        .max_bounces = weapon->max_bounces,
-                        .lifetime = -1.0f,
-                        .damage = weapon->damage,
-                        .scale = weapon->projectile_scale,
-                        .color = weapon->projectile_color,
-                    };
-
-                    int proj_slot = pz_projectile_spawn(
-                        g_app.session.projectile_mgr, spawn_pos, fire_dir,
-                        &proj_config, g_app.session.player_tank->id);
-                    if (proj_slot >= 0 && bounce_cost > 0) {
-                        pz_projectile *proj = &g_app.session.projectile_mgr
-                                                   ->projectiles[proj_slot];
-                        if (proj->bounces_remaining > 0) {
-                            proj->bounces_remaining -= 1;
-                        }
+                    if (slot >= 0) {
+                        g_app.session.player_tank->mine_count--;
+                        pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
+                            "Mine placed, %d remaining",
+                            g_app.session.player_tank->mine_count);
                     }
+                }
+            }
 
-                    g_app.session.player_tank->fire_cooldown
-                        = weapon->fire_cooldown;
+            // Update all tanks (respawn timers, etc.)
+            pz_tank_update_all(g_app.session.tank_mgr, g_app.session.map,
+                g_app.session.toxic_cloud, dt);
 
-                    // Trigger visual recoil
-                    g_app.session.player_tank->recoil = weapon->recoil_strength;
+            // Resolve tank-barrier collisions for all tanks
+            if (g_app.session.barrier_mgr) {
+                for (int i = 0; i < PZ_MAX_TANKS; i++) {
+                    pz_tank *tank = &g_app.session.tank_mgr->tanks[i];
+                    if ((tank->flags & PZ_TANK_FLAG_ACTIVE)
+                        && !(tank->flags & PZ_TANK_FLAG_DEAD)) {
+                        pz_barrier_resolve_collision(g_app.session.barrier_mgr,
+                            &tank->pos,
+                            g_app.session.tank_mgr->collision_radius);
+                    }
+                }
+            }
 
-                    // Play gunfire sound
+            // AI update
+            if (g_app.session.ai_mgr && g_app.session.player_tank
+                && !(g_app.session.player_tank->flags & PZ_TANK_FLAG_DEAD)) {
+                pz_ai_update(g_app.session.ai_mgr,
+                    g_app.session.player_tank->pos,
+                    g_app.session.projectile_mgr, g_app.session.mine_mgr,
+                    pz_sim_rng(g_app.sim), g_app.session.toxic_cloud, dt);
+                int ai_shots = pz_ai_fire(
+                    g_app.session.ai_mgr, g_app.session.projectile_mgr);
+
+                // Play gunfire sounds for AI shots
+                for (int shot = 0; shot < ai_shots; shot++) {
                     pz_game_sfx_play_gunfire(g_app.game_sfx);
                 }
-            }
 
-            // Mine placement (right-click or G key)
-            bool place_mine
-                = g_app.mouse_right_just_pressed || g_app.key_g_just_pressed;
-            if (place_mine && g_app.session.player_tank->mine_count > 0
-                && g_app.session.mine_mgr) {
-                // Place mine behind the tank
-                float behind_dist = 1.2f;
-                pz_vec2 back_dir
-                    = { -sinf(g_app.session.player_tank->body_angle),
-                          -cosf(g_app.session.player_tank->body_angle) };
-                pz_vec2 mine_pos = pz_vec2_add(g_app.session.player_tank->pos,
-                    pz_vec2_scale(back_dir, behind_dist));
-
-                int slot = pz_mine_place(g_app.session.mine_mgr, mine_pos,
-                    g_app.session.player_tank->id);
-                if (slot >= 0) {
-                    g_app.session.player_tank->mine_count--;
-                    pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
-                        "Mine placed, %d remaining",
-                        g_app.session.player_tank->mine_count);
-                }
-            }
-        }
-
-        // Update all tanks (respawn timers, etc.)
-        pz_tank_update_all(g_app.session.tank_mgr, g_app.session.map,
-            g_app.session.toxic_cloud, dt);
-
-        // Resolve tank-barrier collisions for all tanks
-        if (g_app.session.barrier_mgr) {
-            for (int i = 0; i < PZ_MAX_TANKS; i++) {
-                pz_tank *tank = &g_app.session.tank_mgr->tanks[i];
-                if ((tank->flags & PZ_TANK_FLAG_ACTIVE)
-                    && !(tank->flags & PZ_TANK_FLAG_DEAD)) {
-                    pz_barrier_resolve_collision(g_app.session.barrier_mgr,
-                        &tank->pos, g_app.session.tank_mgr->collision_radius);
-                }
-            }
-        }
-
-        // AI update
-        if (g_app.session.ai_mgr && g_app.session.player_tank
-            && !(g_app.session.player_tank->flags & PZ_TANK_FLAG_DEAD)) {
-            pz_ai_update(g_app.session.ai_mgr, g_app.session.player_tank->pos,
-                g_app.session.projectile_mgr, g_app.session.mine_mgr,
-                pz_sim_rng(g_app.sim), g_app.session.toxic_cloud, dt);
-            int ai_shots = pz_ai_fire(
-                g_app.session.ai_mgr, g_app.session.projectile_mgr);
-
-            // Play gunfire sounds for AI shots
-            for (int shot = 0; shot < ai_shots; shot++) {
-                pz_game_sfx_play_gunfire(g_app.game_sfx);
-            }
-
-            // Track marks for enemy tanks
-            if (g_app.session.tracks) {
-                for (int i = 0; i < g_app.session.ai_mgr->controller_count;
-                     i++) {
-                    pz_ai_controller *ctrl
-                        = &g_app.session.ai_mgr->controllers[i];
-                    pz_tank *enemy = pz_tank_get_by_id(
-                        g_app.session.tank_mgr, ctrl->tank_id);
-                    if (enemy && !(enemy->flags & PZ_TANK_FLAG_DEAD)) {
-                        if (pz_vec2_len(enemy->vel) > 0.1f) {
-                            pz_tracks_add_mark(g_app.session.tracks, enemy->id,
-                                enemy->pos.x, enemy->pos.y, enemy->body_angle,
-                                0.45f, track_strength_for_tank(enemy));
+                // Track marks for enemy tanks
+                if (g_app.session.tracks) {
+                    for (int i = 0; i < g_app.session.ai_mgr->controller_count;
+                         i++) {
+                        pz_ai_controller *ctrl
+                            = &g_app.session.ai_mgr->controllers[i];
+                        pz_tank *enemy = pz_tank_get_by_id(
+                            g_app.session.tank_mgr, ctrl->tank_id);
+                        if (enemy && !(enemy->flags & PZ_TANK_FLAG_DEAD)) {
+                            if (pz_vec2_len(enemy->vel) > 0.1f) {
+                                pz_tracks_add_mark(g_app.session.tracks,
+                                    enemy->id, enemy->pos.x, enemy->pos.y,
+                                    enemy->body_angle, 0.45f,
+                                    track_strength_for_tank(enemy));
+                            }
                         }
                     }
                 }
             }
-        }
 
-        // Powerup, barrier, mine, and projectile updates
-        pz_powerup_update(g_app.session.powerup_mgr, dt);
-        if (g_app.session.barrier_mgr) {
-            pz_barrier_update(g_app.session.barrier_mgr, dt);
+            // Powerup, barrier, mine, and projectile updates
+            pz_powerup_update(g_app.session.powerup_mgr, dt);
+            if (g_app.session.barrier_mgr) {
+                pz_barrier_update(g_app.session.barrier_mgr, dt);
 
-            // Credit expired barriers back to their owners
-            int expired_count = 0;
-            const pz_expired_barrier *expired = pz_barrier_get_expired(
-                g_app.session.barrier_mgr, &expired_count);
-            for (int i = 0; i < expired_count; i++) {
-                if (expired[i].owner_tank_id >= 0) {
-                    pz_tank *owner = pz_tank_get_by_id(
-                        g_app.session.tank_mgr, expired[i].owner_tank_id);
-                    if (owner) {
-                        pz_tank_on_barrier_destroyed(
-                            owner, expired[i].barrier_index);
+                // Credit expired barriers back to their owners
+                int expired_count = 0;
+                const pz_expired_barrier *expired = pz_barrier_get_expired(
+                    g_app.session.barrier_mgr, &expired_count);
+                for (int i = 0; i < expired_count; i++) {
+                    if (expired[i].owner_tank_id >= 0) {
+                        pz_tank *owner = pz_tank_get_by_id(
+                            g_app.session.tank_mgr, expired[i].owner_tank_id);
+                        if (owner) {
+                            pz_tank_on_barrier_destroyed(
+                                owner, expired[i].barrier_index);
+                        }
                     }
                 }
             }
-        }
-        if (g_app.session.mine_mgr) {
-            pz_mine_update(g_app.session.mine_mgr, g_app.session.tank_mgr,
-                g_app.session.projectile_mgr, dt);
-        }
-        pz_projectile_update(g_app.session.projectile_mgr, g_app.session.map,
-            g_app.session.tank_mgr, dt);
+            if (g_app.session.mine_mgr) {
+                pz_mine_update(g_app.session.mine_mgr, g_app.session.tank_mgr,
+                    g_app.session.projectile_mgr, dt);
+            }
+            pz_projectile_update(g_app.session.projectile_mgr,
+                g_app.session.map, g_app.session.tank_mgr, dt);
 
-        // Check projectile-barrier collisions
-        if (g_app.session.barrier_mgr && g_app.session.projectile_mgr) {
-            for (int i = 0; i < PZ_MAX_PROJECTILES; i++) {
-                pz_projectile *proj
-                    = &g_app.session.projectile_mgr->projectiles[i];
-                if (!proj->active)
-                    continue;
+            // Check projectile-barrier collisions
+            if (g_app.session.barrier_mgr && g_app.session.projectile_mgr) {
+                for (int i = 0; i < PZ_MAX_PROJECTILES; i++) {
+                    pz_projectile *proj
+                        = &g_app.session.projectile_mgr->projectiles[i];
+                    if (!proj->active)
+                        continue;
 
-                pz_vec2 hit_pos, hit_normal;
-                pz_barrier *barrier = NULL;
+                    pz_vec2 hit_pos, hit_normal;
+                    pz_barrier *barrier = NULL;
 
-                // Check if projectile is inside a barrier
-                // Use a small raycast from previous position to current
-                pz_vec2 prev_pos
-                    = pz_vec2_sub(proj->pos, pz_vec2_scale(proj->velocity, dt));
-                if (pz_barrier_raycast(g_app.session.barrier_mgr, prev_pos,
-                        proj->pos, &hit_pos, &hit_normal, &barrier)) {
+                    // Check if projectile is inside a barrier
+                    // Use a small raycast from previous position to current
+                    pz_vec2 prev_pos = pz_vec2_sub(
+                        proj->pos, pz_vec2_scale(proj->velocity, dt));
+                    if (pz_barrier_raycast(g_app.session.barrier_mgr, prev_pos,
+                            proj->pos, &hit_pos, &hit_normal, &barrier)) {
 
-                    // Apply damage to barrier
-                    bool destroyed = false;
-                    pz_barrier_apply_damage(g_app.session.barrier_mgr, hit_pos,
-                        (float)proj->damage, &destroyed);
+                        // Apply damage to barrier
+                        bool destroyed = false;
+                        pz_barrier_apply_damage(g_app.session.barrier_mgr,
+                            hit_pos, (float)proj->damage, &destroyed);
 
-                    // Record hit for particle effects (reuse existing system)
-                    if (g_app.session.projectile_mgr->hit_count
-                        < PZ_MAX_PROJECTILE_HITS) {
-                        pz_projectile_hit *hit
-                            = &g_app.session.projectile_mgr->hits
-                                   [g_app.session.projectile_mgr->hit_count++];
-                        hit->type = destroyed ? PZ_HIT_WALL : PZ_HIT_WALL;
-                        hit->pos = hit_pos;
-                    }
+                        // Record hit for particle effects (reuse existing
+                        // system)
+                        if (g_app.session.projectile_mgr->hit_count
+                            < PZ_MAX_PROJECTILE_HITS) {
+                            pz_projectile_hit *hit
+                                = &g_app.session.projectile_mgr
+                                       ->hits[g_app.session.projectile_mgr
+                                                  ->hit_count++];
+                            hit->type = destroyed ? PZ_HIT_WALL : PZ_HIT_WALL;
+                            hit->pos = hit_pos;
+                        }
 
-                    // Destroy projectile
-                    proj->active = false;
-                    g_app.session.projectile_mgr->active_count--;
+                        // Destroy projectile
+                        proj->active = false;
+                        g_app.session.projectile_mgr->active_count--;
 
-                    // If barrier was destroyed, spawn larger explosion
-                    if (destroyed) {
-                        // Notify owner tank if this was a player-placed barrier
-                        if (barrier->owner_tank_id >= 0) {
-                            pz_tank *owner = pz_tank_get_by_id(
-                                g_app.session.tank_mgr, barrier->owner_tank_id);
-                            if (owner) {
-                                // Find barrier index to pass to callback
-                                for (int b = 0; b < PZ_MAX_BARRIERS; b++) {
-                                    pz_barrier *check = pz_barrier_get(
-                                        g_app.session.barrier_mgr, b);
-                                    if (check == barrier) {
-                                        pz_tank_on_barrier_destroyed(owner, b);
-                                        break;
+                        // If barrier was destroyed, spawn larger explosion
+                        if (destroyed) {
+                            // Notify owner tank if this was a player-placed
+                            // barrier
+                            if (barrier->owner_tank_id >= 0) {
+                                pz_tank *owner
+                                    = pz_tank_get_by_id(g_app.session.tank_mgr,
+                                        barrier->owner_tank_id);
+                                if (owner) {
+                                    // Find barrier index to pass to callback
+                                    for (int b = 0; b < PZ_MAX_BARRIERS; b++) {
+                                        pz_barrier *check = pz_barrier_get(
+                                            g_app.session.barrier_mgr, b);
+                                        if (check == barrier) {
+                                            pz_tank_on_barrier_destroyed(
+                                                owner, b);
+                                            break;
+                                        }
                                     }
                                 }
                             }
-                        }
 
-                        pz_vec3 exp_pos
-                            = { barrier->pos.x, 0.75f, barrier->pos.y };
-                        pz_smoke_config explosion = PZ_SMOKE_TANK_HIT;
-                        explosion.position = exp_pos;
-                        explosion.count = 12;
-                        explosion.spread = 1.0f;
-                        explosion.scale_min = 1.5f;
-                        explosion.scale_max = 2.5f;
-                        pz_particle_spawn_smoke(
-                            g_app.session.particle_mgr, &explosion);
+                            pz_vec3 exp_pos
+                                = { barrier->pos.x, 0.75f, barrier->pos.y };
+                            pz_smoke_config explosion = PZ_SMOKE_TANK_HIT;
+                            explosion.position = exp_pos;
+                            explosion.count = 12;
+                            explosion.spread = 1.0f;
+                            explosion.scale_min = 1.5f;
+                            explosion.scale_max = 2.5f;
+                            pz_particle_spawn_smoke(
+                                g_app.session.particle_mgr, &explosion);
 
-                        // Add explosion light for destroyed barrier
-                        for (int j = 0; j < MAX_EXPLOSION_LIGHTS; j++) {
-                            if (g_app.session.explosion_lights[j].timer
-                                <= 0.0f) {
-                                g_app.session.explosion_lights[j].pos
-                                    = barrier->pos;
-                                g_app.session.explosion_lights[j].type
-                                    = EXPLOSION_LIGHT_BULLET;
-                                g_app.session.explosion_lights[j].duration
-                                    = 0.3f;
-                                g_app.session.explosion_lights[j].timer = 0.3f;
-                                break;
+                            // Add explosion light for destroyed barrier
+                            for (int j = 0; j < MAX_EXPLOSION_LIGHTS; j++) {
+                                if (g_app.session.explosion_lights[j].timer
+                                    <= 0.0f) {
+                                    g_app.session.explosion_lights[j].pos
+                                        = barrier->pos;
+                                    g_app.session.explosion_lights[j].type
+                                        = EXPLOSION_LIGHT_BULLET;
+                                    g_app.session.explosion_lights[j].duration
+                                        = 0.3f;
+                                    g_app.session.explosion_lights[j].timer
+                                        = 0.3f;
+                                    break;
+                                }
                             }
                         }
                     }
                 }
             }
-        }
 
-        // Check projectile-mine collisions
-        if (g_app.session.mine_mgr && g_app.session.projectile_mgr) {
-            for (int i = 0; i < PZ_MAX_PROJECTILES; i++) {
-                pz_projectile *proj
-                    = &g_app.session.projectile_mgr->projectiles[i];
-                if (!proj->active)
-                    continue;
+            // Check projectile-mine collisions
+            if (g_app.session.mine_mgr && g_app.session.projectile_mgr) {
+                for (int i = 0; i < PZ_MAX_PROJECTILES; i++) {
+                    pz_projectile *proj
+                        = &g_app.session.projectile_mgr->projectiles[i];
+                    if (!proj->active)
+                        continue;
 
-                if (pz_mine_check_projectile_hit(g_app.session.mine_mgr,
-                        proj->pos, 0.15f, g_app.session.tank_mgr)) {
-                    // Projectile hit a mine - destroy the projectile
-                    proj->active = false;
-                    g_app.session.projectile_mgr->active_count--;
+                    if (pz_mine_check_projectile_hit(g_app.session.mine_mgr,
+                            proj->pos, 0.15f, g_app.session.tank_mgr)) {
+                        // Projectile hit a mine - destroy the projectile
+                        proj->active = false;
+                        g_app.session.projectile_mgr->active_count--;
+                    }
                 }
             }
+
+            // Hash game state for determinism verification
+            if (g_app.session.player_tank) {
+                pz_sim_hash_vec2(g_app.sim, g_app.session.player_tank->pos.x,
+                    g_app.session.player_tank->pos.y);
+                pz_sim_hash_float(
+                    g_app.sim, g_app.session.player_tank->body_angle);
+            }
+
+            pz_sim_end_tick(g_app.sim);
         }
 
-        // Hash game state for determinism verification
-        if (g_app.session.player_tank) {
-            pz_sim_hash_vec2(g_app.sim, g_app.session.player_tank->pos.x,
-                g_app.session.player_tank->pos.y);
-            pz_sim_hash_float(g_app.sim, g_app.session.player_tank->body_angle);
-        }
+        sim_end_us = pz_time_now_us();
+        events_start_us = sim_end_us;
 
-        pz_sim_end_tick(g_app.sim);
-    }
+        fog_marks_update(&g_app.session, frame_dt);
+        fog_marks_emit(&g_app.session);
 
-    uint64_t sim_end_us = pz_time_now_us();
-    uint64_t events_start_us = sim_end_us;
+        {
+            pz_projectile_hit hits[PZ_MAX_PROJECTILE_HITS];
+            int hit_count = pz_projectile_get_hits(
+                g_app.session.projectile_mgr, hits, PZ_MAX_PROJECTILE_HITS);
 
-    fog_marks_update(&g_app.session, frame_dt);
-    fog_marks_emit(&g_app.session);
+            for (int i = 0; i < hit_count; i++) {
+                pz_vec3 hit_pos = { hits[i].pos.x, 1.18f, hits[i].pos.y };
 
-    {
-        pz_projectile_hit hits[PZ_MAX_PROJECTILE_HITS];
-        int hit_count = pz_projectile_get_hits(
-            g_app.session.projectile_mgr, hits, PZ_MAX_PROJECTILE_HITS);
-
-        for (int i = 0; i < hit_count; i++) {
-            pz_vec3 hit_pos = { hits[i].pos.x, 1.18f, hits[i].pos.y };
-
-            pz_smoke_config smoke = PZ_SMOKE_BULLET_IMPACT;
-            smoke.position = hit_pos;
-
-            if (hits[i].type == PZ_HIT_TANK
-                || hits[i].type == PZ_HIT_TANK_NON_FATAL) {
-                smoke = PZ_SMOKE_TANK_HIT;
+                pz_smoke_config smoke = PZ_SMOKE_BULLET_IMPACT;
                 smoke.position = hit_pos;
-            }
 
-            // Play bullet-hits-bullet sound
-            if (hits[i].type == PZ_HIT_PROJECTILE) {
-                pz_game_sfx_play_bullet_hit(g_app.game_sfx);
-            }
-
-            // Play tank hit sound (non-fatal hit)
-            if (hits[i].type == PZ_HIT_TANK_NON_FATAL) {
-                pz_game_sfx_play_tank_hit(g_app.game_sfx);
-            }
-
-            // Play ricochet sound (bullet bounces off wall)
-            if (hits[i].type == PZ_HIT_WALL_RICOCHET) {
-                pz_game_sfx_play_ricochet(g_app.game_sfx);
-            }
-
-            pz_particle_spawn_smoke(g_app.session.particle_mgr, &smoke);
-
-            for (int j = 0; j < MAX_EXPLOSION_LIGHTS; j++) {
-                if (g_app.session.explosion_lights[j].timer <= 0.0f) {
-                    g_app.session.explosion_lights[j].pos = hits[i].pos;
-                    g_app.session.explosion_lights[j].type
-                        = EXPLOSION_LIGHT_BULLET;
-                    g_app.session.explosion_lights[j].duration = 0.15f;
-                    g_app.session.explosion_lights[j].timer
-                        = g_app.session.explosion_lights[j].duration;
-                    break;
+                if (hits[i].type == PZ_HIT_TANK
+                    || hits[i].type == PZ_HIT_TANK_NON_FATAL) {
+                    smoke = PZ_SMOKE_TANK_HIT;
+                    smoke.position = hit_pos;
                 }
-            }
-        }
-    }
 
-    // Process mine explosion events
-    if (g_app.session.mine_mgr) {
-        pz_mine_explosion explosions[PZ_MAX_MINE_EXPLOSIONS];
-        int explosion_count = pz_mine_get_explosions(
-            g_app.session.mine_mgr, explosions, PZ_MAX_MINE_EXPLOSIONS);
-
-        for (int i = 0; i < explosion_count; i++) {
-            pz_vec3 exp_pos
-                = { explosions[i].pos.x, 0.5f, explosions[i].pos.y };
-
-            // Spawn explosion particles
-            pz_smoke_config explosion = PZ_SMOKE_TANK_EXPLOSION;
-            explosion.position = exp_pos;
-            explosion.count = 15;
-            explosion.spread = 1.5f;
-            pz_particle_spawn_smoke(g_app.session.particle_mgr, &explosion);
-
-            // Add explosion light (yellow for mines)
-            for (int j = 0; j < MAX_EXPLOSION_LIGHTS; j++) {
-                if (g_app.session.explosion_lights[j].timer <= 0.0f) {
-                    g_app.session.explosion_lights[j].pos = explosions[i].pos;
-                    g_app.session.explosion_lights[j].type
-                        = EXPLOSION_LIGHT_MINE;
-                    g_app.session.explosion_lights[j].duration = 0.35f;
-                    g_app.session.explosion_lights[j].timer = 0.35f;
-                    break;
+                // Play bullet-hits-bullet sound
+                if (hits[i].type == PZ_HIT_PROJECTILE) {
+                    pz_game_sfx_play_bullet_hit(g_app.game_sfx);
                 }
-            }
 
-            // Play explosion sound
-            pz_game_sfx_play_tank_explosion(g_app.game_sfx, false);
+                // Play tank hit sound (non-fatal hit)
+                if (hits[i].type == PZ_HIT_TANK_NON_FATAL) {
+                    pz_game_sfx_play_tank_hit(g_app.game_sfx);
+                }
 
-            // Replenish mine to owner (if they're still alive)
-            if (explosions[i].owner_id >= 0) {
-                pz_tank *owner = pz_tank_get_by_id(
-                    g_app.session.tank_mgr, explosions[i].owner_id);
-                if (owner && !(owner->flags & PZ_TANK_FLAG_DEAD)) {
-                    if (owner->mine_count < PZ_MINE_MAX_PER_TANK) {
-                        owner->mine_count++;
+                // Play ricochet sound (bullet bounces off wall)
+                if (hits[i].type == PZ_HIT_WALL_RICOCHET) {
+                    pz_game_sfx_play_ricochet(g_app.game_sfx);
+                }
+
+                pz_particle_spawn_smoke(g_app.session.particle_mgr, &smoke);
+
+                for (int j = 0; j < MAX_EXPLOSION_LIGHTS; j++) {
+                    if (g_app.session.explosion_lights[j].timer <= 0.0f) {
+                        g_app.session.explosion_lights[j].pos = hits[i].pos;
+                        g_app.session.explosion_lights[j].type
+                            = EXPLOSION_LIGHT_BULLET;
+                        g_app.session.explosion_lights[j].duration = 0.15f;
+                        g_app.session.explosion_lights[j].timer
+                            = g_app.session.explosion_lights[j].duration;
+                        break;
                     }
                 }
             }
         }
-    }
 
-    // Process tank death events
-    {
-        pz_tank_death_event death_events[PZ_MAX_DEATH_EVENTS];
-        int death_count = pz_tank_get_death_events(
-            g_app.session.tank_mgr, death_events, PZ_MAX_DEATH_EVENTS);
+        // Process mine explosion events
+        if (g_app.session.mine_mgr) {
+            pz_mine_explosion explosions[PZ_MAX_MINE_EXPLOSIONS];
+            int explosion_count = pz_mine_get_explosions(
+                g_app.session.mine_mgr, explosions, PZ_MAX_MINE_EXPLOSIONS);
 
-        for (int i = 0; i < death_count; i++) {
-            pz_vec3 death_pos
-                = { death_events[i].pos.x, 0.6f, death_events[i].pos.y };
+            for (int i = 0; i < explosion_count; i++) {
+                pz_vec3 exp_pos
+                    = { explosions[i].pos.x, 0.5f, explosions[i].pos.y };
 
-            // Spawn explosion particles
-            pz_smoke_config explosion = PZ_SMOKE_TANK_EXPLOSION;
-            explosion.position = death_pos;
-            pz_particle_spawn_smoke(g_app.session.particle_mgr, &explosion);
+                // Spawn explosion particles
+                pz_smoke_config explosion = PZ_SMOKE_TANK_EXPLOSION;
+                explosion.position = exp_pos;
+                explosion.count = 15;
+                explosion.spread = 1.5f;
+                pz_particle_spawn_smoke(g_app.session.particle_mgr, &explosion);
 
-            // Add explosion light
-            for (int j = 0; j < MAX_EXPLOSION_LIGHTS; j++) {
-                if (g_app.session.explosion_lights[j].timer <= 0.0f) {
-                    g_app.session.explosion_lights[j].pos = death_events[i].pos;
-                    g_app.session.explosion_lights[j].type
-                        = EXPLOSION_LIGHT_TANK;
-                    g_app.session.explosion_lights[j].duration = 0.4f;
-                    g_app.session.explosion_lights[j].timer
-                        = g_app.session.explosion_lights[j].duration;
-                    break;
+                // Add explosion light (yellow for mines)
+                for (int j = 0; j < MAX_EXPLOSION_LIGHTS; j++) {
+                    if (g_app.session.explosion_lights[j].timer <= 0.0f) {
+                        g_app.session.explosion_lights[j].pos
+                            = explosions[i].pos;
+                        g_app.session.explosion_lights[j].type
+                            = EXPLOSION_LIGHT_MINE;
+                        g_app.session.explosion_lights[j].duration = 0.35f;
+                        g_app.session.explosion_lights[j].timer = 0.35f;
+                        break;
+                    }
+                }
+
+                // Play explosion sound
+                pz_game_sfx_play_tank_explosion(g_app.game_sfx, false);
+
+                // Replenish mine to owner (if they're still alive)
+                if (explosions[i].owner_id >= 0) {
+                    pz_tank *owner = pz_tank_get_by_id(
+                        g_app.session.tank_mgr, explosions[i].owner_id);
+                    if (owner && !(owner->flags & PZ_TANK_FLAG_DEAD)) {
+                        if (owner->mine_count < PZ_MINE_MAX_PER_TANK) {
+                            owner->mine_count++;
+                        }
+                    }
                 }
             }
+        }
 
-            // Check win condition (all enemies defeated)
-            if (!death_events[i].is_player && g_app.state == GAME_STATE_PLAYING
-                && g_app.session.initial_enemy_count > 0) {
-                int enemies_remaining
-                    = pz_tank_count_enemies_alive(g_app.session.tank_mgr);
-                if (enemies_remaining == 0) {
-                    // Last enemy - play big explosion
-                    pz_game_sfx_play_tank_explosion(g_app.game_sfx, true);
-                    g_app.state = GAME_STATE_LEVEL_COMPLETE;
-                    g_app.state_timer = 0.0f;
-                    pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
-                        "Victory! All enemies defeated.");
+        // Process tank death events
+        {
+            pz_tank_death_event death_events[PZ_MAX_DEATH_EVENTS];
+            int death_count = pz_tank_get_death_events(
+                g_app.session.tank_mgr, death_events, PZ_MAX_DEATH_EVENTS);
+
+            for (int i = 0; i < death_count; i++) {
+                pz_vec3 death_pos
+                    = { death_events[i].pos.x, 0.6f, death_events[i].pos.y };
+
+                // Spawn explosion particles
+                pz_smoke_config explosion = PZ_SMOKE_TANK_EXPLOSION;
+                explosion.position = death_pos;
+                pz_particle_spawn_smoke(g_app.session.particle_mgr, &explosion);
+
+                // Add explosion light
+                for (int j = 0; j < MAX_EXPLOSION_LIGHTS; j++) {
+                    if (g_app.session.explosion_lights[j].timer <= 0.0f) {
+                        g_app.session.explosion_lights[j].pos
+                            = death_events[i].pos;
+                        g_app.session.explosion_lights[j].type
+                            = EXPLOSION_LIGHT_TANK;
+                        g_app.session.explosion_lights[j].duration = 0.4f;
+                        g_app.session.explosion_lights[j].timer
+                            = g_app.session.explosion_lights[j].duration;
+                        break;
+                    }
+                }
+
+                // Check win condition (all enemies defeated)
+                if (!death_events[i].is_player
+                    && g_app.state == GAME_STATE_PLAYING
+                    && g_app.session.initial_enemy_count > 0) {
+                    int enemies_remaining
+                        = pz_tank_count_enemies_alive(g_app.session.tank_mgr);
+                    if (enemies_remaining == 0) {
+                        // Last enemy - play big explosion
+                        pz_game_sfx_play_tank_explosion(g_app.game_sfx, true);
+                        g_app.state = GAME_STATE_LEVEL_COMPLETE;
+                        g_app.state_timer = 0.0f;
+                        pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
+                            "Victory! All enemies defeated.");
+                    } else {
+                        // Regular enemy explosion
+                        pz_game_sfx_play_tank_explosion(g_app.game_sfx, false);
+                    }
+                } else if (!death_events[i].is_player) {
+                    // Enemy died but we're not in playing state (or no enemies
+                    // to track)
+                    pz_game_sfx_play_tank_explosion(g_app.game_sfx, false);
                 } else {
-                    // Regular enemy explosion
+                    // Player died
                     pz_game_sfx_play_tank_explosion(g_app.game_sfx, false);
                 }
-            } else if (!death_events[i].is_player) {
-                // Enemy died but we're not in playing state (or no enemies to
-                // track)
-                pz_game_sfx_play_tank_explosion(g_app.game_sfx, false);
-            } else {
-                // Player died
-                pz_game_sfx_play_tank_explosion(g_app.game_sfx, false);
-            }
 
-            // Handle player death (lives system)
-            if (death_events[i].is_player
-                && g_app.state == GAME_STATE_PLAYING) {
-                if (g_app.campaign_mgr && g_app.campaign_mgr->loaded) {
-                    // Campaign mode - use lives
-                    if (!pz_campaign_player_died(g_app.campaign_mgr)) {
-                        // No lives left - game over
-                        g_app.state = GAME_STATE_GAME_OVER;
-                        g_app.state_timer = 0.0f;
-                    } else {
-                        // Still have lives - respawn after delay
-                        // (Tank respawn is handled by tank manager)
+                // Handle player death (lives system)
+                if (death_events[i].is_player
+                    && g_app.state == GAME_STATE_PLAYING) {
+                    if (g_app.campaign_mgr && g_app.campaign_mgr->loaded) {
+                        // Campaign mode - use lives
+                        if (!pz_campaign_player_died(g_app.campaign_mgr)) {
+                            // No lives left - game over
+                            g_app.state = GAME_STATE_GAME_OVER;
+                            g_app.state_timer = 0.0f;
+                        } else {
+                            // Still have lives - respawn after delay
+                            // (Tank respawn is handled by tank manager)
+                        }
                     }
+                    // Single map mode - just respawn (handled by tank manager)
                 }
-                // Single map mode - just respawn (handled by tank manager)
+            }
+
+            // Clear events for next frame
+            pz_tank_clear_death_events(g_app.session.tank_mgr);
+        }
+
+        // Process tank respawn events
+        {
+            pz_tank_respawn_event respawn_events[PZ_MAX_RESPAWN_EVENTS];
+            int respawn_count = pz_tank_get_respawn_events(
+                g_app.session.tank_mgr, respawn_events, PZ_MAX_RESPAWN_EVENTS);
+
+            for (int i = 0; i < respawn_count; i++) {
+                // Clear barriers placed by the respawned tank
+                if (g_app.session.barrier_mgr) {
+                    pz_barrier_clear_owned_by(
+                        g_app.session.barrier_mgr, respawn_events[i].tank_id);
+                }
+
+                pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME, "Tank %d respawned%s",
+                    respawn_events[i].tank_id,
+                    respawn_events[i].is_player ? " (player)" : "");
+            }
+
+            pz_tank_clear_respawn_events(g_app.session.tank_mgr);
+        }
+
+        events_end_us = pz_time_now_us();
+        visual_start_us = events_end_us;
+
+        // =========================================================================
+        // VISUAL-ONLY UPDATES (use frame_dt for smooth animation)
+        // =========================================================================
+        for (int i = 0; i < MAX_EXPLOSION_LIGHTS; i++) {
+            if (g_app.session.explosion_lights[i].timer > 0.0f) {
+                g_app.session.explosion_lights[i].timer -= frame_dt;
             }
         }
 
-        // Clear events for next frame
-        pz_tank_clear_death_events(g_app.session.tank_mgr);
-    }
-
-    // Process tank respawn events
-    {
-        pz_tank_respawn_event respawn_events[PZ_MAX_RESPAWN_EVENTS];
-        int respawn_count = pz_tank_get_respawn_events(
-            g_app.session.tank_mgr, respawn_events, PZ_MAX_RESPAWN_EVENTS);
-
-        for (int i = 0; i < respawn_count; i++) {
-            // Clear barriers placed by the respawned tank
-            if (g_app.session.barrier_mgr) {
-                pz_barrier_clear_owned_by(
-                    g_app.session.barrier_mgr, respawn_events[i].tank_id);
-            }
-
-            pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME, "Tank %d respawned%s",
-                respawn_events[i].tank_id,
-                respawn_events[i].is_player ? " (player)" : "");
+        spawn_tank_fog(
+            g_app.session.particle_mgr, g_app.session.tank_mgr, frame_dt);
+        spawn_projectile_fog(
+            g_app.session.particle_mgr, g_app.session.projectile_mgr, frame_dt);
+        if (g_app.session.toxic_cloud && g_app.session.particle_mgr) {
+            pz_toxic_cloud_spawn_particles(g_app.session.toxic_cloud,
+                g_app.session.particle_mgr, frame_dt);
         }
 
-        pz_tank_clear_respawn_events(g_app.session.tank_mgr);
-    }
+        pz_particle_update(g_app.session.particle_mgr, frame_dt);
 
-    uint64_t events_end_us = pz_time_now_us();
-    uint64_t visual_start_us = events_end_us;
+        // Update engine sounds for all tanks
+        pz_game_sfx_update_engines(g_app.game_sfx, g_app.session.tank_mgr);
 
-    // =========================================================================
-    // VISUAL-ONLY UPDATES (use frame_dt for smooth animation)
-    // =========================================================================
-    for (int i = 0; i < MAX_EXPLOSION_LIGHTS; i++) {
-        if (g_app.session.explosion_lights[i].timer > 0.0f) {
-            g_app.session.explosion_lights[i].timer -= frame_dt;
+        if (g_app.game_music && g_app.session.tank_mgr) {
+            int enemies_alive
+                = pz_tank_count_enemies_alive(g_app.session.tank_mgr);
+            bool has_elite = pz_ai_has_elite_alive(g_app.session.ai_mgr);
+            bool level_complete = (g_app.state == GAME_STATE_LEVEL_COMPLETE);
+            pz_game_music_update(g_app.game_music, enemies_alive, has_elite,
+                level_complete, frame_dt);
         }
-    }
 
-    spawn_tank_fog(
-        g_app.session.particle_mgr, g_app.session.tank_mgr, frame_dt);
-    spawn_projectile_fog(
-        g_app.session.particle_mgr, g_app.session.projectile_mgr, frame_dt);
-    if (g_app.session.toxic_cloud && g_app.session.particle_mgr) {
-        pz_toxic_cloud_spawn_particles(
-            g_app.session.toxic_cloud, g_app.session.particle_mgr, frame_dt);
-    }
-
-    pz_particle_update(g_app.session.particle_mgr, frame_dt);
-
-    // Update engine sounds for all tanks
-    pz_game_sfx_update_engines(g_app.game_sfx, g_app.session.tank_mgr);
-
-    if (g_app.game_music && g_app.session.tank_mgr) {
-        int enemies_alive = pz_tank_count_enemies_alive(g_app.session.tank_mgr);
-        bool has_elite = pz_ai_has_elite_alive(g_app.session.ai_mgr);
-        bool level_complete = (g_app.state == GAME_STATE_LEVEL_COMPLETE);
-        pz_game_music_update(g_app.game_music, enemies_alive, has_elite,
-            level_complete, frame_dt);
+        visual_end_us = pz_time_now_us();
     }
 
     double now = pz_time_now();
     if (now - g_app.last_hot_reload_check > 0.5) {
         pz_texture_check_hot_reload(g_app.tex_manager);
-        bool map_reloaded = pz_map_hot_reload_check(g_app.session.hot_reload);
-        if (map_reloaded && g_app.session.map) {
-            if (g_app.background) {
-                pz_background_set_from_map(g_app.background, g_app.session.map);
-            }
-            if (g_app.session.lighting) {
-                const pz_map_lighting *map_light
-                    = pz_map_get_lighting(g_app.session.map);
-                pz_lighting_set_map_occluders(
-                    g_app.session.lighting, g_app.session.map);
-                pz_lighting_set_ambient(
-                    g_app.session.lighting, map_light->ambient_color);
-            }
-            if (g_app.session.toxic_cloud) {
-                pz_toxic_cloud_destroy(g_app.session.toxic_cloud);
-                g_app.session.toxic_cloud = NULL;
-            }
-            if (g_app.session.map->has_toxic_cloud) {
-                g_app.session.toxic_cloud
-                    = pz_toxic_cloud_create(&g_app.session.map->toxic_config,
+        if (!editor_active) {
+            bool map_reloaded
+                = pz_map_hot_reload_check(g_app.session.hot_reload);
+            if (map_reloaded && g_app.session.map) {
+                if (g_app.background) {
+                    pz_background_set_from_map(
+                        g_app.background, g_app.session.map);
+                }
+                if (g_app.session.lighting) {
+                    const pz_map_lighting *map_light
+                        = pz_map_get_lighting(g_app.session.map);
+                    pz_lighting_set_map_occluders(
+                        g_app.session.lighting, g_app.session.map);
+                    pz_lighting_set_ambient(
+                        g_app.session.lighting, map_light->ambient_color);
+                }
+                if (g_app.session.toxic_cloud) {
+                    pz_toxic_cloud_destroy(g_app.session.toxic_cloud);
+                    g_app.session.toxic_cloud = NULL;
+                }
+                if (g_app.session.map->has_toxic_cloud) {
+                    g_app.session.toxic_cloud = pz_toxic_cloud_create(
+                        &g_app.session.map->toxic_config,
                         g_app.session.map->world_width,
                         g_app.session.map->world_height);
+                }
             }
         }
         g_app.last_hot_reload_check = now;
     }
 
-    uint64_t visual_end_us = pz_time_now_us();
     uint64_t render_start_us = visual_end_us;
 
     pz_debug_overlay_begin_frame(g_app.debug_overlay);
@@ -2271,6 +2392,59 @@ done_script_commands:
     int vp_width, vp_height;
     pz_renderer_get_viewport(g_app.renderer, &vp_width, &vp_height);
     pz_background_render(g_app.background, g_app.renderer, vp_width, vp_height);
+
+    // Editor mode rendering
+    if (editor_active) {
+
+        // Check if editor wants to close
+        if (pz_editor_wants_close(g_app.editor)) {
+            pz_editor_clear_close_request(g_app.editor);
+            if (g_app.edit_map_path_arg) {
+                // Launched with --edit-map, quit the application
+                sapp_request_quit();
+            } else {
+                // Return to game (TODO: implement proper transition)
+                // For now, just quit
+                sapp_request_quit();
+            }
+            goto end_frame;
+        }
+
+        // Get editor camera matrices
+        pz_mat4 editor_view, editor_proj;
+        pz_editor_get_camera(
+            g_app.editor, &editor_view, &editor_proj, vp_width, vp_height);
+        pz_mat4 editor_vp = pz_mat4_mul(editor_proj, editor_view);
+
+        // Use the fallback texture as a dummy light texture
+        // (the fallback texture is always loaded at startup)
+        pz_texture_handle fallback_tex = pz_texture_load(
+            g_app.tex_manager, "assets/textures/fallback.png");
+
+        // Get map dimensions for light texture UV scaling
+        pz_map *editor_map = pz_editor_get_map(g_app.editor);
+        float editor_map_width = editor_map ? editor_map->world_width : 1.0f;
+        float editor_map_height = editor_map ? editor_map->world_height : 1.0f;
+
+        // Render the map using editor camera
+        // Use fallback texture with scale that makes it appear as white
+        pz_editor_render_map(g_app.editor, &editor_vp, fallback_tex,
+            1.0f / editor_map_width, 1.0f / editor_map_height, 0.5f, 0.5f);
+
+        // Render editor overlays (grid, ghost preview, etc.)
+        pz_editor_render(g_app.editor, &editor_vp);
+
+        // Render editor UI (shortcut bar, panels)
+        pz_editor_render_ui(g_app.editor, vp_width, vp_height);
+
+        // Render cursor for editor mode
+        if (g_app.cursor && !sapp_mouse_locked()) {
+            pz_cursor_set_type(g_app.cursor, PZ_CURSOR_ARROW);
+            pz_cursor_render(g_app.cursor);
+        }
+
+        goto end_frame;
+    }
 
     pz_tracks_update(g_app.session.tracks);
 
@@ -2986,6 +3160,7 @@ app_event(const sapp_event *event)
 
     // Block physical input when debug script is active
     bool block_input = pz_debug_script_blocks_input(g_app.debug_script);
+    bool editor_active = app_editor_active();
 
     switch (event->type) {
     case SAPP_EVENTTYPE_KEY_DOWN:
@@ -3000,10 +3175,11 @@ app_event(const sapp_event *event)
         if (event->key_code >= 0 && event->key_code < SAPP_KEYCODE_COUNT) {
             g_app.key_down[event->key_code] = true;
         }
+        if (editor_active && pz_editor_event(g_app.editor, event)) {
+            return;
+        }
         if (!event->key_repeat) {
-            if (event->key_code == SAPP_KEYCODE_ESCAPE) {
-                sapp_quit();
-            } else if (event->key_code == SAPP_KEYCODE_F2) {
+            if (event->key_code == SAPP_KEYCODE_F2) {
                 pz_debug_overlay_toggle(g_app.debug_overlay);
             } else if (event->key_code == SAPP_KEYCODE_ENTER
                 && (event->modifiers
@@ -3029,6 +3205,14 @@ app_event(const sapp_event *event)
                     pz_renderer_save_screenshot(g_app.renderer, path);
                     pz_free(path);
                 }
+            }
+        }
+        if (editor_active) {
+            return;
+        }
+        if (!event->key_repeat) {
+            if (event->key_code == SAPP_KEYCODE_ESCAPE) {
+                sapp_quit();
             } else if (event->key_code == SAPP_KEYCODE_F) {
                 g_app.key_f_just_pressed = true;
             } else if (event->key_code == SAPP_KEYCODE_G) {
@@ -3115,8 +3299,19 @@ app_event(const sapp_event *event)
         if (event->key_code >= 0 && event->key_code < SAPP_KEYCODE_COUNT) {
             g_app.key_down[event->key_code] = false;
         }
+        if (editor_active) {
+            pz_editor_event(g_app.editor, event);
+            break;
+        }
         if (event->key_code == SAPP_KEYCODE_SPACE) {
             g_app.space_down = false;
+        }
+        break;
+    case SAPP_EVENTTYPE_CHAR:
+        if (block_input)
+            break;
+        if (editor_active && pz_editor_event(g_app.editor, event)) {
+            break;
         }
         break;
     case SAPP_EVENTTYPE_MOUSE_MOVE:
@@ -3125,10 +3320,16 @@ app_event(const sapp_event *event)
         g_app.mouse_x = event->mouse_x;
         g_app.mouse_y = event->mouse_y;
         pz_cursor_set_position(g_app.cursor, g_app.mouse_x, g_app.mouse_y);
+        if (editor_active) {
+            pz_editor_event(g_app.editor, event);
+        }
         break;
     case SAPP_EVENTTYPE_MOUSE_DOWN:
         if (block_input)
             break;
+        if (editor_active && pz_editor_event(g_app.editor, event)) {
+            break;
+        }
         if (event->mouse_button == SAPP_MOUSEBUTTON_LEFT) {
             g_app.mouse_left_down = true;
             g_app.mouse_left_just_pressed = true;
@@ -3139,6 +3340,9 @@ app_event(const sapp_event *event)
     case SAPP_EVENTTYPE_MOUSE_UP:
         if (block_input)
             break;
+        if (editor_active && pz_editor_event(g_app.editor, event)) {
+            break;
+        }
         if (event->mouse_button == SAPP_MOUSEBUTTON_LEFT) {
             g_app.mouse_left_down = false;
         }
@@ -3146,6 +3350,9 @@ app_event(const sapp_event *event)
     case SAPP_EVENTTYPE_MOUSE_SCROLL:
         if (block_input)
             break;
+        if (editor_active && pz_editor_event(g_app.editor, event)) {
+            break;
+        }
         g_app.scroll_accumulator += event->scroll_y;
         break;
     case SAPP_EVENTTYPE_RESIZED: {
@@ -3174,6 +3381,9 @@ app_cleanup(void)
 {
     // Unload map session (all map-dependent state)
     map_session_unload(&g_app.session);
+
+    // Destroy editor
+    pz_editor_destroy(g_app.editor);
 
     // Destroy campaign manager
     pz_campaign_destroy(g_app.campaign_mgr);
