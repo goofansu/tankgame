@@ -591,6 +591,27 @@ pz_editor_mouse_down(pz_editor *editor, int button)
                 editor_place_tag(editor, editor->hover_tile_x,
                     editor->hover_tile_y, slot->tag_name);
             } else {
+                // Check if there's an existing entity at this tile
+                int existing = pz_map_find_tag_placement(editor->map,
+                    editor->hover_tile_x, editor->hover_tile_y, -1);
+
+                if (existing >= 0) {
+                    // Click on existing entity enters rotation mode (if
+                    // rotatable)
+                    int tag_idx
+                        = editor->map->tag_placements[existing].tag_index;
+                    if (tag_idx >= 0 && tag_idx < editor->map->tag_def_count) {
+                        pz_tag_def *def = &editor->map->tag_defs[tag_idx];
+                        if (editor_tag_supports_rotation(def)) {
+                            editor_enter_rotation_mode(editor,
+                                editor->hover_tile_x, editor->hover_tile_y);
+                            return;
+                        }
+                    }
+                    // Non-rotatable entity clicked - do nothing
+                    return;
+                }
+
                 editor_apply_edit(
                     editor, editor->hover_tile_x, editor->hover_tile_y, true);
             }
@@ -611,16 +632,14 @@ pz_editor_mouse_down(pz_editor *editor, int button)
         // Apply edit on click
         if (editor->hover_valid) {
             pz_editor_slot *slot = &editor->slots[editor->selected_slot];
-            if (slot->type == PZ_EDITOR_SLOT_TAG) {
-                // Right-click removes tag at this tile (any tag, not just
-                // selected)
-                int existing = pz_map_find_tag_placement(editor->map,
-                    editor->hover_tile_x, editor->hover_tile_y, -1);
-                if (existing >= 0) {
-                    pz_map_remove_tag_placement(editor->map, existing);
-                    editor_mark_tags_dirty(editor);
-                }
-            } else {
+            // Right-click removes entity at this tile (regardless of slot type)
+            int existing = pz_map_find_tag_placement(
+                editor->map, editor->hover_tile_x, editor->hover_tile_y, -1);
+            if (existing >= 0) {
+                pz_map_remove_tag_placement(editor->map, existing);
+                editor_mark_tags_dirty(editor);
+            } else if (slot->type != PZ_EDITOR_SLOT_TAG) {
+                // No entity present, apply height edit for tile slots
                 editor_apply_edit(
                     editor, editor->hover_tile_x, editor->hover_tile_y, false);
             }
@@ -2942,11 +2961,15 @@ editor_apply_edit(pz_editor *editor, int tile_x, int tile_y, bool raise)
     pz_map_cell cell = pz_map_get_cell(editor->map, tile_x, tile_y);
     int selected_tile_index = slot->tile_def_index;
 
+    // Check if there's an entity on this tile - block height changes
+    bool has_entity
+        = pz_map_find_tag_placement(editor->map, tile_x, tile_y, -1) >= 0;
+
     if (raise) {
         // Left click: place/raise
         if (cell.tile_index == (uint8_t)selected_tile_index) {
-            // Same tile type - increase height
-            if (cell.height < 10) {
+            // Same tile type - increase height (blocked if entity present)
+            if (!has_entity && cell.height < 10) {
                 pz_map_set_height(editor->map, tile_x, tile_y, cell.height + 1);
                 editor_mark_dirty(editor);
             }
@@ -2960,13 +2983,13 @@ editor_apply_edit(pz_editor *editor, int tile_x, int tile_y, bool raise)
             editor_mark_dirty(editor);
         }
     } else {
-        // Right click: lower/remove (create pits with negative height)
-        if (cell.height > -3) {
+        // Right click: lower/remove (blocked if entity present)
+        if (!has_entity && cell.height > -3) {
             // Decrease height (allows pits down to -3)
             pz_map_set_height(editor->map, tile_x, tile_y, cell.height - 1);
             editor_mark_dirty(editor);
         }
-        // At minimum pit depth (-3) - do nothing
+        // At minimum pit depth (-3) or entity present - do nothing
     }
 }
 
