@@ -40,6 +40,7 @@ typedef enum {
     CMD_MOUSE_SCREEN,
     CMD_SPAWN_BARRIER,
     CMD_SPAWN_POWERUP,
+    CMD_MOUSE_CLICK,
 } script_cmd_type;
 
 // Parsed command
@@ -64,6 +65,7 @@ typedef struct {
             float x, y;
             char type[64];
         } spawn_powerup_val; // spawn_powerup
+        int mouse_button; // 0=left, 1=right, 2=middle
     };
 } script_cmd;
 
@@ -231,6 +233,15 @@ parse_command(const char *line, script_cmd *cmd)
         sscanf(line, "%*s %*s %*s %63s", arg3);
         strncpy(cmd->spawn_powerup_val.type, arg3,
             sizeof(cmd->spawn_powerup_val.type) - 1);
+    } else if (strcmp(keyword, "mouse_click") == 0) {
+        cmd->type = CMD_MOUSE_CLICK;
+        if (strcmp(arg1, "right") == 0) {
+            cmd->mouse_button = 1;
+        } else if (strcmp(arg1, "middle") == 0) {
+            cmd->mouse_button = 2;
+        } else {
+            cmd->mouse_button = 0; // default: left
+        }
     } else {
         pz_log(PZ_LOG_WARN, PZ_LOG_CAT_CORE,
             "Debug script: unknown command '%s'", keyword);
@@ -443,6 +454,8 @@ pz_debug_script_update(pz_debug_script *script)
     // Clear single-frame inputs
     script->input.fire = false;
     script->input.weapon_cycle = 0;
+    script->input.mouse_click_left = false;
+    script->input.mouse_click_right = false;
 
     // If we're counting down frames, just continue
     if (script->frames_remaining > 0) {
@@ -620,6 +633,18 @@ pz_debug_script_update(pz_debug_script *script)
                 cmd->spawn_powerup_val.type, cmd->spawn_powerup_val.x,
                 cmd->spawn_powerup_val.y);
             return PZ_DEBUG_SCRIPT_SPAWN_POWERUP;
+
+        case CMD_MOUSE_CLICK:
+            if (cmd->mouse_button == 1) {
+                script->input.mouse_click_right = true;
+                pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_CORE,
+                    "Debug script: mouse_click right");
+            } else {
+                script->input.mouse_click_left = true;
+                pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_CORE,
+                    "Debug script: mouse_click left");
+            }
+            break;
         }
     }
 

@@ -107,6 +107,8 @@
 - [x] M11.15: tile picker with quick-assign (hover + 1-6 assigns to slot)
 - [x] M11.16: tag picker dropdown (Phase 4)
 - [x] M11.17: tags editor (Phase 7+)
+- [x] M11.18: dynamic map expansion (click in padding area to expand)
+- [x] M11.19: mouse_click debug script command
 
 ## Phase 12: Game Modes
 - [ ] M12.1: mode framework

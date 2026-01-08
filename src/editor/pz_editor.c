@@ -135,6 +135,8 @@ static void editor_window_rect(const pz_window_state *state, float w, float h,
     int screen_w, int screen_h, float *out_x, float *out_y);
 static void editor_render_tag_overlays(pz_editor *editor, float dpi_scale);
 static void editor_prune_tag_placements(pz_editor *editor);
+static bool editor_expand_map_to_include(
+    pz_editor *editor, int tile_x, int tile_y, int *offset_x, int *offset_y);
 static void editor_place_tag(
     pz_editor *editor, int tile_x, int tile_y, const char *tag_name);
 static void editor_remove_tag(
@@ -2084,8 +2086,41 @@ editor_place_tag(
         return;
     }
 
+    // Check if we need to expand the map
     if (!pz_map_in_bounds(editor->map, tile_x, tile_y)) {
-        return;
+        // Check if within expansion zone
+        int padded_min_x = -EDITOR_PADDING_TILES;
+        int padded_max_x = editor->map->width + EDITOR_PADDING_TILES - 1;
+        int padded_min_y = -EDITOR_PADDING_TILES;
+        int padded_max_y = editor->map->height + EDITOR_PADDING_TILES - 1;
+
+        bool in_expansion_zone = tile_x >= padded_min_x
+            && tile_x <= padded_max_x && tile_y >= padded_min_y
+            && tile_y <= padded_max_y;
+
+        if (!in_expansion_zone) {
+            return;
+        }
+
+        // Expand the map
+        int offset_x = 0, offset_y = 0;
+        if (!editor_expand_map_to_include(
+                editor, tile_x, tile_y, &offset_x, &offset_y)) {
+            return;
+        }
+
+        // Adjust tile coordinates after expansion
+        tile_x += offset_x;
+        tile_y += offset_y;
+
+        // Recalculate camera zoom for new map size
+        editor->camera_zoom = editor_calculate_zoom(editor);
+
+        // Rebuild grid and map renderer (expansion changed map dimensions)
+        editor_rebuild_grid(editor);
+        if (editor->map_renderer) {
+            pz_map_renderer_set_map(editor->map_renderer, editor->map);
+        }
     }
 
     int tag_index = pz_map_find_tag_def(editor->map, tag_name);
@@ -2374,6 +2409,129 @@ editor_update_hover(pz_editor *editor)
     }
 }
 
+// Expand the map to include the given tile coordinates
+// Returns true if expansion happened (and tile_x/tile_y should be recalculated)
+// The offset_x/offset_y output parameters indicate how much existing coords
+// shifted
+static bool
+editor_expand_map_to_include(
+    pz_editor *editor, int tile_x, int tile_y, int *offset_x, int *offset_y)
+{
+    if (!editor || !editor->map) {
+        return false;
+    }
+
+    pz_map *map = editor->map;
+
+    // Calculate expansion needed in each direction
+    int expand_left = (tile_x < 0) ? -tile_x : 0;
+    int expand_right = (tile_x >= map->width) ? (tile_x - map->width + 1) : 0;
+    int expand_top = (tile_y < 0) ? -tile_y : 0;
+    int expand_bottom
+        = (tile_y >= map->height) ? (tile_y - map->height + 1) : 0;
+
+    if (expand_left == 0 && expand_right == 0 && expand_top == 0
+        && expand_bottom == 0) {
+        // No expansion needed
+        *offset_x = 0;
+        *offset_y = 0;
+        return false;
+    }
+
+    // Check if resulting size is valid
+    int new_width = map->width + expand_left + expand_right;
+    int new_height = map->height + expand_top + expand_bottom;
+
+    if (new_width > PZ_MAP_MAX_SIZE || new_height > PZ_MAP_MAX_SIZE) {
+        pz_log(PZ_LOG_WARN, PZ_LOG_CAT_GAME,
+            "Cannot expand map: would exceed max size (%dx%d > %d)", new_width,
+            new_height, PZ_MAP_MAX_SIZE);
+        return false;
+    }
+
+    pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
+        "Expanding map from %dx%d to %dx%d (L:%d T:%d R:%d B:%d)", map->width,
+        map->height, new_width, new_height, expand_left, expand_top,
+        expand_right, expand_bottom);
+
+    // Allocate new cells array
+    int new_cell_count = new_width * new_height;
+    pz_map_cell *new_cells = pz_calloc(new_cell_count, sizeof(pz_map_cell));
+    if (!new_cells) {
+        pz_log(PZ_LOG_ERROR, PZ_LOG_CAT_GAME,
+            "Failed to allocate cells for map expansion");
+        return false;
+    }
+
+    // Initialize new cells with ground at height 0, tile index 0
+    for (int i = 0; i < new_cell_count; i++) {
+        new_cells[i].height = 0;
+        new_cells[i].tile_index = 0;
+    }
+
+    // Copy existing cells to their new positions
+    for (int y = 0; y < map->height; y++) {
+        for (int x = 0; x < map->width; x++) {
+            int old_idx = y * map->width + x;
+            int new_x = x + expand_left;
+            int new_y = y + expand_top;
+            int new_idx = new_y * new_width + new_x;
+            new_cells[new_idx] = map->cells[old_idx];
+        }
+    }
+
+    // Free old cells and replace
+    pz_free(map->cells);
+    map->cells = new_cells;
+    map->width = new_width;
+    map->height = new_height;
+    map->world_width = new_width * map->tile_size;
+    map->world_height = new_height * map->tile_size;
+
+    // Update tag placements (shift coordinates)
+    if (expand_left > 0 || expand_top > 0) {
+        for (int i = 0; i < map->tag_placement_count; i++) {
+            map->tag_placements[i].tile_x += expand_left;
+            map->tag_placements[i].tile_y += expand_top;
+        }
+    }
+
+    // Update toxic cloud center if it exists
+    if (map->has_toxic_cloud) {
+        // Convert from old world coords to tile coords, shift, convert back
+        pz_vec2 old_center = map->toxic_config.center;
+        float old_half_w
+            = (map->width - expand_left - expand_right) * map->tile_size / 2.0f;
+        float old_half_h = (map->height - expand_top - expand_bottom)
+            * map->tile_size / 2.0f;
+
+        // Convert to tile coords in old system
+        float tile_cx = (old_center.x + old_half_w) / map->tile_size;
+        float tile_cy = (old_center.y + old_half_h) / map->tile_size;
+
+        // Shift by expansion
+        tile_cx += (float)expand_left;
+        tile_cy += (float)expand_top;
+
+        // Convert back to new world coords
+        float new_half_w = map->world_width / 2.0f;
+        float new_half_h = map->world_height / 2.0f;
+        map->toxic_config.center.x
+            = tile_cx * map->tile_size - new_half_w + map->tile_size / 2.0f;
+        map->toxic_config.center.y
+            = tile_cy * map->tile_size - new_half_h + map->tile_size / 2.0f;
+    }
+
+    // Rebuild spawns from tags (this recalculates world positions)
+    pz_map_rebuild_spawns_from_tags(map);
+
+    // Return offset for caller to adjust coordinates
+    *offset_x = expand_left;
+    *offset_y = expand_top;
+
+    return true;
+}
+
 static void
 editor_apply_edit(pz_editor *editor, int tile_x, int tile_y, bool raise)
 {
@@ -2395,12 +2553,35 @@ editor_apply_edit(pz_editor *editor, int tile_x, int tile_y, bool raise)
     bool in_bounds = pz_map_in_bounds(editor->map, tile_x, tile_y);
 
     if (!in_bounds) {
-        // TODO: Expand map in that direction (Phase 10)
-        pz_log(PZ_LOG_DEBUG, PZ_LOG_CAT_GAME,
-            "Edit outside map bounds (%d, %d) - map expansion not yet "
-            "implemented",
-            tile_x, tile_y);
-        return;
+        // Check if within expansion zone (padding area)
+        int padded_min_x = -EDITOR_PADDING_TILES;
+        int padded_max_x = editor->map->width + EDITOR_PADDING_TILES - 1;
+        int padded_min_y = -EDITOR_PADDING_TILES;
+        int padded_max_y = editor->map->height + EDITOR_PADDING_TILES - 1;
+
+        bool in_expansion_zone = tile_x >= padded_min_x
+            && tile_x <= padded_max_x && tile_y >= padded_min_y
+            && tile_y <= padded_max_y;
+
+        if (!in_expansion_zone) {
+            // Outside even the expansion zone
+            return;
+        }
+
+        // Expand the map to include this tile
+        int offset_x = 0, offset_y = 0;
+        if (!editor_expand_map_to_include(
+                editor, tile_x, tile_y, &offset_x, &offset_y)) {
+            // Expansion failed (e.g., would exceed max size)
+            return;
+        }
+
+        // Adjust tile coordinates after expansion
+        tile_x += offset_x;
+        tile_y += offset_y;
+
+        // Recalculate camera zoom for new map size
+        editor->camera_zoom = editor_calculate_zoom(editor);
     }
 
     // Get current cell state

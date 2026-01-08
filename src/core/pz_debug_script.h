@@ -36,6 +36,8 @@ typedef struct pz_debug_script_input {
     bool fire; // Fire this frame (single press, auto-clears)
     bool hold_fire; // Hold fire continuously
     int weapon_cycle; // +1 for next, -1 for prev, 0 for none (auto-clears)
+    bool mouse_click_left; // Left mouse click this frame (auto-clears)
+    bool mouse_click_right; // Right mouse click this frame (auto-clears)
 } pz_debug_script_input;
 
 // Script execution context

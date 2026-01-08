@@ -168,6 +168,8 @@ frames 10          # Stopped
 | `teleport <x> <y>` | Teleport player to world coordinates |
 | `give <item>` | Give item to player (see below) |
 | `cursor <x> <y>` | Set cursor position in world coordinates |
+| `mouse_screen <x> <y>` | Set mouse position in screen coordinates |
+| `mouse_click left\|right` | Simulate mouse click (for editor testing) |
 | `spawn_barrier <x> <y>` | Spawn a barrier at world coordinates |
 | `spawn_powerup <x> <y> <type>` | Spawn a powerup at world coordinates |
 

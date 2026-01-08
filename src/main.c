@@ -1659,6 +1659,20 @@ done_script_commands:
     uint64_t visual_end_us = 0;
 
     if (editor_active) {
+        // Handle debug script mouse clicks in editor
+        const pz_debug_script_input *script_input = g_app.debug_script
+            ? pz_debug_script_get_input(g_app.debug_script)
+            : NULL;
+        if (script_input) {
+            if (script_input->mouse_click_left) {
+                pz_editor_mouse_down(g_app.editor, 0);
+                pz_editor_mouse_up(g_app.editor, 0);
+            }
+            if (script_input->mouse_click_right) {
+                pz_editor_mouse_down(g_app.editor, 1);
+                pz_editor_mouse_up(g_app.editor, 1);
+            }
+        }
         pz_editor_update(g_app.editor, frame_dt);
     } else {
         // Determine number of simulation ticks to run this frame
