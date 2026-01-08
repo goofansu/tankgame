@@ -657,7 +657,7 @@ pz_map_renderer_create(pz_renderer *renderer, pz_texture_manager *tex_manager,
         },
         .blend = PZ_BLEND_NONE,
         .depth = PZ_DEPTH_READ_WRITE,
-        .cull = PZ_CULL_BACK,
+        .cull = PZ_CULL_NONE, // Double-sided for editor camera / all view angles
         .primitive = PZ_PRIMITIVE_TRIANGLES,
     };
     mr->wall_pipeline = pz_renderer_create_pipeline(renderer, &wall_desc);
@@ -1015,20 +1015,21 @@ pz_map_renderer_set_map(pz_map_renderer *mr, const pz_map *map)
             // A tile emits walls on sides where it's HIGHER than the neighbor
             if (wall_ptrs[idx]) {
                 // Check if this tile has any exposed walls (is higher than any
-                // neighbor)
+                // neighbor). Out-of-bounds neighbors are treated as very low
+                // (-128) so map edges always generate walls down to the void.
                 bool has_walls = false;
                 int8_t left_h = pz_map_in_bounds(map, x - 1, y)
                     ? pz_map_get_height(map, x - 1, y)
-                    : h;
+                    : INT8_MIN;
                 int8_t right_h = pz_map_in_bounds(map, x + 1, y)
                     ? pz_map_get_height(map, x + 1, y)
-                    : h;
+                    : INT8_MIN;
                 int8_t front_h = pz_map_in_bounds(map, x, y + 1)
                     ? pz_map_get_height(map, x, y + 1)
-                    : h;
+                    : INT8_MIN;
                 int8_t back_h = pz_map_in_bounds(map, x, y - 1)
                     ? pz_map_get_height(map, x, y - 1)
-                    : h;
+                    : INT8_MIN;
 
                 if (left_h < h || right_h < h || front_h < h || back_h < h) {
                     has_walls = true;
@@ -1043,6 +1044,12 @@ pz_map_renderer_set_map(pz_map_renderer *mr, const pz_map *map)
                         min_neighbor = front_h;
                     if (back_h < min_neighbor)
                         min_neighbor = back_h;
+
+                    // Clamp min_neighbor to -1 for map edges (don't extend
+                    // walls infinitely into the void - just 1 unit below
+                    // ground)
+                    if (min_neighbor < -1)
+                        min_neighbor = -1;
 
                     // Wall goes from min_neighbor level to this tile's level
                     float y_bottom
