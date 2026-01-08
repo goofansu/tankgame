@@ -471,6 +471,24 @@ pz_tank_spawn(pz_tank_manager *mgr, pz_vec2 pos, pz_vec4 color, bool is_player)
     // Turret color matches current weapon's projectile color
     update_turret_color(tank);
 
+    // Spawn indicator for player tanks
+    if (is_player) {
+        tank->spawn_indicator_timer = 1.5f;
+        // Count existing player tanks to determine player number
+        int player_count = 0;
+        for (int i = 0; i < PZ_MAX_TANKS; i++) {
+            if ((mgr->tanks[i].flags & PZ_TANK_FLAG_ACTIVE)
+                && (mgr->tanks[i].flags & PZ_TANK_FLAG_PLAYER)
+                && mgr->tanks[i].id != tank->id) {
+                player_count++;
+            }
+        }
+        tank->player_number = player_count + 1; // P1, P2, P3, P4
+    } else {
+        tank->spawn_indicator_timer = 0.0f;
+        tank->player_number = 0;
+    }
+
     mgr->tank_count++;
 
     pz_log(PZ_LOG_INFO, PZ_LOG_CAT_GAME,
@@ -738,6 +756,14 @@ pz_tank_update_all(pz_tank_manager *mgr, const pz_map *map,
             }
         }
 
+        // Update spawn indicator timer
+        if (tank->spawn_indicator_timer > 0.0f) {
+            tank->spawn_indicator_timer -= dt;
+            if (tank->spawn_indicator_timer < 0.0f) {
+                tank->spawn_indicator_timer = 0.0f;
+            }
+        }
+
         // Update damage flash for all tanks
         if (tank->damage_flash > 0.0f) {
             tank->damage_flash -= dt;
@@ -874,6 +900,11 @@ pz_tank_respawn(pz_tank *tank)
     tank->toxic_grace_timer = 0.0f;
     tank->toxic_damage_timer = 0.0f;
     tank->in_toxic_cloud = false;
+
+    // Show spawn indicator for player tanks
+    if (tank->flags & PZ_TANK_FLAG_PLAYER) {
+        tank->spawn_indicator_timer = 1.5f;
+    }
 
     // Reset loadout to default (lose all collected weapons/powerups)
     pz_tank_reset_loadout(tank);

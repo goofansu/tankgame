@@ -107,6 +107,8 @@ typedef struct pz_tank {
     pz_vec4 turret_color; // Updated based on selected weapon
     float fog_timer; // Spawn timer for fog trail
     float idle_time; // How long the tank has been idle
+    float spawn_indicator_timer; // Timer for spawn indicator (1.5 seconds)
+    int player_number; // Player number (1-4) for spawn indicator display
 
     // Barrier placer state (when holding barrier_placer weapon)
     pz_tank_barrier_placer barrier_placer;

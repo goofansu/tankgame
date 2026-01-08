@@ -43,6 +43,7 @@
 #include "game/pz_particle.h"
 #include "game/pz_powerup.h"
 #include "game/pz_projectile.h"
+#include "game/pz_spawn_indicator.h"
 #include "game/pz_tank.h"
 #include "game/pz_tile_registry.h"
 #include "game/pz_toxic_cloud.h"
@@ -259,6 +260,7 @@ typedef struct app_state {
     pz_font_manager *font_mgr;
     pz_font *font_russo;
     pz_font *font_caveat;
+    pz_spawn_indicator_renderer *spawn_indicator;
     pz_sim *sim;
     pz_audio *audio;
     pz_game_music *game_music;
@@ -1102,6 +1104,13 @@ app_init(void)
             pz_log(PZ_LOG_WARN, PZ_LOG_CAT_CORE,
                 "Failed to load Caveat Brush font");
         }
+    }
+
+    // Create spawn indicator renderer
+    g_app.spawn_indicator = pz_spawn_indicator_create(g_app.renderer);
+    if (!g_app.spawn_indicator) {
+        pz_log(PZ_LOG_WARN, PZ_LOG_CAT_CORE,
+            "Failed to create spawn indicator renderer");
     }
 
     // Create laser rendering resources (persistent)
@@ -2886,6 +2895,13 @@ done_script_commands:
         float vp_width = (float)fb_width / dpi_scale;
         float vp_height = (float)fb_height / dpi_scale;
 
+        // Render spawn indicators (behind other HUD elements)
+        if (g_app.spawn_indicator && g_app.session.tank_mgr) {
+            pz_spawn_indicator_render(g_app.spawn_indicator, g_app.renderer,
+                g_app.font_mgr, g_app.font_russo, g_app.session.tank_mgr,
+                &g_app.camera, (int)vp_width, (int)vp_height);
+        }
+
         // Font sizes and positions are in logical pixels - DPI scaling is
         // handled internally
         pz_text_style health_style
@@ -3389,6 +3405,7 @@ app_cleanup(void)
     pz_campaign_destroy(g_app.campaign_mgr);
 
     // Destroy persistent systems
+    pz_spawn_indicator_destroy(g_app.spawn_indicator, g_app.renderer);
     pz_font_manager_destroy(g_app.font_mgr);
     pz_debug_overlay_destroy(g_app.debug_overlay);
     pz_cursor_destroy(g_app.cursor);
