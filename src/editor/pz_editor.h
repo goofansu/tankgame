@@ -115,6 +115,9 @@ typedef struct pz_editor {
     pz_buffer_handle hover_vb;
     int hover_vertex_count;
 
+    // Arrow buffer for facing direction indicators
+    pz_buffer_handle arrow_vb;
+
     // Editor UI
     pz_editor_ui *ui;
     bool ui_wants_mouse;
@@ -148,6 +151,11 @@ typedef struct pz_editor {
     // Close confirmation dialog
     bool confirm_close_open;
     bool wants_close; // Set when user confirms close
+
+    // Rotation mode: click on tag to rotate, mouse movement updates angle
+    bool rotation_mode;
+    int rotation_tag_def_index; // Tag def being rotated (-1 if none)
+    float rotation_start_angle; // Original angle for cancel
 
     int window_z_counter;
 

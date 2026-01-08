@@ -109,6 +109,7 @@
 - [x] M11.17: tags editor (Phase 7+)
 - [x] M11.18: dynamic map expansion (click in padding area to expand)
 - [x] M11.19: mouse_click debug script command
+- [x] M11.20: click-to-rotate entities (click on tag to rotate, visual arrow indicator)
 
 ## Phase 12: Game Modes
 - [ ] M12.1: mode framework

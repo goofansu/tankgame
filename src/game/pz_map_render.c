@@ -1018,37 +1018,55 @@ pz_map_renderer_set_map(pz_map_renderer *mr, const pz_map *map)
                 // neighbor). Out-of-bounds neighbors are treated as very low
                 // (-128) so map edges always generate walls down to the void.
                 bool has_walls = false;
-                int8_t left_h = pz_map_in_bounds(map, x - 1, y)
-                    ? pz_map_get_height(map, x - 1, y)
-                    : INT8_MIN;
-                int8_t right_h = pz_map_in_bounds(map, x + 1, y)
-                    ? pz_map_get_height(map, x + 1, y)
-                    : INT8_MIN;
-                int8_t front_h = pz_map_in_bounds(map, x, y + 1)
-                    ? pz_map_get_height(map, x, y + 1)
-                    : INT8_MIN;
-                int8_t back_h = pz_map_in_bounds(map, x, y - 1)
-                    ? pz_map_get_height(map, x, y - 1)
-                    : INT8_MIN;
+                bool has_edge = false;
+                int8_t left_h, right_h, front_h, back_h;
+                if (pz_map_in_bounds(map, x - 1, y)) {
+                    left_h = pz_map_get_height(map, x - 1, y);
+                } else {
+                    left_h = INT8_MIN;
+                    has_edge = true;
+                }
+                if (pz_map_in_bounds(map, x + 1, y)) {
+                    right_h = pz_map_get_height(map, x + 1, y);
+                } else {
+                    right_h = INT8_MIN;
+                    has_edge = true;
+                }
+                if (pz_map_in_bounds(map, x, y + 1)) {
+                    front_h = pz_map_get_height(map, x, y + 1);
+                } else {
+                    front_h = INT8_MIN;
+                    has_edge = true;
+                }
+                if (pz_map_in_bounds(map, x, y - 1)) {
+                    back_h = pz_map_get_height(map, x, y - 1);
+                } else {
+                    back_h = INT8_MIN;
+                    has_edge = true;
+                }
 
                 if (left_h < h || right_h < h || front_h < h || back_h < h) {
                     has_walls = true;
                 }
 
                 if (has_walls) {
-                    // Find the lowest neighbor to determine wall extent
-                    int8_t min_neighbor = left_h;
-                    if (right_h < min_neighbor)
+                    // Find the lowest IN-BOUNDS neighbor to determine wall
+                    // extent. Edge neighbors (INT8_MIN) are excluded - they
+                    // get clamped separately so they don't affect interior
+                    // walls.
+                    int8_t min_neighbor = h; // Start with own height
+                    if (left_h != INT8_MIN && left_h < min_neighbor)
+                        min_neighbor = left_h;
+                    if (right_h != INT8_MIN && right_h < min_neighbor)
                         min_neighbor = right_h;
-                    if (front_h < min_neighbor)
+                    if (front_h != INT8_MIN && front_h < min_neighbor)
                         min_neighbor = front_h;
-                    if (back_h < min_neighbor)
+                    if (back_h != INT8_MIN && back_h < min_neighbor)
                         min_neighbor = back_h;
 
-                    // Clamp min_neighbor to -1 for map edges (don't extend
-                    // walls infinitely into the void - just 1 unit below
-                    // ground)
-                    if (min_neighbor < -1)
+                    // For edge tiles, ensure walls extend at least 1 unit below
+                    // ground level to cover the void
+                    if (has_edge && min_neighbor > -1)
                         min_neighbor = -1;
 
                     // Wall goes from min_neighbor level to this tile's level

@@ -157,6 +157,12 @@ static void editor_generate_tag_name(
     pz_editor *editor, pz_tag_type type, char *out, size_t out_size);
 static void editor_init_tag_def(
     pz_editor *editor, pz_tag_def *def, pz_tag_type type);
+static bool editor_tag_supports_rotation(const pz_tag_def *def);
+static float *editor_get_tag_angle(pz_tag_def *def);
+static void editor_enter_rotation_mode(
+    pz_editor *editor, int tile_x, int tile_y);
+static void editor_exit_rotation_mode(pz_editor *editor, bool cancel);
+static void editor_update_rotation(pz_editor *editor);
 
 // ============================================================================
 // Lifecycle
@@ -234,13 +240,23 @@ pz_editor_create(pz_renderer *renderer, pz_texture_manager *tex_mgr,
     }
 
     // Create hover highlight buffer (dynamic, for ghost preview)
-    // 4 lines x 2 vertices = 8 vertices, each 7 floats (pos3 + color4)
+    // 4 lines x 2 vertices = 8 vertices for highlight
+    // Each vertex: 7 floats (pos3 + color4)
     pz_buffer_desc hover_buf_desc = {
         .type = PZ_BUFFER_VERTEX,
         .usage = PZ_BUFFER_STREAM,
         .size = 8 * 7 * sizeof(float),
     };
     editor->hover_vb = pz_renderer_create_buffer(renderer, &hover_buf_desc);
+
+    // Create arrow buffer for facing direction indicators
+    // Max 64 arrows x 6 vertices each = 384 vertices
+    pz_buffer_desc arrow_buf_desc = {
+        .type = PZ_BUFFER_VERTEX,
+        .usage = PZ_BUFFER_STREAM,
+        .size = 64 * 6 * 7 * sizeof(float),
+    };
+    editor->arrow_vb = pz_renderer_create_buffer(renderer, &arrow_buf_desc);
 
     // Create editor UI
     editor->ui = pz_editor_ui_create(renderer, font_mgr);
@@ -263,6 +279,9 @@ pz_editor_destroy(pz_editor *editor)
     }
     if (editor->hover_vb != PZ_INVALID_HANDLE) {
         pz_renderer_destroy_buffer(editor->renderer, editor->hover_vb);
+    }
+    if (editor->arrow_vb != PZ_INVALID_HANDLE) {
+        pz_renderer_destroy_buffer(editor->renderer, editor->arrow_vb);
     }
     if (editor->grid_pipeline != PZ_INVALID_HANDLE) {
         pz_renderer_destroy_pipeline(editor->renderer, editor->grid_pipeline);
@@ -499,6 +518,11 @@ pz_editor_update(pz_editor *editor, float dt)
     // Update hover state
     editor_update_hover(editor);
 
+    // Update rotation if in rotation mode
+    if (editor->rotation_mode) {
+        editor_update_rotation(editor);
+    }
+
     // Auto-save if dirty and auto-save is enabled
     if (editor->dirty && editor->auto_save_enabled) {
         double now = pz_time_now();
@@ -533,10 +557,37 @@ pz_editor_mouse_down(pz_editor *editor, int button)
             return;
         }
 
+        // If in rotation mode, click commits the rotation
+        if (editor->rotation_mode) {
+            editor_exit_rotation_mode(editor, false);
+            return;
+        }
+
         // Apply edit on click
         if (editor->hover_valid) {
             pz_editor_slot *slot = &editor->slots[editor->selected_slot];
             if (slot->type == PZ_EDITOR_SLOT_TAG) {
+                // Check if there's an existing tag at this tile
+                int existing = pz_map_find_tag_placement(editor->map,
+                    editor->hover_tile_x, editor->hover_tile_y, -1);
+
+                if (existing >= 0) {
+                    // Click on existing tag enters rotation mode (if rotatable)
+                    int tag_idx
+                        = editor->map->tag_placements[existing].tag_index;
+                    if (tag_idx >= 0 && tag_idx < editor->map->tag_def_count) {
+                        pz_tag_def *def = &editor->map->tag_defs[tag_idx];
+                        if (editor_tag_supports_rotation(def)) {
+                            editor_enter_rotation_mode(editor,
+                                editor->hover_tile_x, editor->hover_tile_y);
+                            return;
+                        }
+                    }
+                    // Non-rotatable tag clicked - do nothing (don't replace)
+                    return;
+                }
+
+                // No existing tag - place new one
                 editor_place_tag(editor, editor->hover_tile_x,
                     editor->hover_tile_y, slot->tag_name);
             } else {
@@ -551,12 +602,24 @@ pz_editor_mouse_down(pz_editor *editor, int button)
             return;
         }
 
+        // Right-click cancels rotation mode
+        if (editor->rotation_mode) {
+            editor_exit_rotation_mode(editor, true);
+            return;
+        }
+
         // Apply edit on click
         if (editor->hover_valid) {
             pz_editor_slot *slot = &editor->slots[editor->selected_slot];
             if (slot->type == PZ_EDITOR_SLOT_TAG) {
-                editor_remove_tag(editor, editor->hover_tile_x,
-                    editor->hover_tile_y, slot->tag_name);
+                // Right-click removes tag at this tile (any tag, not just
+                // selected)
+                int existing = pz_map_find_tag_placement(editor->map,
+                    editor->hover_tile_x, editor->hover_tile_y, -1);
+                if (existing >= 0) {
+                    pz_map_remove_tag_placement(editor->map, existing);
+                    editor_mark_tags_dirty(editor);
+                }
             } else {
                 editor_apply_edit(
                     editor, editor->hover_tile_x, editor->hover_tile_y, false);
@@ -745,6 +808,11 @@ pz_editor_key_down(pz_editor *editor, int keycode, bool repeat)
 
     // Escape key - close dialogs or show close confirmation
     if (keycode == 256) { // SAPP_KEYCODE_ESCAPE
+        // Cancel rotation mode first
+        if (editor->rotation_mode) {
+            editor_exit_rotation_mode(editor, true);
+            return true;
+        }
         // Close dialogs in order of priority
         if (editor->confirm_close_open) {
             editor_close_dialog(editor, &editor->confirm_close_open,
@@ -1079,6 +1147,139 @@ pz_editor_render(pz_editor *editor, const pz_mat4 *view_projection)
             .vertex_count = 8,
         };
         pz_renderer_draw(editor->renderer, &hover_cmd);
+    }
+
+    // Render facing direction arrows for all rotatable tags
+    // Batch all arrows into a single buffer update
+    if (editor->hover_pipeline != PZ_INVALID_HANDLE
+        && editor->arrow_vb != PZ_INVALID_HANDLE) {
+
+// Max 64 arrows, each with 6 vertices of 7 floats
+#define MAX_ARROWS 64
+        float arrow_data[MAX_ARROWS * 6 * 7];
+        int arrow_count = 0;
+
+        float tile_size = editor->map->tile_size;
+        float head_angle = 0.4f;
+
+        for (int i = 0;
+             i < editor->map->tag_placement_count && arrow_count < MAX_ARROWS;
+             i++) {
+            int tag_idx = editor->map->tag_placements[i].tag_index;
+            if (tag_idx < 0 || tag_idx >= editor->map->tag_def_count) {
+                continue;
+            }
+
+            pz_tag_def *def = &editor->map->tag_defs[tag_idx];
+            float *angle_ptr = editor_get_tag_angle(def);
+            if (!angle_ptr) {
+                continue; // Not rotatable
+            }
+
+            float angle = *angle_ptr;
+            int tx = editor->map->tag_placements[i].tile_x;
+            int ty = editor->map->tag_placements[i].tile_y;
+            pz_vec2 tile_world = pz_map_tile_to_world(editor->map, tx, ty);
+            float y = editor_get_tile_height(editor, tx, ty) + 0.1f;
+
+            // Arrow parameters depend on whether we're rotating this specific
+            // tag
+            bool is_rotating = editor->rotation_mode
+                && tag_idx == editor->rotation_tag_def_index;
+            float arrow_len = is_rotating ? tile_size * 0.7f : tile_size * 0.6f;
+            float head_len = is_rotating ? tile_size * 0.25f : tile_size * 0.2f;
+
+            // Color: bright yellow if rotating, white with transparency
+            // otherwise
+            float ar, ag, ab, aa;
+            if (is_rotating) {
+                ar = 1.0f;
+                ag = 1.0f;
+                ab = 0.0f;
+                aa = 1.0f;
+            } else {
+                ar = 1.0f;
+                ag = 1.0f;
+                ab = 1.0f;
+                aa = 0.8f;
+            }
+
+            float dx = sinf(angle);
+            float dz = cosf(angle);
+            float cx = tile_world.x;
+            float cz = tile_world.y;
+            float tip_x = cx + dx * arrow_len;
+            float tip_z = cz + dz * arrow_len;
+
+            float head_dx1 = sinf(angle + PZ_PI - head_angle);
+            float head_dz1 = cosf(angle + PZ_PI - head_angle);
+            float head_dx2 = sinf(angle + PZ_PI + head_angle);
+            float head_dz2 = cosf(angle + PZ_PI + head_angle);
+
+            // Add 6 vertices for this arrow (3 lines)
+            float *v = &arrow_data[arrow_count * 6 * 7];
+
+            // Line 1: shaft
+            v[0] = cx;
+            v[1] = y;
+            v[2] = cz;
+            v[3] = ar;
+            v[4] = ag;
+            v[5] = ab;
+            v[6] = aa;
+            v[7] = tip_x;
+            v[8] = y;
+            v[9] = tip_z;
+            v[10] = ar;
+            v[11] = ag;
+            v[12] = ab;
+            v[13] = aa;
+            // Line 2: arrowhead left
+            v[14] = tip_x;
+            v[15] = y;
+            v[16] = tip_z;
+            v[17] = ar;
+            v[18] = ag;
+            v[19] = ab;
+            v[20] = aa;
+            v[21] = tip_x + head_dx1 * head_len;
+            v[22] = y;
+            v[23] = tip_z + head_dz1 * head_len;
+            v[24] = ar;
+            v[25] = ag;
+            v[26] = ab;
+            v[27] = aa;
+            // Line 3: arrowhead right
+            v[28] = tip_x;
+            v[29] = y;
+            v[30] = tip_z;
+            v[31] = ar;
+            v[32] = ag;
+            v[33] = ab;
+            v[34] = aa;
+            v[35] = tip_x + head_dx2 * head_len;
+            v[36] = y;
+            v[37] = tip_z + head_dz2 * head_len;
+            v[38] = ar;
+            v[39] = ag;
+            v[40] = ab;
+            v[41] = aa;
+
+            arrow_count++;
+        }
+
+        if (arrow_count > 0) {
+            pz_renderer_update_buffer(editor->renderer, editor->arrow_vb, 0,
+                arrow_data, (size_t)(arrow_count * 6 * 7 * sizeof(float)));
+
+            pz_draw_cmd arrow_cmd = {
+                .pipeline = editor->hover_pipeline,
+                .vertex_buffer = editor->arrow_vb,
+                .vertex_count = arrow_count * 6,
+            };
+            pz_renderer_draw(editor->renderer, &arrow_cmd);
+        }
+#undef MAX_ARROWS
     }
 }
 
@@ -2076,6 +2277,159 @@ editor_mark_tags_dirty(pz_editor *editor)
 
     pz_map_rebuild_spawns_from_tags(editor->map);
     editor_mark_dirty(editor);
+}
+
+// Check if a tag def supports rotation (spawn or enemy types)
+static bool
+editor_tag_supports_rotation(const pz_tag_def *def)
+{
+    if (!def) {
+        return false;
+    }
+    return def->type == PZ_TAG_SPAWN || def->type == PZ_TAG_ENEMY;
+}
+
+// Get pointer to angle for a tag def (or NULL if not rotatable)
+static float *
+editor_get_tag_angle(pz_tag_def *def)
+{
+    if (!def) {
+        return NULL;
+    }
+    if (def->type == PZ_TAG_SPAWN) {
+        return &def->data.spawn.angle;
+    }
+    if (def->type == PZ_TAG_ENEMY) {
+        return &def->data.enemy.angle;
+    }
+    return NULL;
+}
+
+// Enter rotation mode for a tag at the given tile
+static void
+editor_enter_rotation_mode(pz_editor *editor, int tile_x, int tile_y)
+{
+    if (!editor || !editor->map) {
+        return;
+    }
+
+    // Find the tag placement at this tile
+    int placement_idx
+        = pz_map_find_tag_placement(editor->map, tile_x, tile_y, -1);
+    if (placement_idx < 0) {
+        return;
+    }
+
+    int tag_def_idx = editor->map->tag_placements[placement_idx].tag_index;
+    if (tag_def_idx < 0 || tag_def_idx >= editor->map->tag_def_count) {
+        return;
+    }
+
+    pz_tag_def *def = &editor->map->tag_defs[tag_def_idx];
+    if (!editor_tag_supports_rotation(def)) {
+        return;
+    }
+
+    float *angle = editor_get_tag_angle(def);
+    if (!angle) {
+        return;
+    }
+
+    editor->rotation_mode = true;
+    editor->rotation_tag_def_index = tag_def_idx;
+    editor->rotation_start_angle = *angle;
+}
+
+// Exit rotation mode (commit the angle)
+static void
+editor_exit_rotation_mode(pz_editor *editor, bool cancel)
+{
+    if (!editor || !editor->rotation_mode) {
+        return;
+    }
+
+    if (cancel && editor->rotation_tag_def_index >= 0
+        && editor->rotation_tag_def_index < editor->map->tag_def_count) {
+        // Restore original angle
+        pz_tag_def *def
+            = &editor->map->tag_defs[editor->rotation_tag_def_index];
+        float *angle = editor_get_tag_angle(def);
+        if (angle) {
+            *angle = editor->rotation_start_angle;
+        }
+    } else if (!cancel) {
+        // Mark dirty since we changed the angle
+        editor_mark_tags_dirty(editor);
+    }
+
+    editor->rotation_mode = false;
+    editor->rotation_tag_def_index = -1;
+}
+
+// Update rotation based on mouse position relative to tile center
+static void
+editor_update_rotation(pz_editor *editor)
+{
+    if (!editor || !editor->rotation_mode || !editor->map) {
+        return;
+    }
+
+    if (editor->rotation_tag_def_index < 0
+        || editor->rotation_tag_def_index >= editor->map->tag_def_count) {
+        return;
+    }
+
+    // Find all placements of this tag def to determine center
+    // (use the first placement we find for rotation center)
+    int tile_x = -1, tile_y = -1;
+    for (int i = 0; i < editor->map->tag_placement_count; i++) {
+        if (editor->map->tag_placements[i].tag_index
+            == editor->rotation_tag_def_index) {
+            tile_x = editor->map->tag_placements[i].tile_x;
+            tile_y = editor->map->tag_placements[i].tile_y;
+            break;
+        }
+    }
+
+    if (tile_x < 0 || tile_y < 0) {
+        return;
+    }
+
+    // Get world position of tile center
+    pz_vec2 tile_world = pz_map_tile_to_world(editor->map, tile_x, tile_y);
+
+    // Get mouse world position via ray-ground intersection
+    pz_vec3 ray_dir = pz_camera_screen_to_ray(
+        &editor->camera, (int)editor->mouse_x, (int)editor->mouse_y);
+    pz_vec3 ray_origin = editor->camera.position;
+
+    // Intersect with ground plane (y = tile height)
+    float tile_height = editor_get_tile_height(editor, tile_x, tile_y);
+    if (fabsf(ray_dir.y) < 0.0001f) {
+        return;
+    }
+    float t = (tile_height - ray_origin.y) / ray_dir.y;
+    if (t < 0.0f) {
+        return;
+    }
+    float mouse_world_x = ray_origin.x + ray_dir.x * t;
+    float mouse_world_z = ray_origin.z + ray_dir.z * t;
+
+    // Calculate angle from tile center to mouse
+    float dx = mouse_world_x - tile_world.x;
+    float dz = mouse_world_z - tile_world.y; // Note: tile_world.y is z-coord
+
+    // atan2 gives angle where 0 = +X axis, increasing counterclockwise
+    // For tank facing: 0 = facing +Z (down in screen space), positive = CCW
+    // So we use atan2(dx, dz) for angle where 0 = +Z
+    float angle = atan2f(dx, dz);
+
+    // Update the tag def's angle
+    pz_tag_def *def = &editor->map->tag_defs[editor->rotation_tag_def_index];
+    float *def_angle = editor_get_tag_angle(def);
+    if (def_angle) {
+        *def_angle = angle;
+    }
 }
 
 static void
