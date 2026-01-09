@@ -3242,7 +3242,9 @@ app_event(const sapp_event *event)
         }
         if (!event->key_repeat) {
             if (event->key_code == SAPP_KEYCODE_ESCAPE) {
+#ifndef __EMSCRIPTEN__
                 sapp_quit();
+#endif
             } else if (event->key_code == SAPP_KEYCODE_F) {
                 g_app.key_f_just_pressed = true;
             } else if (event->key_code == SAPP_KEYCODE_G) {
