@@ -85,6 +85,7 @@ typedef struct pz_editor {
     bool mouse_left_down;
     bool mouse_left_just_pressed;
     bool mouse_left_just_released;
+    bool mouse_right_down;
     bool mouse_right_just_pressed;
 
     // Dirty flag for auto-save
@@ -156,6 +157,14 @@ typedef struct pz_editor {
     bool rotation_mode;
     int rotation_tag_def_index; // Tag def being rotated (-1 if none)
     float rotation_start_angle; // Original angle for cancel
+
+    // Paint mode: drag to apply same edit to multiple tiles
+    bool paint_mode; // True while dragging to paint tiles
+    int paint_last_tile_x; // Last tile that was painted
+    int paint_last_tile_y;
+    int8_t paint_target_height; // Height to paint with
+    uint8_t paint_target_tile_index; // Tile index to paint with
+    bool paint_is_raise; // True for left-click (raise), false for right (lower)
 
     int window_z_counter;
 

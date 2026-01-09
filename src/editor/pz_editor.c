@@ -518,6 +518,50 @@ pz_editor_update(pz_editor *editor, float dt)
     // Update hover state
     editor_update_hover(editor);
 
+    // Paint mode: apply paint when dragging to new tiles
+    if (editor->paint_mode && editor->hover_valid) {
+        // Check if we moved to a different tile
+        if (editor->hover_tile_x != editor->paint_last_tile_x
+            || editor->hover_tile_y != editor->paint_last_tile_y) {
+
+            int tile_x = editor->hover_tile_x;
+            int tile_y = editor->hover_tile_y;
+
+            // Expand map if needed
+            if (!pz_map_in_bounds(editor->map, tile_x, tile_y)) {
+                int offset_x = 0, offset_y = 0;
+                if (editor_expand_map_to_include(
+                        editor, tile_x, tile_y, &offset_x, &offset_y)) {
+                    tile_x += offset_x;
+                    tile_y += offset_y;
+                    editor->paint_last_tile_x += offset_x;
+                    editor->paint_last_tile_y += offset_y;
+                    editor->camera_zoom = editor_calculate_zoom(editor);
+                }
+            }
+
+            // Apply paint if tile is now in bounds
+            if (pz_map_in_bounds(editor->map, tile_x, tile_y)) {
+                // Check for entity - don't paint over entities
+                bool has_entity
+                    = pz_map_find_tag_placement(editor->map, tile_x, tile_y, -1)
+                    >= 0;
+                if (!has_entity) {
+                    pz_map_cell new_cell = {
+                        .height = editor->paint_target_height,
+                        .tile_index = editor->paint_target_tile_index,
+                    };
+                    pz_map_set_cell(editor->map, tile_x, tile_y, new_cell);
+                    editor_mark_dirty(editor);
+                }
+            }
+
+            // Update last painted tile
+            editor->paint_last_tile_x = editor->hover_tile_x;
+            editor->paint_last_tile_y = editor->hover_tile_y;
+        }
+    }
+
     // Update rotation if in rotation mode
     if (editor->rotation_mode) {
         editor_update_rotation(editor);
@@ -614,9 +658,24 @@ pz_editor_mouse_down(pz_editor *editor, int button)
 
                 editor_apply_edit(
                     editor, editor->hover_tile_x, editor->hover_tile_y, true);
+
+                // Start paint mode - record the resulting tile state
+                if (pz_map_in_bounds(
+                        editor->map, editor->hover_tile_x, editor->hover_tile_y)
+                    && slot->type == PZ_EDITOR_SLOT_TILE) {
+                    pz_map_cell cell = pz_map_get_cell(editor->map,
+                        editor->hover_tile_x, editor->hover_tile_y);
+                    editor->paint_mode = true;
+                    editor->paint_last_tile_x = editor->hover_tile_x;
+                    editor->paint_last_tile_y = editor->hover_tile_y;
+                    editor->paint_target_height = cell.height;
+                    editor->paint_target_tile_index = cell.tile_index;
+                    editor->paint_is_raise = true;
+                }
             }
         }
     } else if (button == 1) { // Right button
+        editor->mouse_right_down = true;
         editor->mouse_right_just_pressed = true;
 
         if (editor->ui_wants_mouse || editor_mouse_over_dialog(editor)) {
@@ -642,6 +701,20 @@ pz_editor_mouse_down(pz_editor *editor, int button)
                 // No entity present, apply height edit for tile slots
                 editor_apply_edit(
                     editor, editor->hover_tile_x, editor->hover_tile_y, false);
+
+                // Start paint mode for lowering
+                if (pz_map_in_bounds(
+                        editor->map, editor->hover_tile_x, editor->hover_tile_y)
+                    && slot->type == PZ_EDITOR_SLOT_TILE) {
+                    pz_map_cell cell = pz_map_get_cell(editor->map,
+                        editor->hover_tile_x, editor->hover_tile_y);
+                    editor->paint_mode = true;
+                    editor->paint_last_tile_x = editor->hover_tile_x;
+                    editor->paint_last_tile_y = editor->hover_tile_y;
+                    editor->paint_target_height = cell.height;
+                    editor->paint_target_tile_index = cell.tile_index;
+                    editor->paint_is_raise = false;
+                }
             }
         }
     }
@@ -657,6 +730,16 @@ pz_editor_mouse_up(pz_editor *editor, int button)
     if (button == 0) {
         editor->mouse_left_down = false;
         editor->mouse_left_just_released = true;
+        // End paint mode on left button release
+        if (editor->paint_mode && editor->paint_is_raise) {
+            editor->paint_mode = false;
+        }
+    } else if (button == 1) {
+        editor->mouse_right_down = false;
+        // End paint mode on right button release
+        if (editor->paint_mode && !editor->paint_is_raise) {
+            editor->paint_mode = false;
+        }
     }
 }
 
