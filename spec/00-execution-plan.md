@@ -607,11 +607,132 @@ This document breaks the project into small, verifiable milestones. Each milesto
 
 ---
 
-## Phase 13-15: Networking (DEFERRED)
-*Multiplayer deferred until single-player campaign is complete*
+## Phase 13: Networking Foundation
+*WebRTC P2P multiplayer*
 
-Networking phases (Foundation, picoquic Integration, Game Protocol) are deferred.
-Focus is on single-player campaign mode with enemy AI first.
+### M13.1: libdatachannel Integration
+- [ ] Add libdatachannel to CMake (FetchContent)
+- [ ] Build test that creates PeerConnection
+- [ ] Verify STUN connectivity with public server
+
+**Validation:** Test connects to STUN, gets public IP candidate
+
+### M13.2: Network Wrapper API
+- [ ] Implement `pz_net` API (see spec/04-network-protocol.md)
+- [ ] Desktop implementation using libdatachannel
+- [ ] Create/destroy lifecycle
+- [ ] ICE gathering and SDP generation
+
+**Validation:** `pz_net_create_offer()` returns valid SDP string
+
+### M13.3: Offer URL Encoding
+- [ ] Minify SDP (strip unnecessary fields)
+- [ ] Compress with zlib/miniz
+- [ ] Base64 URL-safe encode
+- [ ] Parse offer from URL fragment
+
+**Validation:** 
+- Offer round-trips through encode/decode
+- URL is <1000 characters for typical offer
+
+### M13.4: QR Code Generation
+- [ ] Integrate qrcodegen (single header)
+- [ ] Render QR as texture
+- [ ] Display in host lobby UI
+
+**Validation:** QR code displays, scannable with phone
+
+### M13.5: Host Lobby UI
+- [ ] "Host Game" screen
+- [ ] Show QR code + copyable URL
+- [ ] Player list (shows connected players)
+- [ ] "Start Game" button
+
+**Validation:** Can enter host lobby, see invite info
+
+### M13.6: Join Flow
+- [ ] "Join Game" screen  
+- [ ] Parse offer from URL/paste
+- [ ] Connect to host
+- [ ] Send join request, receive accept
+
+**Validation:** Desktop client can join via pasted URL
+
+---
+
+## Phase 14: Browser Networking
+*WASM WebRTC support*
+
+### M14.1: Browser WebRTC Shim
+- [ ] JavaScript `PZNet` class wrapping RTCPeerConnection
+- [ ] Emscripten JS library bindings
+- [ ] Same `pz_net` C API, browser implementation
+
+**Validation:** WASM build can create offer/answer
+
+### M14.2: URL Fragment Handling
+- [ ] Detect `#join/...` on page load
+- [ ] Auto-parse and connect
+- [ ] Show "Connecting..." UI
+
+**Validation:** Open join URL in browser, game loads and connects
+
+### M14.3: Cross-Platform Connection
+- [ ] Desktop host ↔ Browser client
+- [ ] Browser host ↔ Desktop client
+- [ ] Browser host ↔ Browser client
+
+**Validation:** All combinations can establish DataChannel
+
+---
+
+## Phase 15: Multiplayer Game Protocol
+*Actual networked gameplay*
+
+### M15.1: Host Game Loop
+- [ ] Host runs authoritative simulation
+- [ ] Receive inputs from connected players
+- [ ] Broadcast game state deltas
+- [ ] Handle player join mid-game
+
+**Validation:** Host simulates, sends state at 20-30 Hz
+
+### M15.2: Client Prediction
+- [ ] Client predicts local tank movement
+- [ ] Record input history
+- [ ] Reconcile on server state arrival
+- [ ] Smooth correction (no teleports)
+
+**Validation:** Client movement feels responsive, corrects smoothly
+
+### M15.3: Entity Interpolation
+- [ ] Buffer remote entity states
+- [ ] Render at interpolated position (100ms behind)
+- [ ] Handle packet loss gracefully
+
+**Validation:** Remote tanks move smoothly
+
+### M15.4: Reliable Events
+- [ ] Chat messages via reliable channel
+- [ ] Kill events, game events
+- [ ] Player join/leave notifications
+
+**Validation:** Chat works, events display correctly
+
+### M15.5: Multiplayer Game Modes
+- [ ] Deathmatch with remote players
+- [ ] Score synchronization
+- [ ] Round start/end
+
+**Validation:** Play deathmatch with 2+ players, scores match
+
+### M15.6: Connection Resilience
+- [ ] Handle temporary disconnects
+- [ ] Reconnection attempt
+- [ ] Graceful disconnect notification
+- [ ] Timeout detection
+
+**Validation:** Unplug network briefly, game recovers or shows disconnect
 
 ---
 
@@ -666,7 +787,11 @@ M6.1 → M6.2 → M6.3 → M6.4 → M6.5
               ↓
             M16.x
               ↓
-        (Networking deferred)
+     M13.x (WebRTC Foundation)
+              ↓
+     M14.x (Browser Networking)
+              ↓
+     M15.x (Multiplayer Protocol)
 ```
 
 ---
@@ -718,9 +843,16 @@ M6.1 → M6.2 → M6.3 → M6.4 → M6.5
 | 12 | 4 | 4-6 hours |
 | 16 | 3 | 3-4 hours |
 
-**Campaign Total: ~50-73 hours** of focused development
+**Single-player Total: ~50-73 hours** of focused development
 
-Networking phases (13-15) deferred, would add ~18-27 hours
+| Phase | Milestones | Estimated Time |
+|-------|------------|----------------|
+| 13 | 6 | 8-12 hours |
+| 14 | 3 | 4-6 hours |
+| 15 | 6 | 10-14 hours |
+
+**Networking Total: ~22-32 hours**
+**Full Game Total: ~72-105 hours**
 
 ---
 

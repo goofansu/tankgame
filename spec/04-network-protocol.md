@@ -2,170 +2,223 @@
 
 ## Architecture Overview
 
-**Client-Server model:**
-- Dedicated server (can be hosted by a player)
-- Server is authoritative for game state
-- Clients send inputs, receive state updates
-- Client-side prediction for responsive feel
-- Server reconciliation to correct mispredictions
+**Peer-to-Peer with Host Authority:**
+- One player hosts (becomes authoritative server)
+- Other players connect via WebRTC DataChannels
+- Host validates all inputs, broadcasts state
+- Works desktop↔desktop, desktop↔browser, browser↔browser
 
-## Transport Layer: QUIC via picoquic
+## Transport Layer: WebRTC DataChannels
 
-We use **QUIC** (RFC 9000) as our transport protocol, implemented via [picoquic](https://github.com/private-octopus/picoquic).
-
-### Why QUIC?
+We use **WebRTC DataChannels** for all networking:
 
 | Feature | Benefit for Game |
 |---------|------------------|
-| **Datagrams (RFC 9221)** | Unreliable, low-latency game state - like UDP but encrypted |
-| **Multiplexed streams** | Reliable chat/events without head-of-line blocking |
-| **Built-in encryption** | TLS 1.3, no separate security layer needed |
-| **0-RTT connection** | Fast reconnects |
-| **Connection migration** | Survives IP changes (mobile, WiFi handoff) |
-| **WebTransport** | Browser support via HTTP/3 |
+| **P2P connections** | No dedicated server needed |
+| **NAT traversal** | ICE handles most NAT types automatically |
+| **Unreliable mode** | Low-latency game state (like UDP) |
+| **Reliable mode** | Chat, events, connection control |
+| **Browser native** | Works in all browsers including Safari |
+| **Encrypted** | DTLS, no separate security layer |
 
-### picoquic Overview
+### Implementation
 
-- Clean C implementation by Christian Huitema (QUIC spec co-author)
-- ~50k LOC, well-maintained
-- Dependencies: picotls + OpenSSL (or minicrypto for minimal builds)
+| Platform | Library |
+|----------|---------|
+| Desktop (C) | libdatachannel |
+| Browser (WASM) | Native RTCPeerConnection API |
+
+**libdatachannel:** https://github.com/paullouisageneau/libdatachannel
+- Clean C API
+- Small footprint (~50KB)
 - MIT license
+- DataChannel-focused (no overkill video/audio code)
 
-### QUIC Channel Design
+## Connection Handshake: QR Code + URL
 
-We use two types of QUIC channels:
+### The Problem
 
-1. **Datagrams** (unreliable, unordered) - for real-time game data:
-   - Client inputs
-   - Game state deltas
-   - Entity positions
+WebRTC requires exchanging SDP (Session Description Protocol) offers/answers to establish connections. Normally this needs a signaling server, but we use **out-of-band signaling** via QR codes and URLs.
 
-2. **Streams** (reliable, ordered) - for important events:
-   - Stream 0: Connection handshake, player join/leave
-   - Stream 2: Chat messages
-   - Stream 4: Game events (kills, captures, round start/end)
+### Join URL Format
 
 ```
-┌─────────────────────────────────────────────────┐
-│                   QUIC Connection               │
-├─────────────────────────────────────────────────┤
-│  Datagrams (unreliable)                         │
-│  ├─ Client Input                                │
-│  ├─ Game State Delta                            │
-│  └─ Entity Updates                              │
-├─────────────────────────────────────────────────┤
-│  Stream 0 (reliable) - Control                  │
-│  ├─ Connect Request/Accept                      │
-│  ├─ Player Join/Leave                           │
-│  └─ Full Game State (on join)                   │
-├─────────────────────────────────────────────────┤
-│  Stream 2 (reliable) - Chat                     │
-│  └─ Chat Messages                               │
-├─────────────────────────────────────────────────┤
-│  Stream 4 (reliable) - Events                   │
-│  ├─ Kill Events                                 │
-│  ├─ Flag Captured                               │
-│  └─ Round Start/End                             │
-└─────────────────────────────────────────────────┘
+https://mitsuhiko.github.io/tankgame/#join/<COMPRESSED_OFFER>
 ```
 
-## picoquic Integration
+The URL fragment (`#join/...`) contains:
+- Compressed SDP offer
+- ICE candidates
+- Game metadata (host name, map, etc.)
 
-### Wrapper API
+When opened:
+- **Browser:** Loads WASM game, auto-joins with embedded offer
+- **Desktop:** Could register `tankgame://` URL scheme, or user pastes into game
 
-We wrap picoquic with a thin game-specific layer:
+### Offer Payload
 
-```c
-// Core QUIC context (wraps picoquic_quic_t)
-typedef struct pz_net_context {
-    picoquic_quic_t*     quic;
-    bool                 is_server;
-    uint64_t             current_time;
-    
-    // Callbacks
-    pz_net_callbacks     callbacks;
-    void*                userdata;
-} pz_net_context;
-
-// Connection (wraps picoquic_cnx_t)
-typedef struct pz_net_conn {
-    picoquic_cnx_t*      cnx;
-    pz_net_context*      ctx;
-    int                  client_id;
-    pz_conn_state        state;
-    
-    // Stats
-    float                rtt;
-    uint64_t             bytes_sent;
-    uint64_t             bytes_recv;
-} pz_net_conn;
-
-// Callbacks from network layer to game
-typedef struct pz_net_callbacks {
-    void (*on_connected)(pz_net_conn* conn, void* userdata);
-    void (*on_disconnected)(pz_net_conn* conn, void* userdata);
-    void (*on_datagram)(pz_net_conn* conn, const uint8_t* data, size_t len, void* userdata);
-    void (*on_stream_data)(pz_net_conn* conn, uint64_t stream_id, const uint8_t* data, size_t len, bool fin, void* userdata);
-} pz_net_callbacks;
-
-// Server API
-pz_net_context* pz_net_server_create(int port, const char* cert_file, const char* key_file);
-void            pz_net_server_update(pz_net_context* ctx);  // Call each frame
-
-// Client API  
-pz_net_context* pz_net_client_create(void);
-pz_net_conn*    pz_net_client_connect(pz_net_context* ctx, const char* host, int port);
-void            pz_net_client_update(pz_net_context* ctx);  // Call each frame
-
-// Sending
-void pz_net_send_datagram(pz_net_conn* conn, const uint8_t* data, size_t len);
-void pz_net_send_stream(pz_net_conn* conn, uint64_t stream_id, const uint8_t* data, size_t len, bool fin);
-
-// Cleanup
-void pz_net_conn_close(pz_net_conn* conn);
-void pz_net_context_destroy(pz_net_context* ctx);
 ```
-
-### picoquic Callback Handler
-
-```c
-// Main callback from picoquic - routes to our callbacks
-static int pz_picoquic_callback(picoquic_cnx_t* cnx,
-    uint64_t stream_id, uint8_t* bytes, size_t length,
-    picoquic_call_back_event_t event, void* callback_ctx, void* stream_ctx)
 {
-    pz_net_conn* conn = (pz_net_conn*)callback_ctx;
-    pz_net_context* ctx = conn->ctx;
-    
-    switch (event) {
-        case picoquic_callback_stream_data:
-        case picoquic_callback_stream_fin:
-            if (ctx->callbacks.on_stream_data) {
-                ctx->callbacks.on_stream_data(conn, stream_id, bytes, length,
-                    event == picoquic_callback_stream_fin, ctx->userdata);
-            }
-            break;
-            
-        case picoquic_callback_datagram:
-            if (ctx->callbacks.on_datagram) {
-                ctx->callbacks.on_datagram(conn, bytes, length, ctx->userdata);
-            }
-            break;
-            
-        case picoquic_callback_close:
-        case picoquic_callback_application_close:
-            if (ctx->callbacks.on_disconnected) {
-                ctx->callbacks.on_disconnected(conn, ctx->userdata);
-            }
-            break;
-            
-        // ... other events
-    }
-    return 0;
+  "v": 1,                          // Protocol version
+  "name": "Player1",               // Host name
+  "map": "battlefield",            // Map name  
+  "sdp": "<minified SDP>",         // SDP offer
+  "ice": ["candidate:..."]         // ICE candidates
 }
 ```
 
-## Game Protocol
+Compressed with zlib/deflate → Base64 URL-safe encoding → ~400-800 chars
+
+### Handshake Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              HOST GAME                                      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  1. Player clicks "Host Game"                                               │
+│  2. Create RTCPeerConnection with STUN servers                              │
+│  3. Create DataChannels:                                                    │
+│     - "game" (unreliable, unordered) - inputs & state                       │
+│     - "reliable" (reliable, ordered) - chat, events, control                │
+│  4. Create SDP offer                                                        │
+│  5. Wait for ICE gathering complete                                         │
+│  6. Compress offer + candidates into URL                                    │
+│  7. Display QR code + copyable URL                                          │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                                                                     │   │
+│  │   ┌───────────────┐    Share this link to invite players:          │   │
+│  │   │ ▄▄▄▄▄ ▄▄▄▄▄ │                                                  │   │
+│  │   │ █ ▄▄▄ █   █ │    https://mitsuhiko.github.io/tankgame/        │   │
+│  │   │ █ ███ █ █ █ │    #join/eJxNj8EKwjAQRP9lzl...                  │   │
+│  │   │ █▄▄▄█ █▄█▄█ │                                                  │   │
+│  │   │ ▄▄▄▄▄▄▄▄▄▄▄ │    [Copy Link]  [Copy for Desktop]              │   │
+│  │   └───────────────┘                                                 │   │
+│  │                                                                     │   │
+│  │   Waiting for players...                  [Start Game]              │   │
+│  │                                                                     │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              JOIN GAME                                      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  Browser: Click link → Game loads → Auto-connect                            │
+│                                                                             │
+│  Desktop: Paste link in "Join Game" screen                                  │
+│                                                                             │
+│  1. Parse offer from URL fragment                                           │
+│  2. Create RTCPeerConnection with same STUN servers                         │
+│  3. Set remote description (the offer)                                      │
+│  4. Create SDP answer                                                       │
+│  5. Wait for ICE gathering complete                                         │
+│  6. Send answer back to host via DataChannel (once connected)               │
+│     OR display answer for manual exchange (fallback)                        │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### The Answer Problem
+
+WebRTC needs a **bidirectional** exchange - host sends offer, joiner sends answer. Options:
+
+#### Option A: Trickle via DataChannel (Preferred)
+
+Once ICE finds *any* working candidate pair, the DataChannel opens. We send the full answer through it:
+
+```
+1. Host creates offer with all ICE candidates
+2. Joiner gets offer via URL
+3. Joiner sets remote description
+4. ICE starts, finds candidate pair, DataChannel opens
+5. Joiner sends answer via DataChannel
+6. Host sets remote description
+7. Connection fully established
+```
+
+This works because ICE can establish connectivity before the answer is formally set, as long as the offer is processed.
+
+#### Option B: Two-Way QR/URL (Fallback)
+
+If Option A fails (strict NAT), fall back to manual answer exchange:
+
+```
+Host shows:  QR/URL with offer
+Joiner shows: QR/short-code with answer
+Host enters:  Joiner's code
+
+Joiner's answer can be shorter (~200 bytes) since it doesn't need ICE candidates 
+if we use ice-lite or aggressive nomination.
+```
+
+#### Option C: Tiny Relay (Last Resort)
+
+For symmetric NAT where P2P is impossible:
+- Lightweight WebSocket relay (few KB/s per connection)
+- Could be a free Cloudflare Worker or similar
+- Only used when direct P2P fails
+
+### ICE Servers
+
+```c
+// Public STUN servers (free, no account needed)
+const char* ice_servers[] = {
+    "stun:stun.l.google.com:19302",
+    "stun:stun1.l.google.com:19302",
+    "stun:stun.cloudflare.com:3478",
+    NULL
+};
+```
+
+TURN servers (relay) could be added for strict NAT, but most home networks work with STUN only.
+
+## DataChannel Design
+
+Two channels with different reliability modes:
+
+### "game" Channel (Unreliable, Unordered)
+
+For real-time game data where latest state matters more than every packet:
+
+```c
+rtc_data_channel_init config = {
+    .reliability = {
+        .unordered = true,
+        .unreliable = true,
+        .maxPacketLifeTime = 100,  // ms, drop after this
+    }
+};
+```
+
+Messages:
+- Client inputs (60 Hz)
+- Game state deltas (20-30 Hz)
+- Entity positions
+
+### "reliable" Channel (Reliable, Ordered)
+
+For important events that must arrive:
+
+```c
+rtc_data_channel_init config = {
+    .reliability = {
+        .unordered = false,
+        .unreliable = false,
+    }
+};
+```
+
+Messages:
+- Connection handshake
+- Player join/leave
+- Chat messages
+- Kill events, flag captures, round start/end
+- Full game state (on join)
+
+## Message Protocol
 
 Binary protocol, little-endian. All messages have a 1-byte type header.
 
@@ -173,27 +226,27 @@ Binary protocol, little-endian. All messages have a 1-byte type header.
 
 ```c
 typedef enum pz_msg_type {
-    // Via Stream 0 (reliable control)
-    PZ_MSG_CONNECT_REQUEST = 1,
-    PZ_MSG_CONNECT_ACCEPT,
-    PZ_MSG_CONNECT_DENY,
-    PZ_MSG_PLAYER_JOIN,
-    PZ_MSG_PLAYER_LEAVE,
-    PZ_MSG_FULL_STATE,
+    // Control messages (reliable channel)
+    PZ_MSG_JOIN_REQUEST = 1,     // Joiner → Host
+    PZ_MSG_JOIN_ACCEPT,          // Host → Joiner
+    PZ_MSG_JOIN_DENY,            // Host → Joiner
+    PZ_MSG_PLAYER_JOINED,        // Host → All (broadcast)
+    PZ_MSG_PLAYER_LEFT,          // Host → All
+    PZ_MSG_FULL_STATE,           // Host → Joiner (on join)
+    PZ_MSG_WEBRTC_ANSWER,        // Joiner → Host (SDP answer)
     
-    // Via Datagrams (unreliable game data)
-    PZ_MSG_CLIENT_INPUT = 32,
-    PZ_MSG_GAME_DELTA,
+    // Game messages (unreliable channel)
+    PZ_MSG_CLIENT_INPUT = 32,    // Player → Host
+    PZ_MSG_GAME_DELTA,           // Host → All
     
-    // Via Stream 2 (reliable chat)
-    PZ_MSG_CHAT = 64,
+    // Chat (reliable channel)
+    PZ_MSG_CHAT = 64,            // Any → Host → All
     
-    // Via Stream 4 (reliable events)
+    // Events (reliable channel)
     PZ_MSG_EVENT_KILL = 96,
     PZ_MSG_EVENT_FLAG_TAKEN,
     PZ_MSG_EVENT_FLAG_CAPTURED,
     PZ_MSG_EVENT_FLAG_RETURNED,
-    PZ_MSG_EVENT_ZONE_CAPTURED,
     PZ_MSG_EVENT_ROUND_START,
     PZ_MSG_EVENT_ROUND_END,
 } pz_msg_type;
@@ -201,42 +254,39 @@ typedef enum pz_msg_type {
 
 ### Key Messages
 
-**Connect Request (Client → Server, Stream 0):**
+**Join Request (Joiner → Host, reliable):**
 ```c
-typedef struct pz_msg_connect_request {
-    uint8_t  type;              // PZ_MSG_CONNECT_REQUEST
+typedef struct pz_msg_join_request {
+    uint8_t  type;              // PZ_MSG_JOIN_REQUEST
     uint8_t  protocol_version;
     uint8_t  name_len;
-    char     name[32];          // Player name (up to 32 chars)
-    uint8_t  preferred_team;    // 0 = auto-assign
-} pz_msg_connect_request;
+    char     name[32];          // Player name
+} pz_msg_join_request;
 ```
 
-**Connect Accept (Server → Client, Stream 0):**
+**Join Accept (Host → Joiner, reliable):**
 ```c
-typedef struct pz_msg_connect_accept {
-    uint8_t  type;              // PZ_MSG_CONNECT_ACCEPT
-    uint8_t  client_id;
+typedef struct pz_msg_join_accept {
+    uint8_t  type;              // PZ_MSG_JOIN_ACCEPT
+    uint8_t  player_id;         // Assigned player ID (1-255, 0 = host)
     uint8_t  team;
     uint32_t entity_id;         // Your tank's entity ID
-    uint32_t server_tick;
+    uint32_t host_tick;
     // Followed by full game state
-} pz_msg_connect_accept;
+} pz_msg_join_accept;
 ```
 
-**Client Input (Client → Server, Datagram):**
+**Client Input (Player → Host, unreliable):**
 ```c
 typedef struct pz_msg_client_input {
     uint8_t  type;              // PZ_MSG_CLIENT_INPUT
     uint32_t input_sequence;
-    uint32_t server_tick_ack;   // Last server tick client processed
+    uint32_t last_host_tick;    // Last tick player processed
     uint8_t  buttons;           // Bitfield
     uint16_t turret_angle;      // 0-65535 = 0-360°
 } pz_msg_client_input;
-```
 
-Buttons bitfield:
-```c
+// Button bitfield
 enum {
     PZ_INPUT_FORWARD  = 1 << 0,
     PZ_INPUT_BACKWARD = 1 << 1,
@@ -248,18 +298,14 @@ enum {
 };
 ```
 
-**Game Delta (Server → Client, Datagram):**
+**Game Delta (Host → All, unreliable):**
 ```c
 typedef struct pz_msg_game_delta {
     uint8_t  type;              // PZ_MSG_GAME_DELTA
-    uint32_t server_tick;
-    uint32_t your_last_input;   // For client reconciliation
-    uint8_t  tank_count;
-    // Followed by: pz_tank_state[tank_count]
-    uint8_t  projectile_count;
-    // Followed by: pz_projectile_state[projectile_count]
-    uint8_t  mine_count;
-    // Followed by: pz_mine_state[mine_count]
+    uint32_t host_tick;
+    uint8_t  player_count;
+    // Per-player: last_input_seq (for their reconciliation)
+    // Followed by entity states
 } pz_msg_game_delta;
 
 typedef struct pz_tank_state {
@@ -270,222 +316,281 @@ typedef struct pz_tank_state {
     uint8_t  hp;
     uint8_t  weapon;
     uint8_t  ammo;
-    uint8_t  flags;             // PZ_TANK_FLAG_*
+    uint8_t  flags;
 } pz_tank_state;
-
-enum {
-    PZ_TANK_FLAG_MOVING  = 1 << 0,
-    PZ_TANK_FLAG_FIRING  = 1 << 1,
-    PZ_TANK_FLAG_DEAD    = 1 << 2,
-    PZ_TANK_FLAG_INVULN  = 1 << 3,
-};
 ```
 
-**Game Event (Server → Client, Stream 4):**
+## Network Wrapper API
+
+Unified C API that works with both libdatachannel (desktop) and browser WebRTC:
+
 ```c
-typedef struct pz_msg_event_kill {
-    uint8_t  type;              // PZ_MSG_EVENT_KILL
-    uint32_t tick;
-    uint8_t  killer_client_id;
-    uint8_t  victim_client_id;
-    uint8_t  weapon;
-} pz_msg_event_kill;
+// pz_net.h - Platform-agnostic networking API
+
+typedef struct pz_net_config {
+    const char** ice_servers;    // NULL-terminated array
+    bool         is_host;
+    const char*  player_name;
+    
+    // Callbacks
+    void (*on_connected)(int player_id, const char* name, void* userdata);
+    void (*on_disconnected)(int player_id, void* userdata);
+    void (*on_game_message)(int player_id, const uint8_t* data, size_t len, void* userdata);
+    void (*on_reliable_message)(int player_id, const uint8_t* data, size_t len, void* userdata);
+    void* userdata;
+} pz_net_config;
+
+typedef struct pz_net pz_net;
+
+// Lifecycle
+pz_net*     pz_net_create(const pz_net_config* config);
+void        pz_net_destroy(pz_net* net);
+void        pz_net_update(pz_net* net);  // Call each frame
+
+// Hosting
+char*       pz_net_create_offer(pz_net* net);           // Returns join URL (caller frees)
+void        pz_net_set_answer(pz_net* net, const char* answer);  // If manual exchange needed
+
+// Joining
+bool        pz_net_join(pz_net* net, const char* offer_url);
+
+// Sending (host broadcasts, joiners send to host)
+void        pz_net_send_game(pz_net* net, const uint8_t* data, size_t len);      // Unreliable
+void        pz_net_send_reliable(pz_net* net, const uint8_t* data, size_t len);  // Reliable
+void        pz_net_send_to(pz_net* net, int player_id, const uint8_t* data, size_t len, bool reliable);
+
+// State
+bool        pz_net_is_connected(pz_net* net);
+int         pz_net_player_count(pz_net* net);
+float       pz_net_get_rtt(pz_net* net, int player_id);  // Round-trip time in ms
+```
+
+### Platform Implementations
+
+```c
+// Desktop: src/net/pz_net_datachannel.c
+// Uses libdatachannel C API
+
+// Browser: src/net/pz_net_browser.c  
+// Uses Emscripten JS interop with RTCPeerConnection
+```
+
+Browser implementation calls into JavaScript:
+
+```javascript
+// web/pz_net.js
+class PZNet {
+    constructor() {
+        this.pc = null;
+        this.gameChannel = null;
+        this.reliableChannel = null;
+    }
+    
+    async createOffer(playerName) {
+        this.pc = new RTCPeerConnection({
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun.cloudflare.com:3478' }
+            ]
+        });
+        
+        // Create channels
+        this.gameChannel = this.pc.createDataChannel('game', {
+            ordered: false,
+            maxRetransmits: 0
+        });
+        this.reliableChannel = this.pc.createDataChannel('reliable', {
+            ordered: true
+        });
+        
+        // Create offer and gather ICE
+        const offer = await this.pc.createOffer();
+        await this.pc.setLocalDescription(offer);
+        
+        // Wait for ICE gathering
+        await this.waitForIceGathering();
+        
+        // Compress and encode
+        const payload = {
+            v: 1,
+            name: playerName,
+            sdp: this.minifySDP(this.pc.localDescription.sdp)
+        };
+        
+        return 'https://mitsuhiko.github.io/tankgame/#join/' + 
+               this.compressAndEncode(payload);
+    }
+    
+    async joinWithOffer(offerUrl) {
+        const payload = this.decodeAndDecompress(
+            offerUrl.split('#join/')[1]
+        );
+        
+        this.pc = new RTCPeerConnection({
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun.cloudflare.com:3478' }
+            ]
+        });
+        
+        this.pc.ondatachannel = (event) => {
+            if (event.channel.label === 'game') {
+                this.gameChannel = event.channel;
+                this.setupGameChannel();
+            } else if (event.channel.label === 'reliable') {
+                this.reliableChannel = event.channel;
+                this.setupReliableChannel();
+            }
+        };
+        
+        await this.pc.setRemoteDescription({
+            type: 'offer',
+            sdp: this.expandSDP(payload.sdp)
+        });
+        
+        const answer = await this.pc.createAnswer();
+        await this.pc.setLocalDescription(answer);
+        
+        // Send answer via reliable channel once connected
+        this.reliableChannel.onopen = () => {
+            this.sendAnswer(answer);
+        };
+    }
+}
 ```
 
 ## Tick Rate and Timing
 
-- **Server tick rate:** 60 Hz (16.67ms)
-- **Client send rate:** 60 Hz (match server)
-- **Server broadcast rate:** 20-30 Hz (every 2-3 ticks)
-- **Input buffer:** Server keeps last N inputs per client (handles jitter)
+- **Host tick rate:** 60 Hz (16.67ms)
+- **Input send rate:** 60 Hz
+- **State broadcast rate:** 20-30 Hz (every 2-3 ticks)
 
 ### Time Synchronization
 
-QUIC gives us RTT measurements. We use this to:
-1. Estimate server time on client
-2. Set interpolation delay (render_tick = server_tick - delay)
+WebRTC gives us RTT via `pc.getStats()`. Use this to:
+1. Estimate host time on clients
+2. Set interpolation delay
 3. Adjust input timing for prediction
-
-```c
-// On receiving game delta:
-float half_rtt = conn->rtt / 2.0f;
-client->server_time_estimate = local_time + half_rtt;
-client->render_tick = server_tick - (uint32_t)(INTERP_DELAY_MS / TICK_MS);
-```
 
 ## Client-Side Prediction
 
+Same as before - predict local tank movement, reconcile when host state arrives:
+
 ```c
-typedef struct pz_prediction_state {
-    // Ring buffer of past inputs
-    pz_msg_client_input input_history[PZ_INPUT_HISTORY_SIZE];
-    int                 input_head;
-    
-    // Ring buffer of past predicted states  
-    pz_tank_state       state_history[PZ_INPUT_HISTORY_SIZE];
-    
-    // Reconciliation
+typedef struct pz_prediction {
+    pz_msg_client_input input_history[64];
+    pz_tank_state       state_history[64];
+    int                 head;
     uint32_t            last_confirmed_input;
-} pz_prediction_state;
+} pz_prediction;
 
-void pz_prediction_record_input(pz_prediction_state* pred, 
-    pz_msg_client_input* input, pz_tank_state* predicted_state);
-void pz_prediction_reconcile(pz_prediction_state* pred, 
-    pz_tank_state* server_state, uint32_t server_input_seq);
+void pz_prediction_record(pz_prediction* pred, 
+    pz_msg_client_input* input, pz_tank_state* predicted);
+    
+void pz_prediction_reconcile(pz_prediction* pred,
+    pz_tank_state* host_state, uint32_t host_input_seq);
 ```
-
-Reconciliation flow:
-1. Receive server state with `your_last_input` sequence
-2. Compare server state to our predicted state for that input
-3. If mismatch: reset to server state, replay inputs from `your_last_input+1` to now
-4. Smoothly blend if difference is small (avoid visual pops)
 
 ## Entity Interpolation
 
-For other players' tanks and projectiles:
+For other players (render slightly in the past for smooth movement):
 
 ```c
 typedef struct pz_interp_buffer {
-    struct {
-        uint32_t      tick;
-        pz_tank_state state;
-    } snapshots[PZ_INTERP_BUFFER_SIZE];
-    int head;
+    struct { uint32_t tick; pz_tank_state state; } snapshots[32];
     int count;
 } pz_interp_buffer;
 
-pz_tank_state pz_interp_entity(pz_interp_buffer* buf, uint32_t render_tick);
+pz_tank_state pz_interp_get(pz_interp_buffer* buf, uint32_t render_tick);
 ```
 
-Render tick is typically 100ms behind server tick to allow for network jitter.
+## Host Migration (Future)
 
-## Server Structure
+If the host disconnects, another player could take over:
+1. Highest player_id becomes new host
+2. New host broadcasts `PZ_MSG_HOST_MIGRATE`
+3. All clients reconnect to new host (new WebRTC handshake)
+4. Game state preserved via last known state
 
-```c
-typedef struct pz_server {
-    // Network
-    pz_net_context*  net;
-    
-    // Clients
-    pz_server_client clients[PZ_MAX_CLIENTS];
-    int              client_count;
-    
-    // Game
-    pz_game*         game;
-    uint32_t         tick;
-    
-    // Timing
-    double           tick_accumulator;
-    double           broadcast_accumulator;
-} pz_server;
-
-typedef struct pz_server_client {
-    pz_net_conn*     conn;
-    int              client_id;
-    int              tank_entity_id;
-    char             name[32];
-    int              team;
-    
-    // Input buffer (handles network jitter)
-    pz_msg_client_input input_buffer[PZ_INPUT_BUFFER_SIZE];
-    int              input_write;
-    int              input_read;
-    uint32_t         last_input_seq;
-    
-    // For delta compression (future optimization)
-    pz_tank_state    last_sent_state;
-} pz_server_client;
-
-void pz_server_init(pz_server* server, int port, const char* cert, const char* key);
-void pz_server_update(pz_server* server, float dt);
-void pz_server_shutdown(pz_server* server);
-```
-
-## Client Structure
-
-```c
-typedef struct pz_client {
-    // Network
-    pz_net_context*      net;
-    pz_net_conn*         conn;
-    
-    // State
-    pz_client_state      state;       // DISCONNECTED, CONNECTING, CONNECTED, IN_GAME
-    int                  my_client_id;
-    int                  my_tank_id;
-    
-    // Prediction
-    pz_prediction_state  prediction;
-    
-    // Interpolation (for other entities)
-    pz_interp_buffer     entity_interp[PZ_MAX_ENTITIES];
-    
-    // Timing
-    uint32_t             server_tick;
-    uint32_t             render_tick;
-    uint32_t             local_input_seq;
-    double               server_time_estimate;
-} pz_client;
-
-void pz_client_init(pz_client* client);
-void pz_client_connect(pz_client* client, const char* host, int port);
-void pz_client_disconnect(pz_client* client);
-void pz_client_update(pz_client* client, float dt);
-void pz_client_send_input(pz_client* client, pz_msg_client_input* input);
-void pz_client_shutdown(pz_client* client);
-```
-
-## WebTransport for Browser
-
-For web builds, picoquic supports WebTransport over HTTP/3. The game protocol stays identical - only the connection setup differs.
-
-```c
-#ifdef __EMSCRIPTEN__
-    // Browser: use WebTransport API (JavaScript interop)
-    // Connect to: https://server:port/.well-known/webtransport
-    #include "pz_net_webtransport.h"
-#else
-    // Native: use picoquic directly
-    #include "pz_net_quic.h"
-#endif
-```
-
-For Emscripten builds, we'll need a small JavaScript shim that uses the browser's WebTransport API and calls back into our C code.
+This is complex and can be deferred.
 
 ## Build Configuration
 
-picoquic dependencies in CMake:
+### Desktop (CMake)
 
 ```cmake
-# Fetch picoquic and dependencies
+# Fetch libdatachannel
 include(FetchContent)
 
 FetchContent_Declare(
-    picotls
-    GIT_REPOSITORY https://github.com/h2o/picotls.git
-    GIT_TAG master
+    libdatachannel
+    GIT_REPOSITORY https://github.com/paullouisageneau/libdatachannel.git
+    GIT_TAG v0.20.0
 )
 
-FetchContent_Declare(
-    picoquic
-    GIT_REPOSITORY https://github.com/private-octopus/picoquic.git
-    GIT_TAG master
-)
+set(NO_MEDIA ON CACHE BOOL "" FORCE)  # We only need DataChannels
+set(NO_WEBSOCKET ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(libdatachannel)
 
-FetchContent_MakeAvailable(picotls picoquic)
-
-target_link_libraries(tankgame PRIVATE picoquic-core)
+target_link_libraries(tankgame PRIVATE datachannel)
 ```
 
-## Security
+### Browser (Emscripten)
 
-QUIC/TLS 1.3 provides:
-- **Encryption:** All traffic encrypted by default
-- **Authentication:** Server certificate verification
-- **Replay protection:** Built into QUIC
-- **Connection ID:** Prevents IP spoofing
+No extra libraries needed - RTCPeerConnection is built into browsers.
 
-Additional game-level security:
-- Server validates all inputs (bounds checking, rate limiting)
-- Server is authoritative (clients can't cheat game state)
-- Input sequence numbers prevent replay within session
+```cmake
+if(EMSCRIPTEN)
+    target_link_options(tankgame PRIVATE
+        --js-library ${CMAKE_SOURCE_DIR}/web/pz_net.js
+    )
+endif()
+```
+
+## Security Considerations
+
+WebRTC provides:
+- **DTLS encryption:** All DataChannel traffic encrypted
+- **SRTP:** If we ever add voice (not planned)
+- **Origin isolation:** Browser security model applies
+
+Game-level:
+- Host validates all inputs
+- Host is authoritative for game state
+- Rate limiting on inputs
+- Sequence numbers prevent replay within session
+
+## QR Code Generation
+
+For desktop, use a simple QR library. Options:
+- **qrcodegen** (single header, C): https://github.com/nayuki/QR-Code-generator
+- Render as pixels on a texture, display in UI
+
+```c
+#include "qrcodegen.h"
+
+// Generate QR code for join URL
+uint8_t qr[qrcodegen_BUFFER_LEN_MAX];
+uint8_t temp[qrcodegen_BUFFER_LEN_MAX];
+
+bool ok = qrcodegen_encodeText(join_url, temp, qr,
+    qrcodegen_Ecc_LOW, qrcodegen_VERSION_MIN, qrcodegen_VERSION_MAX,
+    qrcodegen_Mask_AUTO, true);
+
+int size = qrcodegen_getSize(qr);
+for (int y = 0; y < size; y++) {
+    for (int x = 0; x < size; x++) {
+        bool black = qrcodegen_getModule(qr, x, y);
+        // Draw pixel
+    }
+}
+```
+
+## Summary: Connection Methods
+
+| Method | Steps | Use Case |
+|--------|-------|----------|
+| **QR Scan** | Host shows QR, joiner scans with phone camera | Couch co-op, LAN party |
+| **URL Share** | Host copies link, sends via Discord/etc | Online friends |
+| **URL Direct** | Click link, browser opens game | Streamlined join |
+| **Paste in Desktop** | Copy URL, paste in desktop game | Desktop-to-desktop |
