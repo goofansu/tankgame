@@ -91,6 +91,7 @@ typedef struct pz_tank {
     int jump_cooldown_tile_x; // Landing tile on cooldown
     int jump_cooldown_tile_y;
     bool jump_cooldown_active; // Whether cooldown is active
+    bool just_jumped; // Set to true when a jump begins (for sound trigger)
 
     // Combat
     int health;

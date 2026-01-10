@@ -246,6 +246,15 @@ pz_game_sfx_play_plop(pz_game_sfx *gsfx)
 }
 
 void
+pz_game_sfx_play_jump_pad(pz_game_sfx *gsfx)
+{
+    if (!gsfx) {
+        return;
+    }
+    pz_sfx_play(gsfx->sfx, PZ_SFX_JUMP_PAD, 0.8f);
+}
+
+void
 pz_game_sfx_set_volume(pz_game_sfx *gsfx, float volume)
 {
     if (!gsfx) {

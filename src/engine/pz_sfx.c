@@ -252,6 +252,7 @@ static const char *sfx_paths[PZ_SFX_COUNT] = {
     [PZ_SFX_EXPLOSION_FINAL] = "assets/sounds/explosion1.wav",
     [PZ_SFX_TANK_HIT] = "assets/sounds/hit1.wav",
     [PZ_SFX_PLOP] = "assets/sounds/plop.wav",
+    [PZ_SFX_JUMP_PAD] = "assets/sounds/jump_pad.wav",
 };
 
 pz_sfx_manager *

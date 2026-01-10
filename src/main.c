@@ -1949,6 +1949,15 @@ done_script_commands:
                 }
             }
 
+            // Check for jump pad sounds
+            for (int i = 0; i < PZ_MAX_TANKS; i++) {
+                pz_tank *tank = &g_app.session.tank_mgr->tanks[i];
+                if (tank->just_jumped) {
+                    pz_game_sfx_play_jump_pad(g_app.game_sfx);
+                    tank->just_jumped = false;
+                }
+            }
+
             // AI update
             if (g_app.session.ai_mgr && g_app.session.player_tank
                 && !(g_app.session.player_tank->flags & PZ_TANK_FLAG_DEAD)) {

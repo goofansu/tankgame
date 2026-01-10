@@ -658,6 +658,7 @@ pz_tank_update(pz_tank_manager *mgr, pz_tank *tank, const pz_tank_input *input,
                     = pz_vec2_sub(tank->jump_end_pos, tank->jump_start_pos);
                 tank->jump_end_angle = atan2f(delta.x, delta.y);
                 tank->vel = (pz_vec2) { 0.0f, 0.0f };
+                tank->just_jumped = true; // Signal for sound effect
             }
         }
     } else if (tank->jump_state == 2) {

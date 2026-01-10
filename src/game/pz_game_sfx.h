@@ -44,6 +44,9 @@ void pz_game_sfx_play_ricochet(pz_game_sfx *gsfx);
 // Play plop sound (barrier placement)
 void pz_game_sfx_play_plop(pz_game_sfx *gsfx);
 
+// Play jump pad sound (tank uses jump pad)
+void pz_game_sfx_play_jump_pad(pz_game_sfx *gsfx);
+
 // Set master volume for all SFX (0.0 - 1.0)
 void pz_game_sfx_set_volume(pz_game_sfx *gsfx, float volume);
 
