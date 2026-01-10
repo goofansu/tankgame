@@ -461,6 +461,11 @@ pz_tank_spawn(pz_tank_manager *mgr, pz_vec2 pos, pz_vec4 color, bool is_player)
     tank->jump_start_angle = 0.0f;
     tank->jump_end_angle = 0.0f;
     tank->jump_height = 0.0f;
+    tank->jump_pad_tile_x = -1;
+    tank->jump_pad_tile_y = -1;
+    tank->jump_cooldown_tile_x = -1;
+    tank->jump_cooldown_tile_y = -1;
+    tank->jump_cooldown_active = false;
 
     tank->health = DEFAULT_HEALTH;
     tank->max_health = DEFAULT_HEALTH;
@@ -625,15 +630,35 @@ pz_tank_update(pz_tank_manager *mgr, pz_tank *tank, const pz_tank_input *input,
 
     // Handle jump pad countdown and in-air movement
     if (tank->jump_state == 1) {
-        // Countdown: tank is locked onto pad, ignore movement but allow turret
-        tank->jump_timer -= dt;
-        if (tank->jump_timer <= 0.0f) {
-            tank->jump_state = 2;
-            tank->jump_timer = 0.0f;
+        // Countdown: player can still move, but if they leave the pad tile,
+        // the jump is cancelled
+        int current_tile_x = 0, current_tile_y = 0;
+        if (map) {
+            pz_map_world_to_tile(map, tank->pos, &current_tile_x, &current_tile_y);
         }
-        // Clamp position to start tile center
-        tank->pos = tank->jump_start_pos;
-        tank->vel = (pz_vec2) { 0.0f, 0.0f };
+
+        if (current_tile_x != tank->jump_pad_tile_x
+            || current_tile_y != tank->jump_pad_tile_y) {
+            // Player left the jump pad - cancel the jump
+            tank->jump_state = 0;
+            tank->jump_timer = 0.0f;
+            tank->jump_duration = 0.0f;
+            tank->jump_pad_tile_x = -1;
+            tank->jump_pad_tile_y = -1;
+        } else {
+            tank->jump_timer -= dt;
+            if (tank->jump_timer <= 0.0f) {
+                // Start the jump from current position
+                tank->jump_state = 2;
+                tank->jump_timer = 0.0f;
+                tank->jump_start_pos = tank->pos;
+                tank->jump_start_angle = tank->body_angle;
+                pz_vec2 delta
+                    = pz_vec2_sub(tank->jump_end_pos, tank->jump_start_pos);
+                tank->jump_end_angle = atan2f(delta.x, delta.y);
+                tank->vel = (pz_vec2) { 0.0f, 0.0f };
+            }
+        }
     } else if (tank->jump_state == 2) {
         // In-air: interpolate between start and end, ignore collisions
         tank->jump_timer += dt;
@@ -662,6 +687,16 @@ pz_tank_update(pz_tank_manager *mgr, pz_tank *tank, const pz_tank_input *input,
             tank->jump_state = 0;
             tank->jump_timer = 0.0f;
             tank->jump_duration = 0.0f;
+
+            // Set cooldown on landing tile - pad won't reactivate until
+            // player leaves this tile
+            int land_tile_x = 0, land_tile_y = 0;
+            if (map) {
+                pz_map_world_to_tile(map, tank->pos, &land_tile_x, &land_tile_y);
+            }
+            tank->jump_cooldown_tile_x = land_tile_x;
+            tank->jump_cooldown_tile_y = land_tile_y;
+            tank->jump_cooldown_active = true;
 
             float r = mgr->collision_radius;
             pz_vec2 pos = tank->pos;
@@ -788,20 +823,38 @@ pz_tank_update(pz_tank_manager *mgr, pz_tank *tank, const pz_tank_input *input,
     if (map && tank->jump_state == 0) {
         int tile_x = 0, tile_y = 0;
         pz_map_world_to_tile(map, tank->pos, &tile_x, &tile_y);
+
+        // Clear cooldown if we've moved off the cooldown tile
+        if (tank->jump_cooldown_active) {
+            if (tile_x != tank->jump_cooldown_tile_x
+                || tile_y != tank->jump_cooldown_tile_y) {
+                tank->jump_cooldown_active = false;
+                tank->jump_cooldown_tile_x = -1;
+                tank->jump_cooldown_tile_y = -1;
+            }
+        }
+
+        // Only activate jump pad if not on cooldown for this tile
+        bool on_cooldown = tank->jump_cooldown_active
+            && tile_x == tank->jump_cooldown_tile_x
+            && tile_y == tank->jump_cooldown_tile_y;
+
         int target_x = 0, target_y = 0;
-        if (pz_map_get_jump_pad_target(
+        if (!on_cooldown
+            && pz_map_get_jump_pad_target(
                 map, tile_x, tile_y, &target_x, &target_y)) {
             tank->jump_state = 1; // countdown
             tank->jump_timer = 0.5f; // seconds before jump
             tank->jump_duration = 0.6f; // in-air duration
-            tank->jump_start_pos = pz_map_tile_to_world(map, tile_x, tile_y);
+            tank->jump_pad_tile_x = tile_x; // remember which tile triggered
+            tank->jump_pad_tile_y = tile_y;
+            tank->jump_start_pos = tank->pos; // start from current position
             tank->jump_end_pos = pz_map_tile_to_world(map, target_x, target_y);
             tank->jump_start_angle = tank->body_angle;
             pz_vec2 delta
                 = pz_vec2_sub(tank->jump_end_pos, tank->jump_start_pos);
             tank->jump_end_angle = atan2f(delta.x, delta.y);
             tank->jump_height = 0.0f;
-            tank->vel = (pz_vec2) { 0.0f, 0.0f };
         }
     }
 
@@ -1021,6 +1074,11 @@ pz_tank_respawn(pz_tank *tank)
     tank->jump_start_angle = 0.0f;
     tank->jump_end_angle = 0.0f;
     tank->jump_height = 0.0f;
+    tank->jump_pad_tile_x = -1;
+    tank->jump_pad_tile_y = -1;
+    tank->jump_cooldown_tile_x = -1;
+    tank->jump_cooldown_tile_y = -1;
+    tank->jump_cooldown_active = false;
 
     // Reset loadout to default (lose all collected weapons/powerups)
     pz_tank_reset_loadout(tank);
