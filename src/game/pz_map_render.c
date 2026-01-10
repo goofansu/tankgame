@@ -1630,13 +1630,18 @@ pz_map_renderer_set_map(pz_map_renderer *mr, const pz_map *map)
             // Start pad points toward landing (opposite of landing's direction)
             int start_rotation = (landing_rotation + 2) & 3;
 
-            // Start pad
+            // Start pad - render as ground decal at tile height
             {
                 int tx = link->start_x;
                 int ty = link->start_y;
                 int8_t h = pz_map_get_height(map, tx, ty);
-                float pad_y
-                    = GROUND_Y_OFFSET + h * WALL_HEIGHT_UNIT + 0.05f; // Decal
+                // Match ground height formula: only negative heights lower the
+                // ground
+                float ground_y = GROUND_Y_OFFSET;
+                if (h != 0) {
+                    ground_y = GROUND_Y_OFFSET + h * WALL_HEIGHT_UNIT;
+                }
+                float pad_y = ground_y + 0.01f; // Small decal offset
 
                 float x0 = tx * map->tile_size - half_w;
                 float x1 = (tx + 1) * map->tile_size - half_w;
@@ -1647,13 +1652,17 @@ pz_map_renderer_set_map(pz_map_renderer *mr, const pz_map *map)
                     jp_ptr, x0, z0, x1, z1, pad_y, start_rotation);
             }
 
-            // Landing pad
+            // Landing pad - render as ground decal at tile height
             {
                 int tx = link->landing_x;
                 int ty = link->landing_y;
                 int8_t h = pz_map_get_height(map, tx, ty);
-                float pad_y
-                    = GROUND_Y_OFFSET + h * WALL_HEIGHT_UNIT + 0.05f; // Decal
+                // Match ground height formula
+                float ground_y = GROUND_Y_OFFSET;
+                if (h != 0) {
+                    ground_y = GROUND_Y_OFFSET + h * WALL_HEIGHT_UNIT;
+                }
+                float pad_y = ground_y + 0.01f; // Small decal offset
 
                 float x0 = tx * map->tile_size - half_w;
                 float x1 = (tx + 1) * map->tile_size - half_w;

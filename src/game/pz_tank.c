@@ -461,6 +461,7 @@ pz_tank_spawn(pz_tank_manager *mgr, pz_vec2 pos, pz_vec4 color, bool is_player)
     tank->jump_start_angle = 0.0f;
     tank->jump_end_angle = 0.0f;
     tank->jump_height = 0.0f;
+    tank->jump_apex_height = 1.0f;
     tank->jump_pad_tile_x = -1;
     tank->jump_pad_tile_y = -1;
     tank->jump_cooldown_tile_x = -1;
@@ -595,6 +596,65 @@ pz_tank_can_fire(const pz_tank *tank)
     return !tank_is_in_air(tank);
 }
 
+// Calculate the minimum apex height for a jump arc to clear all walls
+// along the path from start to end.
+// The arc follows: height(t) = sin(PI * t) * apex_height
+// For a wall at position t with height h, we need: sin(PI*t) * apex >= h
+// So: apex >= h / sin(PI*t)
+static float
+calculate_jump_apex_for_path(const pz_map *map, pz_vec2 start, pz_vec2 end)
+{
+    if (!map) {
+        return 1.0f; // Default apex
+    }
+
+    // Sample points along the path to find max required apex
+    float min_apex = 1.0f; // Minimum jump height even with no obstacles
+    float clearance = 0.5f; // Extra clearance above walls
+
+    pz_vec2 delta = pz_vec2_sub(end, start);
+    float path_length = pz_vec2_len(delta);
+    if (path_length < 0.01f) {
+        return min_apex;
+    }
+
+    // Sample every 0.25 tile units
+    float sample_step = 0.25f;
+    int num_samples = (int)(path_length / sample_step) + 1;
+    if (num_samples < 2)
+        num_samples = 2;
+
+    for (int i = 1; i < num_samples - 1; i++) {
+        float t = (float)i / (float)(num_samples - 1);
+        pz_vec2 sample_pos = pz_vec2_lerp(start, end, t);
+
+        int tile_x, tile_y;
+        pz_map_world_to_tile(map, sample_pos, &tile_x, &tile_y);
+
+        int8_t wall_height = pz_map_get_height(map, tile_x, tile_y);
+        if (wall_height <= 0) {
+            continue; // No obstacle at this position
+        }
+
+        // Calculate required apex to clear this wall
+        // height(t) = sin(PI*t) * apex >= wall_height + clearance
+        // apex >= (wall_height + clearance) / sin(PI*t)
+        float sin_t = sinf(PZ_PI * t);
+        if (sin_t < 0.05f) {
+            // Very close to start/end - use a capped value
+            // This happens when there's a wall right at the edge
+            sin_t = 0.05f;
+        }
+
+        float required_apex = ((float)wall_height + clearance) / sin_t;
+        if (required_apex > min_apex) {
+            min_apex = required_apex;
+        }
+    }
+
+    return min_apex;
+}
+
 void
 pz_tank_update(pz_tank_manager *mgr, pz_tank *tank, const pz_tank_input *input,
     const pz_map *map, const pz_toxic_cloud *toxic_cloud, float dt)
@@ -659,6 +719,10 @@ pz_tank_update(pz_tank_manager *mgr, pz_tank *tank, const pz_tank_input *input,
                 tank->jump_end_angle = atan2f(delta.x, delta.y);
                 tank->vel = (pz_vec2) { 0.0f, 0.0f };
                 tank->just_jumped = true; // Signal for sound effect
+
+                // Calculate arc apex height to clear any walls in the path
+                tank->jump_apex_height = calculate_jump_apex_for_path(
+                    map, tank->jump_start_pos, tank->jump_end_pos);
             }
         }
     } else if (tank->jump_state == 2) {
@@ -669,9 +733,8 @@ pz_tank_update(pz_tank_manager *mgr, pz_tank *tank, const pz_tank_input *input,
             : 1.0f;
         tank->pos = pz_vec2_lerp(tank->jump_start_pos, tank->jump_end_pos, t);
 
-        // Simple jump arc for visual height (purely cosmetic)
-        float height_amp = 1.0f;
-        tank->jump_height = sinf(PZ_PI * t) * height_amp;
+        // Jump arc for visual height (calculated to clear obstacles)
+        tank->jump_height = sinf(PZ_PI * t) * tank->jump_apex_height;
 
         // Interpolate body angle toward jump direction
         float angle_diff
@@ -1077,6 +1140,7 @@ pz_tank_respawn(pz_tank *tank)
     tank->jump_start_angle = 0.0f;
     tank->jump_end_angle = 0.0f;
     tank->jump_height = 0.0f;
+    tank->jump_apex_height = 1.0f;
     tank->jump_pad_tile_x = -1;
     tank->jump_pad_tile_y = -1;
     tank->jump_cooldown_tile_x = -1;

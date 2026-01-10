@@ -86,6 +86,7 @@ typedef struct pz_tank {
     float jump_start_angle;
     float jump_end_angle;
     float jump_height; // Visual vertical offset for rendering
+    float jump_apex_height; // Calculated arc apex to clear obstacles
     int jump_pad_tile_x; // Tile that triggered the jump (for countdown cancel)
     int jump_pad_tile_y;
     int jump_cooldown_tile_x; // Landing tile on cooldown
