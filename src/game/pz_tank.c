@@ -634,7 +634,8 @@ pz_tank_update(pz_tank_manager *mgr, pz_tank *tank, const pz_tank_input *input,
         // the jump is cancelled
         int current_tile_x = 0, current_tile_y = 0;
         if (map) {
-            pz_map_world_to_tile(map, tank->pos, &current_tile_x, &current_tile_y);
+            pz_map_world_to_tile(
+                map, tank->pos, &current_tile_x, &current_tile_y);
         }
 
         if (current_tile_x != tank->jump_pad_tile_x
@@ -692,7 +693,8 @@ pz_tank_update(pz_tank_manager *mgr, pz_tank *tank, const pz_tank_input *input,
             // player leaves this tile
             int land_tile_x = 0, land_tile_y = 0;
             if (map) {
-                pz_map_world_to_tile(map, tank->pos, &land_tile_x, &land_tile_y);
+                pz_map_world_to_tile(
+                    map, tank->pos, &land_tile_x, &land_tile_y);
             }
             tank->jump_cooldown_tile_x = land_tile_x;
             tank->jump_cooldown_tile_y = land_tile_y;

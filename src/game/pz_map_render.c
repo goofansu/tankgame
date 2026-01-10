@@ -130,7 +130,8 @@ compute_tile_uv(int tile_x, int tile_y, int map_height, int scale, float *u0,
 }
 
 // Create vertices for a rotated tile quad
-// rotation: 0=up, 1=right (90° CW), 2=down (180°), 3=left (270° CW)
+// Rotation values as displayed on screen (with top-down camera, +Z toward
+// bottom): rotation: 0=down(+Z), 1=left(-X), 2=up(-Z), 3=right(+X)
 static float *
 emit_plane_quad_rotated(
     float *v, float x0, float z0, float x1, float z1, float y, int rotation)
@@ -138,14 +139,16 @@ emit_plane_quad_rotated(
     // UV corners for each rotation (indexed by vertex position)
     // Vertex positions: 0=(x0,z0), 1=(x0,z1), 2=(x1,z1), 3=(x1,z0)
     // Default UVs:      0=(0,1),   1=(0,0),   2=(1,0),   3=(1,1)
+    // Note: With our camera setup (looking down from +Y), texture "up" maps
+    // to screen "down" due to Z axis orientation.
     static const float uv_table[4][4][2] = {
-        // rotation=0 (arrow up/default, -Z direction)
+        // rotation=0: arrow points DOWN on screen (+Z direction)
         { { 0.0f, 1.0f }, { 0.0f, 0.0f }, { 1.0f, 0.0f }, { 1.0f, 1.0f } },
-        // rotation=1 (arrow right, +X direction, 90° CW)
+        // rotation=1: arrow points LEFT on screen (-X direction)
         { { 0.0f, 0.0f }, { 1.0f, 0.0f }, { 1.0f, 1.0f }, { 0.0f, 1.0f } },
-        // rotation=2 (arrow down, +Z direction, 180°)
+        // rotation=2: arrow points UP on screen (-Z direction)
         { { 1.0f, 0.0f }, { 1.0f, 1.0f }, { 0.0f, 1.0f }, { 0.0f, 0.0f } },
-        // rotation=3 (arrow left, -X direction, 270° CW)
+        // rotation=3: arrow points RIGHT on screen (+X direction)
         { { 1.0f, 1.0f }, { 0.0f, 1.0f }, { 0.0f, 0.0f }, { 1.0f, 0.0f } },
     };
 
@@ -1611,15 +1614,17 @@ pz_map_renderer_set_map(pz_map_renderer *mr, const pz_map *map)
             int dx = link->landing_x - link->start_x;
             int dy = link->landing_y - link->start_y;
 
-            // Rotation mapping (verified by testing):
-            // 0=down(+Z), 1=right(+X), 2=up(-Z), 3=left(-X)
+            // Rotation mapping (as displayed on screen with top-down camera):
+            // 0=down(+Z), 1=left(-X), 2=up(-Z), 3=right(+X)
             // Each pad's arrow should point TOWARD the other pad
             int landing_rotation;
             if (abs(dx) >= abs(dy)) {
                 // Horizontal: landing is right of start when dx>0
-                landing_rotation = (dx > 0) ? 3 : 1; // Point back left/right
+                // Landing arrow should point back left (rotation 1) if dx>0
+                landing_rotation = (dx > 0) ? 1 : 3; // Point back left/right
             } else {
-                // Vertical: landing is below start when dy>0
+                // Vertical: landing is below start when dy>0 (larger Z)
+                // Landing arrow should point back up (rotation 2) if below
                 landing_rotation = (dy > 0) ? 2 : 0; // Point back up/down
             }
             // Start pad points toward landing (opposite of landing's direction)
