@@ -452,6 +452,16 @@ pz_tank_spawn(pz_tank_manager *mgr, pz_vec2 pos, pz_vec4 color, bool is_player)
     tank->body_angle = 0.0f;
     tank->turret_angle = 0.0f;
 
+    // Jump state
+    tank->jump_state = 0;
+    tank->jump_timer = 0.0f;
+    tank->jump_duration = 0.0f;
+    tank->jump_start_pos = pos;
+    tank->jump_end_pos = pos;
+    tank->jump_start_angle = 0.0f;
+    tank->jump_end_angle = 0.0f;
+    tank->jump_height = 0.0f;
+
     tank->health = DEFAULT_HEALTH;
     tank->max_health = DEFAULT_HEALTH;
     tank->fire_cooldown = 0.0f;
@@ -559,6 +569,27 @@ normalize_angle(float angle)
     return angle;
 }
 
+static bool
+tank_is_in_air(const pz_tank *tank)
+{
+    return tank && tank->jump_state == 2;
+}
+
+bool
+pz_tank_is_in_air(const pz_tank *tank)
+{
+    return tank_is_in_air(tank);
+}
+
+bool
+pz_tank_can_fire(const pz_tank *tank)
+{
+    if (!tank)
+        return false;
+    // Firing is disabled while in-air jump animation is active
+    return !tank_is_in_air(tank);
+}
+
 void
 pz_tank_update(pz_tank_manager *mgr, pz_tank *tank, const pz_tank_input *input,
     const pz_map *map, const pz_toxic_cloud *toxic_cloud, float dt)
@@ -590,6 +621,57 @@ pz_tank_update(pz_tank_manager *mgr, pz_tank *tank, const pz_tank_input *input,
     if (map) {
         terrain_speed_mult = pz_map_get_speed_multiplier(map, tank->pos);
         terrain_friction = pz_map_get_friction(map, tank->pos);
+    }
+
+    // Handle jump pad countdown and in-air movement
+    if (tank->jump_state == 1) {
+        // Countdown: tank is locked onto pad, ignore movement but allow turret
+        tank->jump_timer -= dt;
+        if (tank->jump_timer <= 0.0f) {
+            tank->jump_state = 2;
+            tank->jump_timer = 0.0f;
+        }
+        // Clamp position to start tile center
+        tank->pos = tank->jump_start_pos;
+        tank->vel = (pz_vec2) { 0.0f, 0.0f };
+    } else if (tank->jump_state == 2) {
+        // In-air: interpolate between start and end, ignore collisions
+        tank->jump_timer += dt;
+        float t = (tank->jump_duration > 0.0f)
+            ? pz_clampf(tank->jump_timer / tank->jump_duration, 0.0f, 1.0f)
+            : 1.0f;
+        tank->pos = pz_vec2_lerp(tank->jump_start_pos, tank->jump_end_pos, t);
+
+        // Simple jump arc for visual height (purely cosmetic)
+        float height_amp = 1.0f;
+        tank->jump_height = sinf(PZ_PI * t) * height_amp;
+
+        // Interpolate body angle toward jump direction
+        float angle_diff
+            = normalize_angle(tank->jump_end_angle - tank->jump_start_angle);
+        float angle_t = t;
+        tank->body_angle
+            = normalize_angle(tank->jump_start_angle + angle_diff * angle_t);
+
+        // Zero horizontal velocity while in air
+        tank->vel = (pz_vec2) { 0.0f, 0.0f };
+
+        if (t >= 1.0f) {
+            // Land at target tile, push out of overlaps
+            tank->pos = tank->jump_end_pos;
+            tank->jump_state = 0;
+            tank->jump_timer = 0.0f;
+            tank->jump_duration = 0.0f;
+
+            float r = mgr->collision_radius;
+            pz_vec2 pos = tank->pos;
+            if (map) {
+                resolve_tank_circle_map(map, &pos, r);
+            }
+            resolve_tank_circle_tanks(mgr, tank, &pos, r);
+            tank->pos = pos;
+            tank->jump_height = 0.0f;
+        }
     }
 
     // Toxic cloud effects
@@ -632,16 +714,19 @@ pz_tank_update(pz_tank_manager *mgr, pz_tank *tank, const pz_tank_input *input,
         }
     }
 
-    // Apply acceleration in input direction
-    if (pz_vec2_len_sq(input->move_dir) > 0.0f) {
+    // Apply acceleration in input direction (disabled while in-air)
+    if (tank->jump_state != 2 && pz_vec2_len_sq(input->move_dir) > 0.0f) {
         pz_vec2 dir = pz_vec2_normalize(input->move_dir);
         tank->vel = pz_vec2_add(tank->vel, pz_vec2_scale(dir, mgr->accel * dt));
 
-        // Rotate body towards movement direction
-        float target_angle = atan2f(dir.x, dir.y);
-        float angle_diff = normalize_angle(target_angle - tank->body_angle);
-        tank->body_angle
-            += angle_diff * pz_minf(1.0f, mgr->body_turn_speed * dt);
+        // Rotate body towards movement direction (unless jump is controlling
+        // it)
+        if (tank->jump_state == 0) {
+            float target_angle = atan2f(dir.x, dir.y);
+            float angle_diff = normalize_angle(target_angle - tank->body_angle);
+            tank->body_angle
+                += angle_diff * pz_minf(1.0f, mgr->body_turn_speed * dt);
+        }
     }
 
     // Apply friction (scaled by terrain friction - higher friction = faster
@@ -663,11 +748,11 @@ pz_tank_update(pz_tank_manager *mgr, pz_tank *tank, const pz_tank_input *input,
             = pz_vec2_scale(pz_vec2_normalize(tank->vel), effective_max_speed);
     }
 
-    // Update position
+    // Update position (skip ground collision while in-air)
     pz_vec2 new_pos = pz_vec2_add(tank->pos, pz_vec2_scale(tank->vel, dt));
 
-    // Wall + tank collision (separate axis) using circle checks
-    {
+    if (tank->jump_state != 2) {
+        // Wall + tank collision (separate axis) using circle checks
         float r = mgr->collision_radius;
         pz_vec2 pos = tank->pos;
 
@@ -697,6 +782,27 @@ pz_tank_update(pz_tank_manager *mgr, pz_tank *tank, const pz_tank_input *input,
         resolve_tank_circle_tanks(mgr, tank, &pos, r);
 
         tank->pos = pos;
+    }
+
+    // Check for jump pad activation when on ground
+    if (map && tank->jump_state == 0) {
+        int tile_x = 0, tile_y = 0;
+        pz_map_world_to_tile(map, tank->pos, &tile_x, &tile_y);
+        int target_x = 0, target_y = 0;
+        if (pz_map_get_jump_pad_target(
+                map, tile_x, tile_y, &target_x, &target_y)) {
+            tank->jump_state = 1; // countdown
+            tank->jump_timer = 0.5f; // seconds before jump
+            tank->jump_duration = 0.6f; // in-air duration
+            tank->jump_start_pos = pz_map_tile_to_world(map, tile_x, tile_y);
+            tank->jump_end_pos = pz_map_tile_to_world(map, target_x, target_y);
+            tank->jump_start_angle = tank->body_angle;
+            pz_vec2 delta
+                = pz_vec2_sub(tank->jump_end_pos, tank->jump_start_pos);
+            tank->jump_end_angle = atan2f(delta.x, delta.y);
+            tank->jump_height = 0.0f;
+            tank->vel = (pz_vec2) { 0.0f, 0.0f };
+        }
     }
 
     // Turret rotation (smooth interpolation toward target)
@@ -905,6 +1011,16 @@ pz_tank_respawn(pz_tank *tank)
     if (tank->flags & PZ_TANK_FLAG_PLAYER) {
         tank->spawn_indicator_timer = 1.5f;
     }
+
+    // Reset jump state on respawn
+    tank->jump_state = 0;
+    tank->jump_timer = 0.0f;
+    tank->jump_duration = 0.0f;
+    tank->jump_start_pos = tank->spawn_pos;
+    tank->jump_end_pos = tank->spawn_pos;
+    tank->jump_start_angle = 0.0f;
+    tank->jump_end_angle = 0.0f;
+    tank->jump_height = 0.0f;
 
     // Reset loadout to default (lose all collected weapons/powerups)
     pz_tank_reset_loadout(tank);
@@ -1197,6 +1313,8 @@ pz_tank_render(pz_tank_manager *mgr, pz_renderer *renderer,
             turret_color.w *= 0.6f;
         }
 
+        float jump_height = tank->jump_height;
+
         if (mgr->shadow_pipeline != PZ_INVALID_HANDLE && mgr->shadow_mesh
             && mgr->shadow_mesh->uploaded) {
             pz_renderer_set_uniform_vec2(renderer, mgr->shader,
@@ -1245,7 +1363,7 @@ pz_tank_render(pz_tank_manager *mgr, pz_renderer *renderer,
         pz_mat4 body_model = pz_mat4_identity();
         body_model = pz_mat4_mul(body_model,
             pz_mat4_translate((pz_vec3) { tank->pos.x + recoil_x * body_recoil,
-                0.0f, tank->pos.y + recoil_z * body_recoil }));
+                jump_height, tank->pos.y + recoil_z * body_recoil }));
         body_model
             = pz_mat4_mul(body_model, pz_mat4_rotate_y(tank->body_angle));
 
@@ -1272,7 +1390,7 @@ pz_tank_render(pz_tank_manager *mgr, pz_renderer *renderer,
         pz_mat4 turret_model = pz_mat4_identity();
         turret_model = pz_mat4_mul(turret_model,
             pz_mat4_translate((pz_vec3) { tank->pos.x + recoil_x,
-                TURRET_Y_OFFSET, tank->pos.y + recoil_z }));
+                TURRET_Y_OFFSET + jump_height, tank->pos.y + recoil_z }));
         turret_model
             = pz_mat4_mul(turret_model, pz_mat4_rotate_y(tank->turret_angle));
 

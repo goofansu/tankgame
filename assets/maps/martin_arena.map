@@ -1,0 +1,40 @@
+# Tank Game Map
+name Untitled
+tile_size 2.0
+
+# Tile definitions
+tile . wood_oak_brown
+tile # wood_rustic_dark
+tile w wood_walnut
+tile c carpet_beige
+
+# Object tags
+tag P1 spawn angle=0.000 team=0 team_spawn=0
+tag E1 enemy angle=-0.005 type=hunter
+tag E2 enemy angle=0.000 type=skirmisher
+
+water_level 0
+water_color 0.20 1.00 0.60
+
+<grid>
+   2.    2.    2.    2.    2.    2.    2.    2.    2.    2.    2.    2.    2.    2.    2. 
+   2. 0.|P1    0.    0.    0.    0.   -1.   -1.   -1.    0c    0c    0c 0c|E2    0c    2. 
+   2.    0.    1.    0.    0.    0.   -1.   -1.   -1.    0c    0c    0c    1. 0c|E2    2. 
+   2.    0.    0.    0.    0.    0.   -1.   -1.   -1.    0c    0c    0c    0c    0c    2. 
+   2.   -1.   -1.   -1.   -1.   -1.   -1.   -1.   -1.    0.    0.    0c    0c    0c    2. 
+   2.   -1.   -1.   -1.   -1.   -1.   -1.   -1.   -1.    0.    0.    0c    0c    0c    2. 
+   2.   -1.   -1.   -1.   -1.   -1.   -1.   -1.   -1.   -1.   -1.   -1.   -1.   -1.    2. 
+   2.   -1.   -1.   -1.   -1.   -1.   -1.   -1.   -1.   -1.   -1.   -1.   -1.   -1.    2. 
+   2.    0c    0c    0c    0w    0w   -1.   -1.   -1.    0w    0w    0c    0c    0c    2. 
+   2.    0c    0c    0c    0c    0w   -1.   -1.   -1.    0w    0c    0c    0c    0c    2. 
+   2.    0c    0c    0c   -1.   -1.   -1.   -1.   -1.    0c   -1.    0c    0c    0c    2. 
+   2.    0c    1.    0c   -1.   -1.   -1.   -1.   -1.    0c   -1.    0c    1.    0c    2. 
+   2. 0c|E1    0c    0c   -1.   -1.   -1.   -1.   -1.    0c   -1.    0c    0c 0c|E1    2. 
+   2.    2.    2.    2.    2.    2.    2.    2.    2.    2.    2.    2.    2.    2.    2. 
+</grid>
+
+# Lighting
+sun_direction 0.40 -0.80 0.30
+sun_color 1.00 0.95 0.85
+ambient_color 0.40 0.45 0.50
+ambient_darkness 0.00

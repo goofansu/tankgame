@@ -72,6 +72,11 @@ void pz_map_renderer_draw_ground(pz_map_renderer *mr,
 void pz_map_renderer_draw_walls(pz_map_renderer *mr,
     const pz_mat4 *view_projection, const pz_map_render_params *params);
 
+// Render jump pad decals
+// blink_phase: 0.0 = no blink, >0 = pulsing effect (e.g., during countdown)
+void pz_map_renderer_draw_jump_pads(
+    pz_map_renderer *mr, const pz_mat4 *view_projection, float blink_phase);
+
 // Render everything (ground + walls)
 void pz_map_renderer_draw(pz_map_renderer *mr, const pz_mat4 *view_projection,
     const pz_map_render_params *params);

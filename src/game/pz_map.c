@@ -674,6 +674,54 @@ pz_map_in_bounds_world(const pz_map *map, pz_vec2 world_pos)
         && world_pos.y >= -half_h && world_pos.y < half_h;
 }
 
+bool
+pz_map_get_jump_pad_target(
+    const pz_map *map, int tile_x, int tile_y, int *out_x, int *out_y)
+{
+    if (!map) {
+        return false;
+    }
+
+    for (int i = 0; i < map->jump_pad_count; i++) {
+        const struct pz_jump_pad_link *link = &map->jump_pads[i];
+        if (link->start_x == tile_x && link->start_y == tile_y) {
+            if (out_x)
+                *out_x = link->landing_x;
+            if (out_y)
+                *out_y = link->landing_y;
+            return true;
+        }
+        if (link->landing_x == tile_x && link->landing_y == tile_y) {
+            if (out_x)
+                *out_x = link->start_x;
+            if (out_y)
+                *out_y = link->start_y;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool
+pz_map_get_jump_pad_target_world(
+    const pz_map *map, pz_vec2 world_pos, pz_vec2 *out_target_world)
+{
+    if (!map || !out_target_world) {
+        return false;
+    }
+
+    int tx, ty;
+    pz_map_world_to_tile(map, world_pos, &tx, &ty);
+    int target_x = 0, target_y = 0;
+    if (!pz_map_get_jump_pad_target(map, tx, ty, &target_x, &target_y)) {
+        return false;
+    }
+
+    *out_target_world = pz_map_tile_to_world(map, target_x, target_y);
+    return true;
+}
+
 // ============================================================================
 // Spawn/Enemy Helpers
 // ============================================================================
@@ -1408,6 +1456,10 @@ tag_type_from_string(const char *type, pz_tag_type *out_type)
         *out_type = PZ_TAG_BARRIER;
         return true;
     }
+    if (pz_str_casecmp(type, "jump_pad") == 0) {
+        *out_type = PZ_TAG_JUMP_PAD;
+        return true;
+    }
 
     return false;
 }
@@ -1424,6 +1476,8 @@ tag_type_name(pz_tag_type type)
         return "powerup";
     case PZ_TAG_BARRIER:
         return "barrier";
+    case PZ_TAG_JUMP_PAD:
+        return "jump_pad";
     default:
         return "spawn";
     }
@@ -1462,6 +1516,10 @@ tag_def_defaults(pz_tag_def *def, pz_tag_type type)
     case PZ_TAG_BARRIER:
         def->data.barrier.tile_name[0] = '\0';
         def->data.barrier.health = 20.0f;
+        break;
+    case PZ_TAG_JUMP_PAD:
+        def->data.jump_pad.id[0] = '\0';
+        def->data.jump_pad.role = PZ_JUMP_PAD_START;
         break;
     default:
         break;
@@ -1532,6 +1590,56 @@ parse_tag_definition(const char *name, const char *type_str, const char *params,
                 = '\0';
         }
         out_def->data.barrier.health = temp.health;
+    } else if (type == PZ_TAG_JUMP_PAD) {
+        // Params: id=<id> role=start|landing
+        const char *p = params;
+        while (p && *p) {
+            while (*p && (isspace((unsigned char)*p) || *p == ',')) {
+                p++;
+            }
+            if (!*p)
+                break;
+
+            if (strncmp(p, "id=", 3) == 0) {
+                const char *start = p + 3;
+                const char *end = start;
+                while (*end && !isspace((unsigned char)*end) && *end != ',') {
+                    end++;
+                }
+                size_t len = (size_t)(end - start);
+                if (len >= sizeof(out_def->data.jump_pad.id)) {
+                    len = sizeof(out_def->data.jump_pad.id) - 1;
+                }
+                strncpy(out_def->data.jump_pad.id, start, len);
+                out_def->data.jump_pad.id[len] = '\0';
+                p = end;
+                continue;
+            } else if (strncmp(p, "role=", 5) == 0) {
+                const char *start = p + 5;
+                const char *end = start;
+                while (*end && !isspace((unsigned char)*end) && *end != ',') {
+                    end++;
+                }
+                char value[16];
+                size_t len = (size_t)(end - start);
+                if (len >= sizeof(value)) {
+                    len = sizeof(value) - 1;
+                }
+                strncpy(value, start, len);
+                value[len] = '\0';
+                if (pz_str_casecmp(value, "start") == 0) {
+                    out_def->data.jump_pad.role = PZ_JUMP_PAD_START;
+                } else if (pz_str_casecmp(value, "landing") == 0) {
+                    out_def->data.jump_pad.role = PZ_JUMP_PAD_LANDING;
+                }
+                p = end;
+                continue;
+            }
+
+            while (*p && !isspace((unsigned char)*p) && *p != ',') {
+                p++;
+            }
+        }
     }
 
     return true;
@@ -1598,6 +1706,19 @@ pz_map_rebuild_spawns_from_tags(pz_map *map)
     map->enemy_count = 0;
     map->powerup_count = 0;
     map->barrier_count = 0;
+    map->jump_pad_count = 0;
+
+    // Temporary table keyed by jump pad id
+    typedef struct jump_pad_accum {
+        char id[32];
+        bool has_start;
+        int start_x, start_y;
+        bool has_landing;
+        int landing_x, landing_y;
+    } jump_pad_accum;
+
+    jump_pad_accum jump_accums[32];
+    int jump_accum_count = 0;
 
     for (int i = 0; i < map->tag_placement_count; i++) {
         const pz_tag_placement *placement = &map->tag_placements[i];
@@ -1679,9 +1800,65 @@ pz_map_rebuild_spawns_from_tags(pz_map *map)
             bs->tile_name[sizeof(bs->tile_name) - 1] = '\0';
             bs->health = def->data.barrier.health;
         } break;
+        case PZ_TAG_JUMP_PAD: {
+            // Accumulate start/landing tiles per id
+            if (!def->data.jump_pad.id[0]) {
+                break;
+            }
+            int idx = -1;
+            for (int j = 0; j < jump_accum_count; j++) {
+                if (strcmp(jump_accums[j].id, def->data.jump_pad.id) == 0) {
+                    idx = j;
+                    break;
+                }
+            }
+            if (idx < 0
+                && jump_accum_count
+                    < (int)(sizeof(jump_accums) / sizeof(jump_accums[0]))) {
+                idx = jump_accum_count++;
+                memset(&jump_accums[idx], 0, sizeof(jump_accums[idx]));
+                strncpy(jump_accums[idx].id, def->data.jump_pad.id,
+                    sizeof(jump_accums[idx].id) - 1);
+                jump_accums[idx].id[sizeof(jump_accums[idx].id) - 1] = '\0';
+            }
+            if (idx >= 0) {
+                if (def->data.jump_pad.role == PZ_JUMP_PAD_START) {
+                    jump_accums[idx].has_start = true;
+                    jump_accums[idx].start_x = placement->tile_x;
+                    jump_accums[idx].start_y = placement->tile_y;
+                } else if (def->data.jump_pad.role == PZ_JUMP_PAD_LANDING) {
+                    jump_accums[idx].has_landing = true;
+                    jump_accums[idx].landing_x = placement->tile_x;
+                    jump_accums[idx].landing_y = placement->tile_y;
+                }
+            }
+        } break;
         default:
             break;
         }
+    }
+
+    // Build runtime jump pad links from accumulated ids
+    for (int i = 0; i < jump_accum_count; i++) {
+        const jump_pad_accum *acc = &jump_accums[i];
+        if (!acc->has_start || !acc->has_landing) {
+            pz_log(PZ_LOG_WARN, PZ_LOG_CAT_GAME,
+                "Jump pad id '%s' has incomplete pair (start=%d, landing=%d)",
+                acc->id, acc->has_start ? 1 : 0, acc->has_landing ? 1 : 0);
+            continue;
+        }
+        if (map->jump_pad_count
+            >= (int)(sizeof(map->jump_pads) / sizeof(map->jump_pads[0]))) {
+            pz_log(PZ_LOG_WARN, PZ_LOG_CAT_GAME,
+                "Too many jump pad pairs (max=%zu)",
+                sizeof(map->jump_pads) / sizeof(map->jump_pads[0]));
+            break;
+        }
+        map->jump_pads[map->jump_pad_count].start_x = acc->start_x;
+        map->jump_pads[map->jump_pad_count].start_y = acc->start_y;
+        map->jump_pads[map->jump_pad_count].landing_x = acc->landing_x;
+        map->jump_pads[map->jump_pad_count].landing_y = acc->landing_y;
+        map->jump_pad_count++;
     }
 }
 
@@ -2277,6 +2454,16 @@ pz_map_save(const pz_map *map, const char *path)
                     = snprintf(p, remaining, "tag %s %s tile=%s health=%.1f\n",
                         def->name, tag_type_name(def->type), tile_name,
                         def->data.barrier.health);
+            } else if (def->type == PZ_TAG_JUMP_PAD) {
+                const char *role_str
+                    = (def->data.jump_pad.role == PZ_JUMP_PAD_LANDING)
+                    ? "landing"
+                    : "start";
+                const char *id = def->data.jump_pad.id[0]
+                    ? def->data.jump_pad.id
+                    : def->name;
+                written = snprintf(p, remaining, "tag %s %s id=%s role=%s\n",
+                    def->name, tag_type_name(def->type), id, role_str);
             } else {
                 written = 0;
             }

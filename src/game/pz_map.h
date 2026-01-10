@@ -47,6 +47,7 @@ typedef enum pz_tag_type {
     PZ_TAG_ENEMY,
     PZ_TAG_POWERUP,
     PZ_TAG_BARRIER,
+    PZ_TAG_JUMP_PAD,
 } pz_tag_type;
 
 typedef struct pz_tag_spawn_def {
@@ -73,6 +74,16 @@ typedef struct pz_tag_barrier_def {
     float health;
 } pz_tag_barrier_def;
 
+typedef enum pz_jump_pad_role {
+    PZ_JUMP_PAD_START,
+    PZ_JUMP_PAD_LANDING,
+} pz_jump_pad_role;
+
+typedef struct pz_tag_jump_pad_def {
+    char id[32];
+    pz_jump_pad_role role;
+} pz_tag_jump_pad_def;
+
 typedef struct pz_tag_def {
     char name[32];
     pz_tag_type type;
@@ -81,6 +92,7 @@ typedef struct pz_tag_def {
         pz_tag_enemy_def enemy;
         pz_tag_powerup_def powerup;
         pz_tag_barrier_def barrier;
+        pz_tag_jump_pad_def jump_pad;
     } data;
 } pz_tag_def;
 
@@ -220,6 +232,13 @@ typedef struct pz_map {
     pz_barrier_spawn barriers[PZ_MAP_MAX_BARRIERS];
     int barrier_count;
 
+    // Jump pad links (bidirectional start/landing pairs)
+    struct pz_jump_pad_link {
+        int start_x, start_y;
+        int landing_x, landing_y;
+    } jump_pads[32];
+    int jump_pad_count;
+
     // Lighting settings
     pz_map_lighting lighting;
 
@@ -280,6 +299,13 @@ int pz_map_find_tag_placement(
     const pz_map *map, int tile_x, int tile_y, int tag_index);
 int pz_map_count_tag_placements(const pz_map *map, int tag_index);
 void pz_map_rebuild_spawns_from_tags(pz_map *map);
+
+// Jump pad helpers (tile coordinates)
+bool pz_map_get_jump_pad_target(
+    const pz_map *map, int tile_x, int tile_y, int *out_x, int *out_y);
+// Jump pad helper for world coordinates
+bool pz_map_get_jump_pad_target_world(
+    const pz_map *map, pz_vec2 world_pos, pz_vec2 *out_target_world);
 
 // World coordinate queries
 bool pz_map_is_solid(const pz_map *map, pz_vec2 world_pos);

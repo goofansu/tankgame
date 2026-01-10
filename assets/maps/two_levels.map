@@ -1,0 +1,33 @@
+# Tank Game Map
+name Untitled
+tile_size 2.0
+
+# Tile definitions
+tile . wood_oak_brown
+tile # wood_rustic_dark
+
+# Object tags
+tag P1 spawn angle=0.000 team=0 team_spawn=0
+tag E1 enemy angle=0.000 type=hunter
+
+water_level 0
+water_color 0.20 0.40 0.60
+
+<grid>
+   5.    5.    5.    5.    5.    5.    5.    5.    5.    5.    5.    5. 
+   5.    2.    2.    2.    2.    0#    0#    0#    0#    0#    0#    5. 
+   5.    2. 2.|P1    2.    2.    0#    0#    0#    0# 0#|E1    0#    5. 
+   5.    2.    2.    2.    2.    0#    0#    0#    0#    0#    0#    5. 
+   5.    2.    2.    2.    2.    0#    0#    0#    0#    0#    0#    5. 
+   5.    2.    2.    2.    2.    0#    0#    0#    0#    0#    0#    5. 
+   5.    2.    2.    2.    2.    0#    0#    0#    0#    0#    0#    5. 
+   4.    2.    2.    2.    2.    0#    0#    0#    0#    0#    0#    4. 
+   3.    2.    2.    2.    2.    0#    0#    0#    0#    0#    0#    3. 
+   3.    3.    3.    3.    3.    3.    3.    3.    3.    3.    3.    3. 
+</grid>
+
+# Lighting
+sun_direction 0.40 -0.80 0.30
+sun_color 1.00 0.95 0.85
+ambient_color 0.40 0.45 0.50
+ambient_darkness 0.00

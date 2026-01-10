@@ -3019,6 +3019,11 @@ pz_ai_fire(pz_ai_manager *ai_mgr, pz_projectile_manager *proj_mgr)
             continue; // Skip this shot - would hit ally
         }
 
+        // Do not fire while tank is in the air on a jump pad
+        if (pz_tank_is_in_air(tank)) {
+            continue;
+        }
+
         // Fire!
 
         float projectile_speed

@@ -22,3 +22,4 @@
 @include programs/ui_quad.glsl
 @include programs/ui_textured.glsl
 @include programs/spawn_indicator.glsl
+@include programs/jump_pad.glsl

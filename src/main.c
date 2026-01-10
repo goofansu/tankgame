@@ -1866,7 +1866,8 @@ done_script_commands:
                         = active_projectiles < weapon->max_active_projectiles;
 
                     if (should_fire && can_fire
-                        && g_app.session.player_tank->fire_cooldown <= 0.0f) {
+                        && g_app.session.player_tank->fire_cooldown <= 0.0f
+                        && pz_tank_can_fire(g_app.session.player_tank)) {
                         pz_vec2 spawn_pos = { 0 };
                         pz_vec2 fire_dir = { 0 };
                         int bounce_cost = 0;

@@ -9,6 +9,7 @@
 
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "../core/pz_log.h"
@@ -48,6 +49,11 @@ struct pz_map_renderer {
     // Ground shader and pipeline (legacy, for walls on top)
     pz_shader_handle ground_shader;
     pz_pipeline_handle ground_pipeline;
+
+    // Jump pad rendering (uses ground shader/pipeline for simplicity)
+    pz_texture_handle jump_pad_texture;
+    pz_buffer_handle jump_pad_buffer;
+    int jump_pad_vertex_count;
 
     // Blended ground shader and pipeline
     pz_shader_handle ground_blend_shader;
@@ -123,7 +129,71 @@ compute_tile_uv(int tile_x, int tile_y, int map_height, int scale, float *u0,
     *v1 = (float)(tile_y + 1) * inv_scale;
 }
 
-// Create vertices for a single tile quad on a flat plane
+// Create vertices for a rotated tile quad
+// rotation: 0=up, 1=right (90° CW), 2=down (180°), 3=left (270° CW)
+static float *
+emit_plane_quad_rotated(
+    float *v, float x0, float z0, float x1, float z1, float y, int rotation)
+{
+    // UV corners for each rotation (indexed by vertex position)
+    // Vertex positions: 0=(x0,z0), 1=(x0,z1), 2=(x1,z1), 3=(x1,z0)
+    // Default UVs:      0=(0,1),   1=(0,0),   2=(1,0),   3=(1,1)
+    static const float uv_table[4][4][2] = {
+        // rotation=0 (arrow up/default, -Z direction)
+        { { 0.0f, 1.0f }, { 0.0f, 0.0f }, { 1.0f, 0.0f }, { 1.0f, 1.0f } },
+        // rotation=1 (arrow right, +X direction, 90° CW)
+        { { 0.0f, 0.0f }, { 1.0f, 0.0f }, { 1.0f, 1.0f }, { 0.0f, 1.0f } },
+        // rotation=2 (arrow down, +Z direction, 180°)
+        { { 1.0f, 0.0f }, { 1.0f, 1.0f }, { 0.0f, 1.0f }, { 0.0f, 0.0f } },
+        // rotation=3 (arrow left, -X direction, 270° CW)
+        { { 1.0f, 1.0f }, { 0.0f, 1.0f }, { 0.0f, 0.0f }, { 1.0f, 0.0f } },
+    };
+
+    int r = rotation & 3; // Clamp to 0-3
+    const float(*uv)[2] = uv_table[r];
+
+    // Triangle 1 (CCW when viewed from above +Y): vertices 0, 1, 2
+    *v++ = x0;
+    *v++ = y;
+    *v++ = z0;
+    *v++ = uv[0][0];
+    *v++ = uv[0][1];
+
+    *v++ = x0;
+    *v++ = y;
+    *v++ = z1;
+    *v++ = uv[1][0];
+    *v++ = uv[1][1];
+
+    *v++ = x1;
+    *v++ = y;
+    *v++ = z1;
+    *v++ = uv[2][0];
+    *v++ = uv[2][1];
+
+    // Triangle 2: vertices 0, 2, 3
+    *v++ = x0;
+    *v++ = y;
+    *v++ = z0;
+    *v++ = uv[0][0];
+    *v++ = uv[0][1];
+
+    *v++ = x1;
+    *v++ = y;
+    *v++ = z1;
+    *v++ = uv[2][0];
+    *v++ = uv[2][1];
+
+    *v++ = x1;
+    *v++ = y;
+    *v++ = z0;
+    *v++ = uv[3][0];
+    *v++ = uv[3][1];
+
+    return v;
+}
+
+// Create vertices for a single tile quad on a flat plane (no rotation)
 static float *
 emit_plane_quad(float *v, float x0, float z0, float x1, float z1, float y)
 {
@@ -693,6 +763,17 @@ pz_map_renderer_create(pz_renderer *renderer, pz_texture_manager *tex_manager,
         pz_log(PZ_LOG_WARN, PZ_LOG_CAT_RENDER,
             "Failed to load water caustic texture, water effect degraded");
     }
+
+    // Load jump pad texture
+    mr->jump_pad_texture
+        = pz_texture_load(tex_manager, "assets/textures/jump_pad.png");
+    if (mr->jump_pad_texture == PZ_INVALID_HANDLE) {
+        pz_log(
+            PZ_LOG_WARN, PZ_LOG_CAT_RENDER, "Failed to load jump_pad texture");
+    }
+
+    mr->jump_pad_buffer = PZ_INVALID_HANDLE;
+    mr->jump_pad_vertex_count = 0;
 
     // Fog shader
     mr->fog_shader = pz_renderer_load_shader(
@@ -1509,6 +1590,93 @@ pz_map_renderer_set_map(pz_map_renderer *mr, const pz_map *map)
         total_wall_verts += mr->wall_batches[i].vertex_count;
     }
 
+    // Generate jump pad mesh
+    if (mr->jump_pad_buffer != PZ_INVALID_HANDLE) {
+        pz_renderer_destroy_buffer(mr->renderer, mr->jump_pad_buffer);
+        mr->jump_pad_buffer = PZ_INVALID_HANDLE;
+    }
+    mr->jump_pad_vertex_count = 0;
+
+    if (map->jump_pad_count > 0) {
+        // Each jump pad link has 2 tiles (start and landing), each 6 verts
+        int num_tiles = map->jump_pad_count * 2;
+        int num_verts = num_tiles * 6;
+        float *jump_pad_verts = pz_alloc(num_verts * 5 * sizeof(float));
+        float *jp_ptr = jump_pad_verts;
+
+        for (int i = 0; i < map->jump_pad_count; i++) {
+            const struct pz_jump_pad_link *link = &map->jump_pads[i];
+
+            // Calculate direction from start to landing for rotation
+            int dx = link->landing_x - link->start_x;
+            int dy = link->landing_y - link->start_y;
+
+            // Rotation mapping (verified by testing):
+            // 0=down(+Z), 1=right(+X), 2=up(-Z), 3=left(-X)
+            // Each pad's arrow should point TOWARD the other pad
+            int landing_rotation;
+            if (abs(dx) >= abs(dy)) {
+                // Horizontal: landing is right of start when dx>0
+                landing_rotation = (dx > 0) ? 3 : 1; // Point back left/right
+            } else {
+                // Vertical: landing is below start when dy>0
+                landing_rotation = (dy > 0) ? 2 : 0; // Point back up/down
+            }
+            // Start pad points toward landing (opposite of landing's direction)
+            int start_rotation = (landing_rotation + 2) & 3;
+
+            // Start pad
+            {
+                int tx = link->start_x;
+                int ty = link->start_y;
+                int8_t h = pz_map_get_height(map, tx, ty);
+                float pad_y
+                    = GROUND_Y_OFFSET + h * WALL_HEIGHT_UNIT + 0.05f; // Decal
+
+                float x0 = tx * map->tile_size - half_w;
+                float x1 = (tx + 1) * map->tile_size - half_w;
+                float z0 = ty * map->tile_size - half_h;
+                float z1 = (ty + 1) * map->tile_size - half_h;
+
+                jp_ptr = emit_plane_quad_rotated(
+                    jp_ptr, x0, z0, x1, z1, pad_y, start_rotation);
+            }
+
+            // Landing pad
+            {
+                int tx = link->landing_x;
+                int ty = link->landing_y;
+                int8_t h = pz_map_get_height(map, tx, ty);
+                float pad_y
+                    = GROUND_Y_OFFSET + h * WALL_HEIGHT_UNIT + 0.05f; // Decal
+
+                float x0 = tx * map->tile_size - half_w;
+                float x1 = (tx + 1) * map->tile_size - half_w;
+                float z0 = ty * map->tile_size - half_h;
+                float z1 = (ty + 1) * map->tile_size - half_h;
+
+                jp_ptr = emit_plane_quad_rotated(
+                    jp_ptr, x0, z0, x1, z1, pad_y, landing_rotation);
+            }
+        }
+
+        mr->jump_pad_vertex_count = num_verts;
+
+        pz_buffer_desc desc = {
+            .type = PZ_BUFFER_VERTEX,
+            .usage = PZ_BUFFER_STATIC,
+            .data = jump_pad_verts,
+            .size = num_verts * 5 * sizeof(float),
+        };
+        mr->jump_pad_buffer = pz_renderer_create_buffer(mr->renderer, &desc);
+
+        pz_free(jump_pad_verts);
+
+        pz_log(PZ_LOG_INFO, PZ_LOG_CAT_RENDER,
+            "Jump pad mesh generated: %d pads, %d verts", map->jump_pad_count,
+            num_verts);
+    }
+
     pz_log(PZ_LOG_INFO, PZ_LOG_CAT_RENDER,
         "Map mesh generated: %d ground batches, %d wall batches (%d verts), %d "
         "water verts, %d fog verts",
@@ -1936,11 +2104,52 @@ pz_map_renderer_draw_fog(pz_map_renderer *mr, const pz_mat4 *view_projection,
 }
 
 void
+pz_map_renderer_draw_jump_pads(
+    pz_map_renderer *mr, const pz_mat4 *view_projection, float blink_phase)
+{
+    if (!mr || !mr->map) {
+        return;
+    }
+    if (mr->jump_pad_buffer == PZ_INVALID_HANDLE) {
+        return;
+    }
+    if (mr->jump_pad_vertex_count == 0) {
+        return;
+    }
+    if (mr->jump_pad_texture == PZ_INVALID_HANDLE) {
+        return;
+    }
+
+    (void)blink_phase; // TODO: implement blink effect for countdown
+
+    // Use ground shader for jump pads (simple textured rendering)
+    pz_renderer_set_uniform_mat4(
+        mr->renderer, mr->ground_shader, "u_mvp", view_projection);
+    pz_renderer_set_uniform_int(
+        mr->renderer, mr->ground_shader, "u_use_tracks", 0);
+    pz_renderer_set_uniform_int(
+        mr->renderer, mr->ground_shader, "u_use_lighting", 0);
+    pz_renderer_set_uniform_int(
+        mr->renderer, mr->ground_shader, "u_has_sun", 0);
+
+    pz_renderer_bind_texture(mr->renderer, 0, mr->jump_pad_texture);
+
+    pz_draw_cmd cmd = {
+        .pipeline = mr->ground_pipeline,
+        .vertex_buffer = mr->jump_pad_buffer,
+        .vertex_count = mr->jump_pad_vertex_count,
+    };
+
+    pz_renderer_draw(mr->renderer, &cmd);
+}
+
+void
 pz_map_renderer_draw(pz_map_renderer *mr, const pz_mat4 *view_projection,
     const pz_map_render_params *params)
 {
     pz_map_renderer_draw_walls(mr, view_projection, params);
     pz_map_renderer_draw_ground(mr, view_projection, params);
+    pz_map_renderer_draw_jump_pads(mr, view_projection, 0.0f);
     pz_map_renderer_draw_water(mr, view_projection, params);
     pz_map_renderer_draw_fog(mr, view_projection, params);
 }

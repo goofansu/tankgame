@@ -74,6 +74,7 @@ static const shader_desc_entry SHADER_DESC_TABLE[] = {
     { "editor_grid", tankgame_editor_grid_shader_desc },
     { "ui_quad", tankgame_ui_quad_shader_desc },
     { "ui_textured", tankgame_ui_textured_shader_desc },
+    { "jump_pad", tankgame_jump_pad_shader_desc },
 };
 
 typedef int (*pz_uniform_offset_fn)(const char *ub_name, const char *u_name);

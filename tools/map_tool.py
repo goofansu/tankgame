@@ -229,7 +229,7 @@ class Map:
 def parse_cell(text: str) -> Cell:
     """Parse a cell like '2#' or '0.|P1,E1' or '-1:'"""
     # Match: optional minus, digits, single char tile, optional |tags
-    match = re.match(r'^(-?\d+)(\S)(?:\|(.+))?$', text)
+    match = re.match(r'^(-?\d+)(\S)(?:\|(.*))?$', text)
     if not match:
         raise ValueError(f"Invalid cell format: {text}")
     

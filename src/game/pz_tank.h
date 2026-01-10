@@ -77,6 +77,16 @@ typedef struct pz_tank {
     float body_angle; // Body rotation (radians)
     float turret_angle; // Turret rotation in world space (radians)
 
+    // Jump pad state
+    int jump_state; // 0 = none, 1 = countdown, 2 = in-air
+    float jump_timer; // Countdown or elapsed jump time
+    float jump_duration; // Total in-air time
+    pz_vec2 jump_start_pos;
+    pz_vec2 jump_end_pos;
+    float jump_start_angle;
+    float jump_end_angle;
+    float jump_height; // Visual vertical offset for rendering
+
     // Combat
     int health;
     int max_health;
@@ -199,6 +209,10 @@ void pz_tank_foreach(pz_tank_manager *mgr, pz_tank_iter_fn fn, void *user_data);
 void pz_tank_update(pz_tank_manager *mgr, pz_tank *tank,
     const pz_tank_input *input, const pz_map *map,
     const pz_toxic_cloud *toxic_cloud, float dt);
+
+// Utility queries for jump pad state
+bool pz_tank_is_in_air(const pz_tank *tank);
+bool pz_tank_can_fire(const pz_tank *tank);
 
 // Update all tanks (for AI/respawn)
 void pz_tank_update_all(pz_tank_manager *mgr, const pz_map *map,
