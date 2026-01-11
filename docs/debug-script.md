@@ -204,10 +204,14 @@ These commands enable debugging WebRTC multiplayer networking between two game i
 
 | Command | Description |
 |---------|-------------|
-| `net_host <offer_file>` | Create WebRTC offer, write URL to file |
-| `net_join <offer_file> <answer_file>` | Read offer from file, create answer, write to file |
+| `net_host <offer_file>` | Create WebRTC offer, write URL to file. Reloads map for networking. |
+| `net_join <offer_file> <answer_file>` | Read offer from file, create answer, write to file. Also loads the map from the offer. |
 | `net_answer <answer_file>` | Read answer from file and apply (host only) |
 | `net_wait [timeout]` | Wait for data channel connection. Timeout in seconds, default 30. |
+
+**Important notes:**
+- For the **host**: Load the map BEFORE calling `net_host` so the offer contains the correct map path. `net_host` will then reload the map to set up networking (creates the remote player tank slot).
+- For the **client**: `net_join` automatically loads the map from the offer, so no explicit `map` command is needed.
 
 **Multiplayer testing workflow:**
 
@@ -219,12 +223,16 @@ Run two game instances, each with a debug script:
 delete_file debug-temp/offer.txt
 delete_file debug-temp/answer.txt
 
-# Create offer and write to file
+# Load map first (offer will contain the map path)
+map assets/maps/test_arena.map
+frames 3
+
+# Create offer - this also reloads the map for networking
 net_host debug-temp/offer.txt
 log "Offer written, waiting for answer..."
 
 # Wait for client to write answer
-wait_file debug-temp/answer.txt 30
+wait_file debug-temp/answer.txt 60
 
 # Apply the answer
 net_answer debug-temp/answer.txt
@@ -241,10 +249,10 @@ quit
 **Client script (`scripts/net_client.dbgscript`):**
 ```
 # Wait for host's offer
-wait_file debug-temp/offer.txt 30
+wait_file debug-temp/offer.txt 60
 log "Found offer, joining..."
 
-# Read offer, create answer
+# Read offer, create answer (also loads the map from the offer)
 net_join debug-temp/offer.txt debug-temp/answer.txt
 
 # Wait for connection

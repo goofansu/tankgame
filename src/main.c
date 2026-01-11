@@ -2360,6 +2360,18 @@ app_frame(void)
                                     "Debug: wrote offer to '%s'", offer_path);
                                 pz_free(offer_url);
                                 g_app.net_is_host = true;
+
+                                // Reload the map if already loaded to set up
+                                // networking (create net_remote_tank)
+                                if (g_app.session.map_path[0] != '\0') {
+                                    pz_log(PZ_LOG_INFO, PZ_LOG_CAT_NET,
+                                        "Debug: reloading map for networking");
+                                    char map_path[256];
+                                    strncpy(map_path, g_app.session.map_path,
+                                        sizeof(map_path) - 1);
+                                    map_path[sizeof(map_path) - 1] = '\0';
+                                    map_session_load(&g_app.session, map_path);
+                                }
                             }
                         }
                     }
@@ -2380,6 +2392,13 @@ app_frame(void)
                             = pz_net_offer_decode_url(offer_url);
                         pz_free(offer_url);
                         if (offer) {
+                            // Save map name before freeing offer
+                            char map_name[256] = { 0 };
+                            if (offer->map_name && offer->map_name[0] != '\0') {
+                                strncpy(map_name, offer->map_name,
+                                    sizeof(map_name) - 1);
+                            }
+
                             pz_net_webrtc_config net_config = {
                                 .ice_servers = NULL,
                                 .ice_server_count = 0,
@@ -2414,6 +2433,17 @@ app_frame(void)
                                                 answer_path);
                                             pz_free(answer_url);
                                             g_app.net_is_client = true;
+
+                                            // Load the map from the offer
+                                            if (map_name[0] != '\0') {
+                                                pz_log(PZ_LOG_INFO,
+                                                    PZ_LOG_CAT_NET,
+                                                    "Debug: loading map '%s' "
+                                                    "from offer",
+                                                    map_name);
+                                                map_session_load(
+                                                    &g_app.session, map_name);
+                                            }
                                         }
                                     }
                                 }
@@ -4079,6 +4109,55 @@ end_frame:;
             g_app.session.projectile_mgr, g_app.session.ai_mgr,
             g_app.session.toxic_cloud, g_app.session.player_tank,
             g_app.frame_count);
+
+        // Append networking state to the dump
+        bool net_active = g_app.net_is_host || g_app.net_is_client;
+        if (net_active) {
+            FILE *f = fopen(script_dump_path, "a");
+            if (f) {
+                fprintf(f, "[networking]\n");
+                fprintf(f, "mode: %s\n", g_app.net_is_host ? "host" : "client");
+                fprintf(f, "channel_open: %s\n",
+                    atomic_load(&g_app.net_channel_open) ? "yes" : "no");
+                fprintf(f, "last_sent_tick: %u\n", g_app.net_last_sent_tick);
+                fprintf(f, "has_remote_input: %s\n",
+                    g_app.net_has_remote_input ? "yes" : "no");
+
+                if (g_app.net_has_remote_input) {
+                    fprintf(f, "last_remote_input:\n");
+                    fprintf(f, "  move_dir: %.3f %.3f\n",
+                        g_app.net_last_remote_input.move_dir.x,
+                        g_app.net_last_remote_input.move_dir.y);
+                    fprintf(f, "  target_turret: %.3f\n",
+                        g_app.net_last_remote_input.target_turret);
+                    fprintf(f, "  fire: %s\n",
+                        g_app.net_last_remote_input.fire ? "yes" : "no");
+                }
+
+                if (g_app.net_remote_tank) {
+                    fprintf(f, "remote_tank:\n");
+                    fprintf(f, "  id: %d\n", g_app.net_remote_tank->id);
+                    fprintf(f, "  pos: %.3f %.3f\n",
+                        g_app.net_remote_tank->pos.x,
+                        g_app.net_remote_tank->pos.y);
+                    fprintf(f, "  vel: %.3f %.3f\n",
+                        g_app.net_remote_tank->vel.x,
+                        g_app.net_remote_tank->vel.y);
+                    fprintf(f, "  body_angle: %.3f\n",
+                        g_app.net_remote_tank->body_angle);
+                    fprintf(f, "  turret_angle: %.3f\n",
+                        g_app.net_remote_tank->turret_angle);
+                    fprintf(f, "  health: %d\n", g_app.net_remote_tank->health);
+                    fprintf(
+                        f, "  flags: 0x%08x\n", g_app.net_remote_tank->flags);
+                } else {
+                    fprintf(f, "remote_tank: none\n");
+                }
+
+                fprintf(f, "\n");
+                fclose(f);
+            }
+        }
     }
 
     // Save lightmap debug image on first frame if requested
