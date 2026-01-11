@@ -26,13 +26,15 @@ We use **WebRTC DataChannels** for all networking:
 | Platform | Library |
 |----------|---------|
 | Desktop (C) | libdatachannel |
-| Browser (WASM) | Native RTCPeerConnection API |
+| Browser (WASM) | libdatachannel via datachannel-wasm |
 
 **libdatachannel:** https://github.com/paullouisageneau/libdatachannel
 - Clean C API
 - Small footprint (~50KB)
 - MIT license
 - DataChannel-focused (no overkill video/audio code)
+- Can compile to WebAssembly via datachannel-wasm for code reuse
+- https://github.com/paullouisageneau/datachannel-wasm
 
 ## Connection Handshake: QR Code + URL
 
@@ -115,6 +117,7 @@ Compressed with zlib/deflate → Base64 URL-safe encoding → ~400-800 chars
 │  3. Set remote description (the offer)                                      │
 │  4. Create SDP answer                                                       │
 │  5. Wait for ICE gathering complete                                         │
+│  6. Send answer payload back to host                                        │
 │  6. Send answer back to host via DataChannel (once connected)               │
 │     OR display answer for manual exchange (fallback)                        │
 │                                                                             │

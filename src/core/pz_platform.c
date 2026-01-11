@@ -106,7 +106,7 @@ void
 pz_time_sleep_ms(uint32_t ms)
 {
 #ifdef __EMSCRIPTEN__
-    (void)ms;
+    emscripten_sleep(ms);
 #else
     usleep(ms * 1000);
 #endif

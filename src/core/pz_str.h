@@ -10,6 +10,10 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // Duplicate a string (caller must pz_free)
 char *pz_str_dup(const char *str);
 
@@ -67,5 +71,9 @@ char *pz_str_join(const char **strings, size_t count, const char *sep);
 
 // Replace all occurrences of 'old' with 'new' (caller must pz_free result)
 char *pz_str_replace(const char *str, const char *old_str, const char *new_str);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // PZ_STR_H

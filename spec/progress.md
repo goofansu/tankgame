@@ -117,6 +117,11 @@
 - [ ] M12.3: capture the flag mode
 - [ ] M12.4: domination mode
 
+## Phase 13: Networking Foundation
+- [x] M13.1: libdatachannel + datachannel-wasm integration
+- [x] M13.2: WebRTC wrapper
+- [x] M13.3: offer URL encoding
+
 ## Phase 16: Polish and Game Feel (partial)
 - [x] M16.2: particle system (smoke, fog, impact particles)
 - [x] M16.3: hit feedback (damage flash, sound)
@@ -160,7 +165,7 @@
 - [ ] Phase 12: game modes (deathmatch, CTF, domination)
 
 ## Plan Changes
-- Networking phases (13-15) deferred indefinitely
+- Networking phases (13-15) resumed with WebRTC P2P plan
 - Focus on single-player campaign (complete)
 - Enemies defined in map files (type, position)
 - 3 enemy types with different stats/behaviors

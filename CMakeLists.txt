@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(tankgame C)
+project(tankgame C CXX)
 
 if(APPLE AND NOT EMSCRIPTEN)
     enable_language(OBJC)
@@ -7,6 +7,8 @@ endif()
 
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Build type configuration
@@ -17,6 +19,7 @@ endif()
 set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Dev" "Release")
 
 option(PZ_WEB_BUILD "Build WebAssembly version" OFF)
+set(PZ_ENABLE_WEBRTC ON CACHE BOOL "Enable WebRTC networking" FORCE)
 if(PZ_WEB_BUILD AND NOT EMSCRIPTEN)
     message(FATAL_ERROR "PZ_WEB_BUILD requires the Emscripten toolchain.")
 endif()
@@ -130,12 +133,25 @@ set(EDITOR_SOURCES
     src/editor/pz_editor_ui.c
 )
 
-set(NET_SOURCES
-    # src/net/pz_net.c
-    # src/net/pz_protocol.c
-    # src/net/pz_client.c
-    # src/net/pz_server.c
-)
+if(EMSCRIPTEN)
+    set(NET_SOURCES
+        src/net/pz_net.c
+        src/net/pz_net_webrtc_wasm.cpp
+        src/net/pz_net_signaling_wasm.cpp
+        # src/net/pz_protocol.c
+        # src/net/pz_client.c
+        # src/net/pz_server.c
+    )
+else()
+    set(NET_SOURCES
+        src/net/pz_net.c
+        src/net/pz_net_webrtc.c
+        src/net/pz_net_signaling.c
+        # src/net/pz_protocol.c
+        # src/net/pz_client.c
+        # src/net/pz_server.c
+    )
+endif()
 
 # Main executable
 add_executable(tankgame
@@ -153,6 +169,29 @@ target_include_directories(tankgame PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/third_party/sokol
 )
+
+if(PZ_ENABLE_WEBRTC AND NOT EMSCRIPTEN)
+    if(NOT EXISTS "${CMAKE_SOURCE_DIR}/third_party/libdatachannel/deps/plog/CMakeLists.txt" OR
+        NOT EXISTS "${CMAKE_SOURCE_DIR}/third_party/libdatachannel/deps/usrsctp/CMakeLists.txt" OR
+        NOT EXISTS "${CMAKE_SOURCE_DIR}/third_party/libdatachannel/deps/libjuice/CMakeLists.txt")
+        message(FATAL_ERROR
+            "libdatachannel dependencies are missing. Run: git submodule update --init --recursive third_party/libdatachannel")
+    endif()
+    set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+    set(NO_MEDIA ON CACHE BOOL "" FORCE)
+    set(NO_WEBSOCKET ON CACHE BOOL "" FORCE)
+    set(NO_TESTS ON CACHE BOOL "" FORCE)
+    set(NO_EXAMPLES ON CACHE BOOL "" FORCE)
+    add_subdirectory(third_party/libdatachannel EXCLUDE_FROM_ALL)
+    target_link_libraries(tankgame PRIVATE datachannel)
+    target_compile_definitions(tankgame PRIVATE PZ_ENABLE_WEBRTC)
+endif()
+
+if(EMSCRIPTEN)
+    add_subdirectory(third_party/datachannel-wasm EXCLUDE_FROM_ALL)
+    target_link_libraries(tankgame PRIVATE datachannel-wasm)
+    target_compile_definitions(tankgame PRIVATE PZ_ENABLE_WEBRTC)
+endif()
 
 # Shader compilation with sokol-shdc
 set(SHADER_INPUT ${CMAKE_SOURCE_DIR}/shaders/tankgame.glsl)
@@ -205,6 +244,9 @@ if(EMSCRIPTEN)
         "SHELL:-s ALLOW_MEMORY_GROWTH=1"
         "SHELL:-s INITIAL_MEMORY=64MB"
         "SHELL:-s STACK_SIZE=1MB"
+        "SHELL:-s FETCH=1"
+        "SHELL:-s ASYNCIFY=1"
+        "SHELL:-s ASYNCIFY_STACK_SIZE=65536"
         "SHELL:--preload-file ${PZ_WEB_ASSETS_DIR}@/assets"
         "SHELL:--shell-file ${CMAKE_SOURCE_DIR}/web/shell.html"
     )
