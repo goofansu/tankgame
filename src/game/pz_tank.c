@@ -4,6 +4,7 @@
 
 #include "pz_tank.h"
 #include "pz_collision.h"
+#include "pz_mine.h"
 #include "pz_powerup.h"
 #include "pz_toxic_cloud.h"
 
@@ -481,7 +482,7 @@ pz_tank_spawn(pz_tank_manager *mgr, pz_vec2 pos, pz_vec4 color, bool is_player)
     tank->loadout_index = 0;
 
     // Initialize mines (player tanks start with max mines)
-    tank->mine_count = is_player ? 2 : 0;
+    tank->mine_count = is_player ? PZ_MINE_MAX_PER_TANK : 0;
 
     tank->body_color = color;
     // Turret color matches current weapon's projectile color

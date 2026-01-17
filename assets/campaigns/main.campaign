@@ -4,7 +4,7 @@
 NAME Main Campaign
 
 # Starting lives for the campaign
-LIVES 5
+LIVES 99
 
 # Level 1: Sunset Fortress - Easy
 MAP assets/maps/sunset_fortress.map
