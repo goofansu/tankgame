@@ -42,6 +42,9 @@ tankgame.wasm
 # Generated
 *.log
 src/engine/render/pz_sokol_shaders.h
+*.cmake
+tests/
+.cache/
 
 # Third-party build artifacts
 third_party/fips/
